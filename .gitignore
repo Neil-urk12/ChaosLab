@@ -46,6 +46,11 @@ Generated\ Files/
 .env.*
 !.env.example
 *.local.json
+secret.yaml
+*secret*.yaml
+!secret.yaml.example
+!*secret*.yaml.example
+
 
 ## Test & coverage results
 [Tt]est[Rr]esult*/

@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chaoslab-postgres-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: chaoslab-stack
+  labels:
+    app: chaoslab
+spec:
+  containers:
+    - name: postgres
+      image: docker.io/library/postgres:17-alpine
+      env:
+        - name: POSTGRES_DB
+          value: chaos_db
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chaoslab-secret
+              key: postgres-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+      volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      ports:
+        - containerPort: 5432
+          hostPort: 5432
+
+    - name: backend
+      image: ${IMAGE_NAME}
+      env:
+        - name: ASPNETCORE_ENVIRONMENT
+          value: Development
+        - name: ASPNETCORE_HTTP_PORTS
+          value: "8080"
+        - name: ConnectionStrings__DefaultConnection
+          valueFrom:
+            secretKeyRef:
+              name: chaoslab-secret
+              key: connection-string
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+
+  volumes:
+    - name: postgres-storage
+      persistentVolumeClaim:
+        claimName: chaoslab-postgres-data
