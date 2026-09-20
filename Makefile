@@ -11,6 +11,7 @@ help:
 	@echo "  make up            - Start the pod stack with secrets and dynamic image substitution"
 	@echo "  make down          - Stop and remove the pod (preserves database data)"
 	@echo "  make restart       - Restart the pod stack"
+	@echo "  make dev-fe        - Run frontend"
 	@echo "  make ps            - Check status of running pods and containers"
 	@echo "  make logs          - Follow logs from all containers in the pod"
 	@echo "  make logs-backend  - Follow backend container logs"
@@ -39,6 +40,9 @@ down:
 	fi
 
 restart: down up
+
+dev-fe: 
+	cd Frontend && pnpm run dev
 
 ps:
 	podman ps --pod
