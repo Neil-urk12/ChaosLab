@@ -5,11 +5,12 @@ namespace Backend.Domain.Entities;
 
 public class EndpointResult
 {
+    // Keys
     public Guid Id { get; set; }
     public Guid TestRunId { get; set; }
-    public TestRun TestRun { get; set; } = null!;
     public Guid EndpointId { get; set; }
-    public ApiEndpoint Endpoint { get; set; } = null!;
+
+    // Table properties
     public decimal? RetryScore { get; set; }
     public decimal? TimeoutScore { get; set; }
     public decimal? CircuitBreakerScore { get; set; }
@@ -18,5 +19,11 @@ public class EndpointResult
     public decimal OverallScore { get; set; }
     public string? Grade { get; set; }
     public JsonDocument Evidence { get; set; } = null!;
+
+    // Metadata
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    // Navigation properties
+    public TestRun TestRun { get; set; } = null!;
+    public ApiEndpoint Endpoint { get; set; } = null!;
 }

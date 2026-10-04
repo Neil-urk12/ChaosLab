@@ -6,9 +6,11 @@ namespace Backend.Domain.Entities;
 
 public class HttpObservation
 {
+    // Keys
     public Guid Id { get; set; }
     public Guid ScenarioExecutionId { get; set; }
-    public ScenarioExecution ScenarioExecution { get; set; } = null!;
+
+    // Table properties
     public int AttemptNo { get; set; }
     public Guid? CorrelationId { get; set; }
     public string RequestMethod { get; set; } = string.Empty;
@@ -23,5 +25,10 @@ public class HttpObservation
     public long? ResponseBytes { get; set; }
     public string? ErrorType { get; set; }
     public JsonDocument Metadata { get; set; } = null!;
+
+    // Metadata
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    // Navigation properties
+    public ScenarioExecution ScenarioExecution { get; set; } = null!;
 }
