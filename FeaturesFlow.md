@@ -1,4 +1,4 @@
-# App flow
+# App flow for the Community/Self-hosted version
 
 ## System flow I think
 
@@ -251,3 +251,198 @@
 15. If no, finish the test run
 16. Set Test run status to completed or failed/partially completed if execution problems occured
 17. Continue to Results evaluation
+
+### Resilience Pattern Evaluation
+
+1. Retrieve observations collected during the Test Run
+2. Evaluate behavior under each injected failure
+3. Analyze evidence of (retry handling, timeout handling, circuit breaker behavior, fallback behavior, and idempotency behavior)
+4. Compare expected behavior with observed behavior
+5. Identify resilence successes
+6. Identify resilience weaknesses
+7. Record findings
+8. Associate findings with (Test run, enpoint, scenario)
+9. Send findings to the scoring process
+
+### Resilience Score Calculation
+
+1. Retrieve completed scenario results
+2. Retrieve resilience-pattern evaluation results
+3. Determine successful and unsuccessful resilience checks
+4. Apply the defined scoring methodology
+5. Calculate relevant scenario/category scores
+6. Calculate the overall Resilience Score from 0 - 100
+7. Save the calculated score to db
+8. Associate the score with the test run
+9. Send the completed results to the Results Dashboard
+
+### Viewing Test Results
+
+1. User opens a completed Test Run
+2. Retrieve Test Run info
+3. Retrieve scenario execution results
+4. Retrieve resilience evaluation findings
+5. Retrieve calculated Resilience score
+6. Display: 
+  - Overall resilience score
+  - Test status
+  - Tested endpoints
+  - execution scenariors
+  - Passed/failed findings
+  - Respone and timing info
+  - Detected resilience mechanisms
+  - Failure timeline
+  - Recommendations
+7. User may inspect an individual endpoint
+8. User may inspect and individiual scenario
+9. Display detailed obserations for the selected item
+10. Allow the user to return to the overall Test Run results
+
+### Failure Timeline
+
+1. Retrieve execution events form the Test Run
+2. Arrange events chronologically
+3. Identify
+  - Failure injection start
+  - Requests sent
+  - Errors/responses received
+  - Retry attempts
+  - Timeout events
+  - Recovery events
+  - Scenario completion
+4. Generate timeline entries
+5. Display the timelin
+6. Allow the user to inspect individual events
+
+### Recommendation Generation
+
+1. Retrieve failed/weak resilience findings
+2. Identify the type of resilience problem
+3. Map detected weaknesses to applicable recommendations
+4. Generate actionable recommendations
+5. Associate recommendations with:
+  - Endpoint
+  - Scenario
+  - Resilience pattern
+6. Save generated recommendations
+7. Display recommendations in Test Results
+8. Include recommendations in exported reports
+
+### Test Run History
+
+1. User opens Tets History
+2. Retrieve Test Runs belonging to the selected Project
+3. Display previous Test Runs
+4. Show summary information such as:
+  - Datetime
+  - Status
+  - Resilience score
+  - Number of endpoints tested
+  - Number of scenarios executed
+5. User selects a Test Run
+6. Retrieve saved results
+7. Display the Test Run results page
+
+### PDF Report Generation 
+
+1. User opens a completed Test Run
+2. Select Generate/Export Report
+3. Retrieve:
+  - Project information
+  - API information
+  - Test configuration
+  - Test Run results
+  - Resilience score
+  - Failure timeline
+  - Findings
+  - Recommendations
+4. Generate the PDF Report
+5. Store report meatadata
+6. Return the generated report
+7. Allow the user to view/download the PDF report
+
+### Updating an OpenAPI Specification
+
+1. User opens the API Specification settings
+2. Select Update/Re-import Specification
+3. Provide the new OpenAPI docu
+4. Parse and validate the new spec
+5. Compare it against the currently stored spec
+6. Identify:
+  - Added endpoints
+  - Removed endpoints
+  - Modified endpoints
+7. Update stored API info
+8. Update endpoints records
+9. Determine whether existing generated scenarios remain applicable
+10. Regenerate scenarios where necessary
+11. Save the updated specification
+12. Display the updated API structure
+
+### Dashboard
+
+1. User successfully authenticates
+2. Retrieve Projects acceessible by the user
+3. Retreive recent Test Runs
+4. Retrieve relevant Project/Test summary info
+5. Display Dashboard
+6. Show available cta like (not finalized yet):
+  - Create project
+  - Open Project
+  - Configure API
+  - Import OpenAPI Spec
+  - Start Test Run
+  - View Recent Test Runs
+  - View Reports
+7. User selects an action
+8. Redirect to the corresponding process
+
+### Mobile Login
+
+1. Open the mobile app
+2. Check for existing authenticated session
+3. If valid session exists, open mobile dashboard
+4. If no valid session exists, display login page
+5. User enters credentials
+6. Send credentials to backend API
+7. Validate credentials
+8. If invalid, display auth error
+9. If valid, generate session/token 
+10. Store auth info securely on mobile
+11. Retrieve user info and permissions
+12. Display mobile dashboard
+
+### Mobile Project Viewing
+
+1. User opens the mobile dshboard
+2. Retrieve Projects accessible to the authenticated user
+3. Display Projects
+4. User selects a project
+5. Retreive project info
+6. Display: 
+  - Project info
+  - API config summary
+  - Project members
+  - Recent test runs
+  - Latest resilience score
+7. User selects the desired information or Test run
+
+### Mobile Test Result Viewing
+
+1. User selects a Test Run
+2. Request Test Run results from the backend
+3. Retrieve:
+  - Test status
+  - Resilience score
+  - Scenario results
+  - Failure timleine
+  - Findings
+  - Recommendations
+4. Display Test Run summary
+5. User selects a scenario/finding
+6. Display detailed info
+7. User returns to Test Run Summary or Project page
+
+### 
+
+
