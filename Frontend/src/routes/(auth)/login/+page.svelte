@@ -37,7 +37,7 @@
 		bind:value={password}
 	/>
 
-	<button type="submit" class="auth-submit !mt-10">
+	<button type="submit" class="auth-submit mt-10">
 		Sign in
 		<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
 			<path d="M5 12h14M13 6l6 6-6 6" />
