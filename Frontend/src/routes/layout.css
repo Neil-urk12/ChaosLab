@@ -1,3 +1,12 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+@layer components {
+	.auth-input {
+		@apply block h-11 w-full rounded-md border border-[#1e2433] bg-[#0d111a] px-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#7b7dfb] focus:ring-1 focus:ring-[#7b7dfb];
+	}
+	.auth-submit {
+		@apply flex h-10 w-full items-center justify-center gap-8 rounded-md bg-[#7b7dfb] text-[13px] font-semibold text-[#0b0d1a] hover:bg-[#8d8ffc] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7b7dfb];
+	}
+}
