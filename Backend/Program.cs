@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
+// Local dev only: load .env.local if present; NoClobber keeps real env vars (pod secret) authoritative.
+DotNetEnv.Env.NoClobber().Load(".env.local");
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>

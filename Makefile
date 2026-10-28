@@ -3,7 +3,7 @@ SECRET_FILE       ?= secret.yaml
 KUBE_FILE         ?= backend-pod.yaml
 POD_NAME          ?= chaoslab-stack
 
-.PHONY: help build up down restart ps logs logs-backend logs-db clean-data secret-init
+.PHONY: help build up down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be
 
 help:
 	@echo "Available commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make down          - Stop and remove the pod (preserves database data)"
 	@echo "  make restart       - Restart the pod stack"
 	@echo "  make dev-fe        - Run frontend"
+	@echo "  make dev-be        - Run backend"
 	@echo "  make ps            - Check status of running pods and containers"
 	@echo "  make logs          - Follow logs from all containers in the pod"
 	@echo "  make logs-backend  - Follow backend container logs"
@@ -43,6 +44,9 @@ restart: down up
 
 dev-fe: 
 	cd Frontend && pnpm run dev
+
+dev-be:
+	cd Backend && dotnet run
 
 ps:
 	podman ps --pod

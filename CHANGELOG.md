@@ -18,6 +18,11 @@ released yet, so history is grouped by date.
   `SuperAdmin` role and one account with `MustChangePassword = true`. Creation is
   transactional, serializable, and retried on concurrent startup; an existing usable
   SuperAdmin makes the configuration optional.
+- Local development environment loading: the backend reads `Backend/.env.local` at
+  startup through `DotNetEnv` with `NoClobber`, so exported variables and the pod
+  secret stay authoritative. The file is gitignored and excluded from the container
+  build context.
+- `make dev-be` target for running the backend dev server.
 
 ### Changed
 
