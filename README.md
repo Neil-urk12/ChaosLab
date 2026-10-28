@@ -166,10 +166,10 @@ ChaosLab is structured as a **modular monolith** with clean module separation:
 ```text
 chaos/
 ├── Backend/                 # ASP.NET Core Web API (.NET 10)
-│   ├── Classes/             # Shared helper classes and models
 │   ├── Domain/              # Domain entities, enums, and interfaces
 │   │   ├── Entities/        # Users, Projects, ApiSpecs, TestRuns, etc.
 │   │   └── Enums/           # Scenarios, AuthType, TestRunStatus, etc.
+│   ├── Features/            # Vertical feature slices: endpoints, DTOs, query/command handlers
 │   ├── Infrastructure/      # Data access, EF Core ApplicationDbContext
 │   ├── Properties/          # Launch profiles & settings
 │   ├── Dockerfile           # Backend container build specification

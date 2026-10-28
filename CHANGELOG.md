@@ -18,6 +18,14 @@ released yet, so history is grouped by date.
   `SuperAdmin` role and one account with `MustChangePassword = true`. Creation is
   transactional, serializable, and retried on concurrent startup; an existing usable
   SuperAdmin makes the configuration optional.
+- `GET /api/projects`, the first product endpoint, listing active projects newest
+  first through a read-only projection into a response DTO. Results are not yet
+  scoped to the caller's memberships.
+- `POST /api/projects`, creating a project from `name` and optional `description`,
+  rejecting a missing name or one longer than 200 characters with a validation
+  problem, and returning `201 Created` with a `Location` header. The creator is added
+  as the project's `Owner`; until login exists, that creator is the bootstrapped
+  SuperAdmin.
 - Local development environment loading: the backend reads `Backend/.env.local` at
   startup through `DotNetEnv` with `NoClobber`, so exported variables and the pod
   secret stay authoritative. The file is gitignored and excluded from the container
@@ -32,10 +40,14 @@ released yet, so history is grouped by date.
   `devDependency`, like the rest of the frontend, because Vite bundles it at build time.
 - Drop the unneeded `!` important modifier from the submit-button margins on the
   login and setup pages. Tailwind v4 `space-y-*` no longer styles the last child.
+- Backend HTTP features are organized as vertical slices under `Backend/Features/`,
+  one file per query or command, with routes grouped under `/api` in `Program.cs`.
+  `Features/Projects` is the reference slice.
 
 ### Removed
 
 - Google Fonts `<link>` tags from the `(auth)` layout.
+- The template `weatherforecast` endpoint and its `WeatherForecast` record.
 
 ## 2026-10-26
 
