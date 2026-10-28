@@ -229,6 +229,20 @@ and `Production`. Leave these values `null`; supply each environment's connectio
 string through `ConnectionStrings__DefaultConnection` using local environment
 variables or deployment secrets. Never commit real credentials.
 
+Environment variable templates are in `Backend/.env.{Environment}.example`.
+For local use, copy the desired template to `Backend/.env` (gitignored), replace
+the placeholders, and load it explicitly; ASP.NET Core does not load `.env` files:
+
+```bash
+cd Backend
+cp .env.Development.example .env
+# Edit .env with your database settings before continuing.
+set -a
+. ./.env
+set +a
+dotnet run --no-launch-profile
+```
+
 Select the environment with `ASPNETCORE_ENVIRONMENT` (for example, `Staging`).
 For local runs outside Development, use `dotnet run --no-launch-profile` so the
 Development launch profile does not override it. Integration tests select

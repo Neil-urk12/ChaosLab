@@ -8,6 +8,8 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Environment variable templates for Development, Testing, Staging, and Production,
+  with database connection placeholders and instructions for loading a local `.env`.
 - `ConnectionStrings:DefaultConnection` placeholders for Development, Testing,
   Staging, and Production, with README instructions for supplying connection strings
   through environment variables or deployment secrets.
