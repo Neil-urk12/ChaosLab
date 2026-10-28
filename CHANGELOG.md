@@ -6,6 +6,17 @@ released yet, so history is grouped by date.
 
 ## [Unreleased]
 
+### Added
+
+- `ConnectionStrings:DefaultConnection` placeholders for Development, Testing,
+  Staging, and Production, with README instructions for supplying connection strings
+  through environment variables or deployment secrets.
+- Initial SuperAdmin bootstrap: ASP.NET Core Identity (`UserManager`/`RoleManager`)
+  provisioned at startup from `BootstrapAdmin:*` configuration, creating the
+  `SuperAdmin` role and one account with `MustChangePassword = true`. Creation is
+  transactional, serializable, and retried on concurrent startup; an existing usable
+  SuperAdmin makes the configuration optional.
+
 ### Changed
 
 - Bundle the Inter font with the frontend (`@fontsource-variable/inter`) instead of

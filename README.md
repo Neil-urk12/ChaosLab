@@ -223,6 +223,25 @@ Ensure you have the following installed on your machine:
      connection-string: "Host=localhost;Port=5432;Database=chaos_db;Username=postgres;Password=your_secure_password"
    ```
 
+The backend includes `ConnectionStrings:DefaultConnection` placeholders in
+`Backend/appsettings.{Environment}.json` for `Development`, `Testing`, `Staging`,
+and `Production`. Leave these values `null`; supply each environment's connection
+string through `ConnectionStrings__DefaultConnection` using local environment
+variables or deployment secrets. Never commit real credentials.
+
+Select the environment with `ASPNETCORE_ENVIRONMENT` (for example, `Staging`).
+For local runs outside Development, use `dotnet run --no-launch-profile` so the
+Development launch profile does not override it. Integration tests select
+`Testing` and inject their own isolated Testcontainers database connection.
+
+The first startup against an empty database also requires
+`BootstrapAdmin__Username`, `BootstrapAdmin__Password`, `BootstrapAdmin__FirstName`,
+and `BootstrapAdmin__LastName` (optionally `BootstrapAdmin__Email`) as environment
+variables or deployment secrets. The account is created with the `SuperAdmin` role
+and `MustChangePassword = true`. There are no default credentials, and nothing is
+created if an active SuperAdmin already exists, so remove the variables after the
+first successful start.
+
 ---
 
 ### Running with Podman (Recommended)
