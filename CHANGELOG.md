@@ -19,18 +19,28 @@ released yet, so history is grouped by date.
   transactional, serializable, and retried on concurrent startup; an existing usable
   SuperAdmin makes the configuration optional.
 - `GET /api/projects`, the first product endpoint, listing active projects newest
-  first through a read-only projection into a response DTO. Results are not yet
-  scoped to the caller's memberships.
+  first through a read-only projection into a response DTO, limited to projects
+  where the caller has an active membership.
 - `POST /api/projects`, creating a project from `name` and optional `description`,
   rejecting a missing name or one longer than 200 characters with a validation
   problem, and returning `201 Created` with a `Location` header. The creator is added
-  as the project's `Owner`; until login exists, that creator is the bootstrapped
-  SuperAdmin.
+  as the project's `Owner`.
 - Local development environment loading: the backend reads `Backend/.env.local` at
   startup through `DotNetEnv` with `NoClobber`, so exported variables and the pod
   secret stay authoritative. The file is gitignored and excluded from the container
   build context.
 - `make dev-be` target for running the backend dev server.
+- Authentication with ASP.NET Core Identity: `POST /api/auth/login` sets an HttpOnly,
+  Secure, SameSite=Lax cookie for web clients; `POST /api/auth/token` and
+  `POST /api/auth/refresh` issue Identity bearer tokens (15-minute access token) for
+  mobile clients. `GET /api/auth/me`, `POST /api/auth/change-password`, and
+  `POST /api/auth/logout` complete the flow. Every endpoint requires sign-in by default,
+  and an account with `MustChangePassword` can reach only `me`, `change-password`, and
+  `logout` until it replaces its password. Failed logins count toward Identity lockout.
+  Login accepts a username or an email (an email shared by two accounts is rejected).
+  Logging out with a bearer token rotates the security stamp, revoking the user's
+  refresh tokens on every device. Sign-ins, failures, lockouts, refreshes, password
+  changes, and logouts are logged by user id, never by the submitted identifier.
 
 ### Changed
 

@@ -1,10 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
 using Backend.Tests.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,14 +14,12 @@ namespace Backend.Tests.Integration;
 public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
 {
     [Fact]
-    public async Task Create_persists_project_with_owner_and_list_returns_it()
+    public async Task Create_persists_project_with_caller_as_owner_and_list_returns_it()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        await using var factory = new BackendFactory(database);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("https://localhost")
-        });
+        var admin = BootstrapTestConfiguration.Valid();
+        await using var factory = new BackendFactory(database, admin);
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var create = await client.PostAsJsonAsync("/api/projects", new { name = "  Payments API  ", description = " " });
         Assert.Equal(HttpStatusCode.Created, create.StatusCode);
@@ -36,9 +34,32 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var adminId = (await db.Users.SingleAsync(x => x.UserName == admin.Username)).Id;
         var member = await db.ProjectMembers.SingleAsync(x => x.ProjectId == created.Id);
         Assert.Equal(ProjectRole.Owner, member.Role);
-        Assert.Equal((await db.Projects.SingleAsync(x => x.Id == created.Id)).CreatedById, member.UserId);
+        Assert.Equal(adminId, member.UserId);
+        Assert.Equal(adminId, (await db.Projects.SingleAsync(x => x.Id == created.Id)).CreatedById);
+    }
+
+    [Fact]
+    public async Task List_only_returns_projects_with_an_active_membership()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        var admin = BootstrapTestConfiguration.Valid();
+        await using var factory = new BackendFactory(database, admin);
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var adminId = (await db.Users.SingleAsync(x => x.UserName == admin.Username)).Id;
+            var removed = new Project { Id = Guid.NewGuid(), Name = "Removed", CreatedById = adminId };
+            removed.Members.Add(new ProjectMember { UserId = adminId, Role = ProjectRole.Owner, RemovedAt = DateTimeOffset.UtcNow });
+            db.Projects.AddRange(new Project { Id = Guid.NewGuid(), Name = "Not a member", CreatedById = adminId }, removed);
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Empty((await client.GetFromJsonAsync<List<ProjectResponse>>("/api/projects"))!);
     }
 
     [Theory]
@@ -47,11 +68,9 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task Create_rejects_missing_name(string? name)
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        await using var factory = new BackendFactory(database);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("https://localhost")
-        });
+        var admin = BootstrapTestConfiguration.Valid();
+        await using var factory = new BackendFactory(database, admin);
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var response = await client.PostAsJsonAsync("/api/projects", new { name });
 
@@ -63,11 +82,9 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task Create_rejects_name_longer_than_column()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        await using var factory = new BackendFactory(database);
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            BaseAddress = new Uri("https://localhost")
-        });
+        var admin = BootstrapTestConfiguration.Valid();
+        await using var factory = new BackendFactory(database, admin);
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var response = await client.PostAsJsonAsync("/api/projects", new { name = new string('a', 201) });
 

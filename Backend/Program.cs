@@ -1,3 +1,4 @@
+using Backend.Features.Auth;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
 using Backend.Domain.Entities;
@@ -17,7 +18,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<Guid>>()
-    .AddEntityFrameworkStores<ApplicationDbContext>();
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddSignInManager()
+    .AddClaimsPrincipalFactory<AppUserClaimsPrincipalFactory>();
+builder.Services.AddAppAuthentication();
 builder.Services.Configure<BootstrapAdminOptions>(
     builder.Configuration.GetSection(BootstrapAdminOptions.SectionName));
 builder.Services.AddScoped<IInitialAdminBootstrapper, InitialAdminBootstrapper>();
@@ -36,13 +40,16 @@ await using (var scope = app.Services.CreateAsyncScope())
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
-    app.MapScalarApiReference();
+    app.MapOpenApi().AllowAnonymous();
+    app.MapScalarApiReference().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 
 var api = app.MapGroup("/api");
+api.MapAuthEndpoints();
 api.MapProjectEndpoints();
 
 app.Run();
