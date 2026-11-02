@@ -41,6 +41,7 @@ released yet, so history is grouped by date.
   Logging out with a bearer token rotates the security stamp, revoking the user's
   refresh tokens on every device. Sign-ins, failures, lockouts, refreshes, password
   changes, and logouts are logged by user id, never by the submitted identifier.
+- Wire up login page to the backend.
 
 ### Changed
 

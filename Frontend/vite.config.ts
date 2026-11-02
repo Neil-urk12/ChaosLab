@@ -18,6 +18,8 @@ export default defineConfig({
 			adapter: adapter()
 		})
 	],
+	// Same-origin /api so the HttpOnly auth cookie works without CORS.
+	server: { proxy: { '/api': 'http://localhost:5274' } },
 	test: {
 		expect: { requireAssertions: true },
 		projects: [
