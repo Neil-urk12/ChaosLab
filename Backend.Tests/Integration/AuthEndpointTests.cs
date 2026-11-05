@@ -31,8 +31,9 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     public async Task Cookie_login_requires_password_change_before_other_endpoints()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
+        await TestAuth.InitializeAsync(factory, admin, pendingPasswordChange: true);
         using var client = TestAuth.CreateClient(factory);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/login",
@@ -56,7 +57,7 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
 
         var me = await client.GetFromJsonAsync<CurrentUser.Response>("/api/auth/me");
         Assert.True(me!.MustChangePassword);
-        Assert.Equal(InitialAdminBootstrapper.SuperAdminRole, Assert.Single(me.Roles));
+        Assert.Equal(AuthSetup.SuperAdminRole, Assert.Single(me.Roles));
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/projects")).StatusCode);
 
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/auth/change-password",
@@ -84,8 +85,9 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     public async Task Bearer_tokens_authenticate_refresh_and_are_revoked_by_password_change()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
+        await TestAuth.InitializeAsync(factory, admin, pendingPasswordChange: true);
         using var client = TestAuth.CreateClient(factory);
 
         var token = await client.PostAsJsonAsync("/api/auth/token",
@@ -108,7 +110,7 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
                     refreshToken = tokens.RefreshToken
                 });
         Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/change-password",
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync("/api/auth/change-password",
                         new
                         {
                             currentPassword = admin.Password,
@@ -135,9 +137,10 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     public async Task Login_accepts_email_but_rejects_an_email_shared_by_two_accounts()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        admin.Email = "admin@toma.test";
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        admin = admin with { Email = "admin@toma.test" };
+        await using var factory = new BackendFactory(database);
+        await TestAuth.InitializeAsync(factory, admin);
         using var client = TestAuth.CreateClient(factory);
 
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/login",
@@ -157,6 +160,7 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
                 Firstname = "Second",
                 Lastname = "User"
             };
+            Assert.True((await users.CreateAsync(duplicate, admin.Password!)).Succeeded);
         }
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/login",
@@ -178,8 +182,9 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     public async Task Bearer_logout_revokes_refresh_tokens_but_web_logout_does_not()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
+        await TestAuth.InitializeAsync(factory, admin);
         using var mobile = TestAuth.CreateClient(factory);
         using var web = TestAuth.CreateClient(factory);
 

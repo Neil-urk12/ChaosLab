@@ -17,7 +17,9 @@ public static class AuthEndpoints
             Login.Handle(request, IdentityConstants.BearerScheme, users, signIn, loggers)).AllowAnonymous();
         auth.MapPost("/refresh", RefreshToken.Handle).AllowAnonymous();
 
-        // Reachable while the bootstrap password still has to be replaced.
+        auth.MapPost("/setup", Setup.Handle).AllowAnonymous();
+
+        // Reachable while a required password change is still pending.
         var pending = auth.MapGroup("").RequireAuthorization(AuthSetup.AllowPendingPasswordChangePolicy);
         pending.MapGet("/me", CurrentUser.Handle);
         pending.MapPost("/change-password", ChangePassword.Handle);

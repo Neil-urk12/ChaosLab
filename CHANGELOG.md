@@ -13,11 +13,20 @@ released yet, so history is grouped by date.
 - `ConnectionStrings:DefaultConnection` placeholders for Development, Testing,
   Staging, and Production, with README instructions for supplying connection strings
   through environment variables or deployment secrets.
-- Initial SuperAdmin bootstrap: ASP.NET Core Identity (`UserManager`/`RoleManager`)
-  provisioned at startup from `BootstrapAdmin:*` configuration, creating the
-  `SuperAdmin` role and one account with `MustChangePassword = true`. Creation is
-  transactional, serializable, and retried on concurrent startup; an existing usable
-  SuperAdmin makes the configuration optional.
+- First-run SuperAdmin setup through `POST /api/auth/setup`: on an uninitialized
+  database the backend prints a setup link carrying a random 64-character token in
+  the URL fragment. The token lives only in backend memory, expires one hour after
+  generation, and is compared in constant time; restarting an uninitialized backend
+  issues a new link and invalidates the old one. The endpoint is anonymous, returns
+  `403` for a missing, invalid, or expired token, and `409` once the `SuperAdmin`
+  role exists. Role and account are created in one transaction under a PostgreSQL
+  advisory lock, so simultaneous requests cannot both initialize the instance. The
+  role is the durable setup marker, so deleting or disabling the administrator never
+  reopens installation. The new administrator is signed in immediately and is not
+  forced to change the password just chosen.
+- Startup validation of `BootstrapSetup:PublicUrl`, requiring an absolute HTTP(S) URL
+  without credentials, query, or fragment because the setup link appends
+  `/install#token=...` to it. Invalid configuration fails the backend at startup.
 - `GET /api/projects`, the first product endpoint, listing active projects newest
   first through a read-only projection into a response DTO, limited to projects
   where the caller has an active membership.
@@ -42,9 +51,18 @@ released yet, so history is grouped by date.
   refresh tokens on every device. Sign-ins, failures, lockouts, refreshes, password
   changes, and logouts are logged by user id, never by the submitted identifier.
 - Wire up login page to the backend.
+- `(auth)/install` page that redeems the setup token from the URL fragment, validates
+  its format, submits the first administrator's details to `/api/auth/setup`, and
+  replaces the history entry so Back does not return to the secret link.
+- `(app)` route group with a client-side session guard (`ssr = false`) that redirects
+  unauthenticated visitors to `/login` and pending password changes to `/setup`, plus
+  a sidebar shell and an overview page listing the caller's recent projects.
 
 ### Changed
 
+- The `(auth)/setup` page now changes a password for real against
+  `/api/auth/change-password` (current password, new password, confirmation) instead
+  of being an unwired placeholder for the initial administrator credentials.
 - Bundle the Inter font with the frontend (`@fontsource-variable/inter`) instead of
   loading it from Google Fonts, so auth pages make no third-party requests and work
   offline. The font is imported once in the root layout. The package is a
@@ -57,6 +75,9 @@ released yet, so history is grouped by date.
 
 ### Removed
 
+- The startup `InitialAdminBootstrapper` and its `BootstrapAdmin:*` configuration;
+  initial administration now comes from the one-time setup link, and obsolete
+  `BootstrapAdmin__*` secrets can be removed from deployments.
 - Google Fonts `<link>` tags from the `(auth)` layout.
 - The template `weatherforecast` endpoint and its `WeatherForecast` record.
 

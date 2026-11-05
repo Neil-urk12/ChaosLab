@@ -22,9 +22,13 @@ builder.Services.AddIdentityCore<User>()
     .AddSignInManager()
     .AddClaimsPrincipalFactory<AppUserClaimsPrincipalFactory>();
 builder.Services.AddAppAuthentication();
-builder.Services.Configure<BootstrapAdminOptions>(
-    builder.Configuration.GetSection(BootstrapAdminOptions.SectionName));
-builder.Services.AddScoped<IInitialAdminBootstrapper, InitialAdminBootstrapper>();
+builder.Services.AddOptions<BootstrapSetupOptions>()
+    .Bind(builder.Configuration.GetSection(BootstrapSetupOptions.SectionName))
+    .Validate(options => BootstrapSetupOptions.IsValidPublicUrl(options.PublicUrl),
+        "BootstrapSetup:PublicUrl must be an absolute HTTP(S) URL without a query, fragment or credentials.")
+    .ValidateOnStart();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<BootstrapSetupToken>();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -34,7 +38,14 @@ var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    await scope.ServiceProvider.GetRequiredService<IInitialAdminBootstrapper>().BootstrapAsync();
+    var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+    if (!await roles.RoleExistsAsync(AuthSetup.SuperAdminRole))
+    {
+        var options = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<BootstrapSetupOptions>>().Value;
+        var token = app.Services.GetRequiredService<BootstrapSetupToken>();
+        // The fragment keeps the secret out of frontend HTTP request URLs and ordinary request logs.
+        Console.WriteLine($"Complete first-run SuperAdmin setup (expires in one hour): {token.SetupUrl(options.PublicUrl)}");
+    }
 }
 
 // Configure the HTTP request pipeline.

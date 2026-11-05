@@ -17,8 +17,8 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task Create_persists_project_with_caller_as_owner_and_list_returns_it()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
         using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var create = await client.PostAsJsonAsync("/api/projects", new { name = "  Payments API  ", description = " " });
@@ -45,8 +45,8 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task List_only_returns_projects_with_an_active_membership()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
         using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -68,8 +68,8 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task Create_rejects_missing_name(string? name)
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
         using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var response = await client.PostAsJsonAsync("/api/projects", new { name });
@@ -82,8 +82,8 @@ public sealed class ProjectEndpointTests(PostgreSqlFixture postgres)
     public async Task Create_rejects_name_longer_than_column()
     {
         await using var database = await postgres.CreateDatabaseAsync();
-        var admin = BootstrapTestConfiguration.Valid();
-        await using var factory = new BackendFactory(database, admin);
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
         using var client = await TestAuth.SignedInAdminAsync(factory, admin);
 
         var response = await client.PostAsJsonAsync("/api/projects", new { name = new string('a', 201) });

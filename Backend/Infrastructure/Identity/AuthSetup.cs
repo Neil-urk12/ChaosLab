@@ -10,6 +10,8 @@ namespace Backend.Infrastructure.Identity;
 
 public static class AuthSetup
 {
+    // The role is a durable setup marker: deleting or disabling admins must never reopen installation.
+    public const string SuperAdminRole = "SuperAdmin";
     public const string MustChangePasswordClaim = "must_change_password";
     public const string AllowPendingPasswordChangePolicy = "AllowPendingPasswordChange";
     public const string CookieOrBearerScheme = "CookieOrBearer";

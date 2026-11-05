@@ -248,13 +248,35 @@ For local runs outside Development, use `dotnet run --no-launch-profile` so the
 Development launch profile does not override it. Integration tests select
 `Testing` and inject their own isolated Testcontainers database connection.
 
-The first startup against an empty database also requires
-`BootstrapAdmin__Username`, `BootstrapAdmin__Password`, `BootstrapAdmin__FirstName`,
-and `BootstrapAdmin__LastName` (optionally `BootstrapAdmin__Email`) as environment
-variables or deployment secrets. The account is created with the `SuperAdmin` role
-and `MustChangePassword = true`. There are no default credentials, and nothing is
-created if an active SuperAdmin already exists, so remove the variables after the
-first successful start.
+### First-run SuperAdmin setup
+
+After applying the database migrations, start the backend and frontend. On an
+uninitialized database, the backend prints a secret setup link in its terminal
+(or `make logs-backend` for the container stack). Open that complete link and
+enter your name, username, email, and password to create the first SuperAdmin
+and sign in. No initial password environment variables are required, and the
+login page never publishes administrator credentials.
+
+The link defaults to `http://localhost:5173/install#token=...`. Set
+`BootstrapSetup__PublicUrl` to the externally reachable frontend base URL when
+using another address; it must be an absolute HTTP(S) URL without credentials,
+query parameters, or a fragment. Production deployments must use HTTPS. The
+frontend must proxy `/api` to the backend, as the development server does.
+
+Treat the terminal link and container logs as secrets. The random token expires
+one hour after generation and is kept only in backend memory. Restart an
+uninitialized backend to obtain a new link; its previous link stops working.
+With multiple backend instances, send setup to the instance that printed the
+link (or run one instance until setup is complete). Do not enable request-body
+logging for auth endpoints: the setup token and password are sent in the POST body.
+
+Setup creates the account and `SuperAdmin` role in one database transaction and
+allows only one successful initialization, even for simultaneous requests.
+The role is the durable initialization marker: do not delete it to reset setup.
+Restarting, deleting, or disabling an administrator does not reopen registration.
+Existing installations retain their accounts and any required password-change
+flow; obsolete `BootstrapAdmin__*` secrets can be removed. Account recovery is
+an operator responsibility, not public registration.
 
 ---
 

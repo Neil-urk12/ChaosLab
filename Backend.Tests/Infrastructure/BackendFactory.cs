@@ -1,5 +1,4 @@
 using Backend.Infrastructure.Data;
-using Backend.Infrastructure.Identity;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -11,20 +10,28 @@ using Microsoft.Extensions.Configuration;
 
 namespace Backend.Tests.Infrastructure;
 
-public sealed class BackendFactory(TestDatabase database, BootstrapAdminOptions? bootstrap = null) : WebApplicationFactory<Program>
+public sealed class BackendFactory(
+    TestDatabase database, TimeProvider? timeProvider = null,
+    Action<IServiceCollection>? configureServices = null, string publicUrl = "http://localhost:5173")
+    : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
-        var config = bootstrap ?? BootstrapTestConfiguration.Valid();
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-            BootstrapTestConfiguration.Values(config)));
+            new Dictionary<string, string?> { ["BootstrapSetup:PublicUrl"] = publicUrl }));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ApplicationDbContext>();
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(database.ConnectionString));
+            if (timeProvider is not null)
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton(timeProvider);
+            }
+            configureServices?.Invoke(services);
         });
     }
 }
