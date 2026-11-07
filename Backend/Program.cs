@@ -45,8 +45,22 @@ await using (var scope = app.Services.CreateAsyncScope())
     {
         var options = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<BootstrapSetupOptions>>().Value;
         var token = app.Services.GetRequiredService<BootstrapSetupToken>();
+        // ANSI colors only in an interactive terminal; pod logs and NO_COLOR get plain text.
+        var color = !Console.IsOutputRedirected && Environment.GetEnvironmentVariable("NO_COLOR") is null;
+        string Paint(string code, string text) => color ? $"\e[{code}m{text}\e[0m" : text;
+        var rule = Paint("2", new string('─', 64));
         // The fragment keeps the secret out of frontend HTTP request URLs and ordinary request logs.
-        Console.WriteLine($"Complete first-run SuperAdmin setup (expires in one hour): {token.SetupUrl(options.PublicUrl)}");
+        Console.WriteLine($"""
+
+            {rule}
+              {Paint("1;33", "First-run setup")}{Paint("2", " · create the SuperAdmin account")}
+
+              {Paint("4;36", token.SetupUrl(options.PublicUrl))}
+
+              {Paint("2", "Expires in one hour. Restart the backend for a new link.")}
+            {rule}
+
+            """);
     }
 }
 
