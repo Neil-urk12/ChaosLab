@@ -7,5 +7,7 @@ public static class ProjectEndpoints
         var projects = api.MapGroup("/projects").WithTags("Projects");
         projects.MapGet("/", ListProjects.Handle);
         projects.MapPost("/", CreateProject.Handle);
+        projects.MapGet("/overview", GetOverview.Handle);
+        projects.MapGet("/{id:guid}", GetProject.Handle);
     }
 }

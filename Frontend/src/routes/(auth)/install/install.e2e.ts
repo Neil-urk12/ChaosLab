@@ -33,11 +33,19 @@ test('password mismatch does not submit', async ({ page }) => {
 });
 
 test('submits token in body, signs in and replaces the setup URL', async ({ page }) => {
-	await page.route('**/api/auth/me', (route) => route.fulfill({ json: {
-		id: 'admin-id', userName: 'admin', displayName: 'Initial Administrator',
-		email: 'admin@example.test', mustChangePassword: false, roles: ['SuperAdmin']
-	} }));
-	await page.route('**/api/projects', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/auth/me', (route) => route.fulfill({
+		json: {
+			id: 'admin-id', userName: 'admin', displayName: 'Initial Administrator',
+			email: 'admin@example.test', mustChangePassword: false, roles: ['SuperAdmin']
+		}
+	}));
+	await page.route('**/api/projects/overview', (route) => route.fulfill({
+		json: {
+			projectCount: 0, endpointCount: 0, runsLast7Days: 0, runsPrevious7Days: 0,
+			averageScore: null, previousAverageScore: null, scoredRunsLast30Days: 0, failedFindingCount: 0,
+			scoreTrend: [], findings: [], recentRuns: [], recentProjects: []
+		}
+	}));
 	await page.route('**/api/auth/setup', (route) => route.fulfill({ status: 204 }));
 	await page.goto(setupUrl);
 	await fillAccount(page);
@@ -84,9 +92,11 @@ test('identical field errors render without a duplicate-key crash', async ({ pag
 	const pageErrors: string[] = [];
 	page.on('pageerror', (error) => pageErrors.push(error.message));
 	await page.route('**/api/auth/setup', (route) => route.fulfill({
-		status: 400, json: { errors: {
-			firstName: ['This field is required.'], lastName: ['This field is required.']
-		} }
+		status: 400, json: {
+			errors: {
+				firstName: ['This field is required.'], lastName: ['This field is required.']
+			}
+		}
 	}));
 	await page.goto(setupUrl);
 	await fillAccount(page);

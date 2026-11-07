@@ -56,10 +56,35 @@
     },
   ];
 
+  const isActive = (href: string) =>
+    href === "/"
+      ? page.url.pathname === "/"
+      : page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
+
   const current = $derived(
-    sections.flatMap((s) => s.links).find((l) => l.href === page.url.pathname)
-      ?.label,
+    sections.flatMap((s) => s.links).find((l) => isActive(l.href)),
   );
+
+  const badges: Record<string, number> = $derived({
+    "/projects": data.overview.projectCount,
+    "/findings": data.overview.failedFindingCount,
+  });
+
+  // Search, notifications and theme switching have no backend yet; shown disabled as placeholders.
+  const placeholders = [
+    {
+      label: "Search",
+      icon: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+    },
+    {
+      label: "Notifications",
+      icon: '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15zM10 20.5a2 2 0 004 0"/>',
+    },
+    {
+      label: "Theme",
+      icon: '<circle cx="12" cy="12" r="3.5"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
+    },
+  ];
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -84,7 +109,7 @@
           </p>
           <ul class="mt-3 space-y-1">
             {#each section.links as link (link.href)}
-              {@const active = link.href === page.url.pathname}
+              {@const active = isActive(link.href)}
               <li>
                 <a
                   href={link.href}
@@ -107,6 +132,12 @@
                     aria-hidden="true">{@html link.icon}</svg
                   >
                   {link.label}
+                  {#if badges[link.href]}
+                    <span
+                      class="ml-auto rounded bg-[#1e2433] px-1.5 text-[10px] text-slate-300"
+                      >{badges[link.href]}</span
+                    >
+                  {/if}
                 </a>
               </li>
             {/each}
@@ -135,11 +166,42 @@
     <header
       class="flex h-16 items-center justify-between border-b border-[#1a1f2b] px-6 lg:px-8"
     >
-      <p class="text-[13px] text-slate-500">
+      <nav
+        aria-label="Breadcrumb"
+        class="min-w-0 truncate text-[13px] text-slate-500"
+      >
         Workspace <span aria-hidden="true">/</span>
-        <span class="text-slate-200">{current}</span>
-      </p>
+        {#if page.data.project}
+          <a href={current?.href} class="hover:text-slate-200"
+            >{current?.label}</a
+          >
+          <span aria-hidden="true">/</span>
+          <span class="text-slate-200">{page.data.project.name}</span>
+        {:else}
+          <span class="text-slate-200">{current?.label}</span>
+        {/if}
+      </nav>
       <div class="flex items-center gap-4">
+        {#each placeholders as item (item.label)}
+          <button
+            type="button"
+            disabled
+            title="{item.label} is not available yet"
+            aria-label={item.label}
+            class="hidden rounded-md p-1.5 text-slate-600 sm:block"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              class="size-5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true">{@html item.icon}</svg
+            >
+          </button>
+        {/each}
         <button
           type="button"
           onclick={logout}
