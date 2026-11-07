@@ -54,6 +54,19 @@ export type Overview = {
 	}[];
 };
 
+export type ProjectListRow = {
+	id: string;
+	name: string;
+	description: string | null;
+	createdAt: string;
+	updatedAt: string;
+	environmentName: string | null;
+	baseUrl: string | null;
+	scenarioCount: number;
+	lastRunAt: string | null;
+	latestScore: number | null;
+};
+
 export type ProjectDetail = {
 	id: string;
 	name: string;

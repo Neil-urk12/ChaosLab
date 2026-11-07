@@ -78,6 +78,23 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task List_reports_inventory_columns_for_member_projects()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+
+        var row = Assert.Single((await client.GetFromJsonAsync<List<ListProjects.Row>>("/api/projects", Json))!);
+
+        Assert.Equal(seeded.ProjectId, row.Id);
+        Assert.Equal(("Prod-like test", "https://api.example.test"), (row.EnvironmentName, row.BaseUrl));
+        Assert.Equal(2, row.ScenarioCount);
+        Assert.Equal(78m, row.LatestScore);
+        Assert.NotNull(row.LastRunAt);
+    }
+
+    [Fact]
     public async Task New_project_has_empty_dashboards()
     {
         await using var database = await postgres.CreateDatabaseAsync();
@@ -96,6 +113,8 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Null(overview!.AverageScore);
         Assert.Equal(0, overview.FailedFindingCount);
         Assert.Null(Assert.Single(overview.RecentProjects).LatestScore);
+        var row = Assert.Single((await client.GetFromJsonAsync<List<ListProjects.Row>>("/api/projects", Json))!);
+        Assert.Equal((null, 0, null), (row.EnvironmentName, row.ScenarioCount, row.LatestScore));
     }
 
     private sealed record Seeded(
