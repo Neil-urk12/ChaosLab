@@ -3,7 +3,7 @@ SECRET_FILE       ?= secret.yaml
 KUBE_FILE         ?= backend-pod.yaml
 POD_NAME          ?= chaoslab-stack
 
-.PHONY: help build up start down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be
+.PHONY: help build up start down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be migrate
 
 help:
 	@echo "Available commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make restart       - Restart the pod stack"
 	@echo "  make dev-fe        - Run frontend"
 	@echo "  make dev-be        - Run backend"
+	@echo "  make migrate       - Apply EF migrations to the database in Backend/.env.local"
 	@echo "  make ps            - Check status of running pods and containers"
 	@echo "  make logs          - Follow logs from all containers in the pod"
 	@echo "  make logs-backend  - Follow backend container logs"
@@ -53,6 +54,9 @@ dev-fe:
 
 dev-be:
 	cd Backend && dotnet run
+
+migrate:
+	cd Backend && dotnet ef database update
 
 ps:
 	podman ps --pod
