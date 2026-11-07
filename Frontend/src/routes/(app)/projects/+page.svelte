@@ -17,11 +17,11 @@
 		'Not tested': { text: 'text-slate-500', pill: 'bg-slate-500/10 text-slate-400', bar: 'bg-slate-500' }
 	};
 	const tiles = [
-		'bg-[#1b1d3a] text-[#a5a6fd]',
-		'bg-[#0f2a33] text-sky-300',
-		'bg-[#0f2a20] text-emerald-300',
-		'bg-[#2a1520] text-rose-300',
-		'bg-[#2a1a2a] text-fuchsia-300'
+		'bg-accent-tint text-accent-ink',
+		'bg-chip-sky text-sky-300',
+		'bg-chip-emerald text-emerald-300',
+		'bg-chip-rose text-rose-300',
+		'bg-chip-fuchsia text-fuchsia-300'
 	];
 	// Stable per project, independent of sort order.
 	const tile = (id: string) => tiles[parseInt(id.slice(-4), 16) % tiles.length];
@@ -109,7 +109,7 @@
 	<button
 		type="button"
 		onclick={openCreate}
-		class="flex h-9 items-center gap-2 rounded-md bg-[#7b7dfb] px-4 text-[13px] font-semibold text-[#0b0d1a] hover:bg-[#8d8ffc]"
+		class="flex h-9 items-center gap-2 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent-hover"
 	>
 		<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 		Create project
@@ -126,20 +126,20 @@
 			oninput={() => (pageNo = 1)}
 			type="search"
 			placeholder="Search projects, APIs, or descriptions…"
-			class="block h-10 w-full rounded-md border border-[#1e2433] bg-[#0b0e15] pr-16 pl-9 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#7b7dfb] focus:ring-1 focus:ring-[#7b7dfb]"
+			class="block h-10 w-full rounded-md border border-line bg-panel pr-16 pl-9 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-accent focus:ring-1 focus:ring-accent"
 		/>
-		<kbd class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-[#2a3142] px-1.5 text-[10px] text-slate-500">{modKey} K</kbd>
+		<kbd class="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded border border-line-strong px-1.5 text-[10px] text-slate-500">{modKey} K</kbd>
 	</label>
 	<label>
 		<span class="sr-only">Filter by status</span>
-		<select bind:value={status} onchange={() => (pageNo = 1)} class="h-10 rounded-md border border-[#1e2433] bg-[#0b0e15] pr-9 text-[13px] text-slate-200 focus:border-[#7b7dfb] focus:ring-1 focus:ring-[#7b7dfb]">
+		<select bind:value={status} onchange={() => (pageNo = 1)} class="h-10 rounded-md border border-line bg-panel pr-9 text-[13px] text-slate-200 focus:border-accent focus:ring-1 focus:ring-accent">
 			<option value="all">All statuses</option>
 			{#each Object.keys(statusStyles) as option (option)}<option value={option}>{option}</option>{/each}
 		</select>
 	</label>
 	<label>
 		<span class="sr-only">Sort by</span>
-		<select bind:value={sort} class="h-10 rounded-md border border-[#1e2433] bg-[#0b0e15] pr-9 text-[13px] text-slate-200 focus:border-[#7b7dfb] focus:ring-1 focus:ring-[#7b7dfb]">
+		<select bind:value={sort} class="h-10 rounded-md border border-line bg-panel pr-9 text-[13px] text-slate-200 focus:border-accent focus:ring-1 focus:ring-accent">
 			<option value="updated">Recently updated</option>
 			<option value="name">Name</option>
 			<option value="score">Resilience score</option>
@@ -150,9 +150,9 @@
 <p class="mt-8 text-[11px] text-slate-500" aria-live="polite">{filtered.length} of {data.projects.length} projects</p>
 
 {#if visible.length}
-	<div class="mt-3 overflow-x-auto rounded-lg border border-[#1e2433]">
+	<div class="mt-3 overflow-x-auto rounded-lg border border-line">
 		<table class="w-full min-w-[60rem] text-left text-[13px]">
-			<thead class="border-b border-[#1a1f2b] text-[10px] tracking-wider text-slate-500 uppercase">
+			<thead class="border-b border-line-faint text-[10px] tracking-wider text-slate-500 uppercase">
 				<tr>
 					{#each ['Project', 'Environment', 'Scenarios', 'Last run', 'Resilience score', 'Status'] as heading (heading)}
 						<th scope="col" class="px-5 py-4 font-semibold">{heading}</th>
@@ -160,16 +160,16 @@
 					<th scope="col" class="px-5 py-4"><span class="sr-only">Actions</span></th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-[#1a1f2b]">
+			<tbody class="divide-y divide-line-faint">
 				{#each visible as project (project.id)}
 					{@const projectStatus = statusOf(project)}
 					{@const style = statusStyles[projectStatus]}
-					<tr class="hover:bg-[#0b0e15]">
+					<tr class="hover:bg-panel">
 						<td class="px-5 py-5">
 							<div class="flex items-center gap-3">
 								<span class="grid size-9 shrink-0 place-items-center rounded-md font-mono text-xs {tile(project.id)}" aria-hidden="true">&lt;/&gt;</span>
 								<div class="min-w-0">
-									<a href="/projects/{project.id}" class="block truncate font-semibold hover:text-white">{project.name}</a>
+									<a href="/projects/{project.id}" class="block truncate font-semibold hover:text-strong">{project.name}</a>
 									{#if project.description}<p class="truncate text-[11px] text-slate-400">{project.description}</p>{/if}
 									{#if project.baseUrl}<p class="truncate font-mono text-[10px] text-slate-500">{project.baseUrl.replace(/^https?:\/\//, '')}</p>{/if}
 								</div>
@@ -185,7 +185,7 @@
 						<td class="px-5 py-5">
 							<span class="flex items-center gap-3">
 								<span class="w-16 font-semibold {style.text}">{score(project.latestScore)}{#if project.latestScore != null}<span class="ml-0.5">/100</span>{/if}</span>
-								<span class="h-1 w-12 overflow-hidden rounded-full bg-[#1e2433]" aria-hidden="true">
+								<span class="h-1 w-12 overflow-hidden rounded-full bg-line" aria-hidden="true">
 									<span class="block h-full rounded-full {style.bar}" style:width="{project.latestScore ?? 0}%"></span>
 								</span>
 							</span>
@@ -207,20 +207,20 @@
 	<div class="mt-6 flex items-center justify-between text-[11px] text-slate-500">
 		<p>Showing {visible.length} item{visible.length === 1 ? '' : 's'}</p>
 		<nav aria-label="Pagination" class="flex gap-2">
-			<button type="button" aria-label="Previous page" disabled={current === 1} onclick={() => (pageNo = current - 1)} class="grid size-8 place-items-center rounded-md border border-[#1e2433] hover:text-slate-200 disabled:opacity-40">‹</button>
+			<button type="button" aria-label="Previous page" disabled={current === 1} onclick={() => (pageNo = current - 1)} class="grid size-8 place-items-center rounded-md border border-line hover:text-slate-200 disabled:opacity-40">‹</button>
 			{#each { length: pageCount }, i (i)}
 				<button
 					type="button"
 					aria-current={i + 1 === current ? 'page' : undefined}
 					onclick={() => (pageNo = i + 1)}
-					class={['grid size-8 place-items-center rounded-md border', i + 1 === current ? 'border-[#2a3142] bg-[#0d111a] text-slate-100' : 'border-[#1e2433] hover:text-slate-200']}
+					class={['grid size-8 place-items-center rounded-md border', i + 1 === current ? 'border-line-strong bg-field text-slate-100' : 'border-line hover:text-slate-200']}
 				>{i + 1}</button>
 			{/each}
-			<button type="button" aria-label="Next page" disabled={current === pageCount} onclick={() => (pageNo = current + 1)} class="grid size-8 place-items-center rounded-md border border-[#1e2433] hover:text-slate-200 disabled:opacity-40">›</button>
+			<button type="button" aria-label="Next page" disabled={current === pageCount} onclick={() => (pageNo = current + 1)} class="grid size-8 place-items-center rounded-md border border-line hover:text-slate-200 disabled:opacity-40">›</button>
 		</nav>
 	</div>
 {:else}
-	<p class="mt-3 grid min-h-40 place-items-center rounded-lg border border-dashed border-[#1e2433] px-4 text-center text-xs text-slate-500">
+	<p class="mt-3 grid min-h-40 place-items-center rounded-lg border border-dashed border-line px-4 text-center text-xs text-slate-500">
 		{data.projects.length ? 'No projects match your search or filters.' : 'No projects yet. Create one to import an OpenAPI spec.'}
 	</p>
 {/if}
@@ -228,7 +228,7 @@
 <dialog
 	bind:this={dialog}
 	aria-labelledby="create-title"
-	class="m-auto w-full max-w-md rounded-lg border border-[#1e2433] bg-[#07090e] p-6 text-slate-100 backdrop:bg-black/60"
+	class="m-auto w-full max-w-md rounded-lg border border-line bg-canvas p-6 text-slate-100 backdrop:bg-black/60"
 >
 	<h2 id="create-title" class="text-lg font-semibold">Create project</h2>
 	<p class="mt-1 text-xs text-slate-400">You'll be the project owner. Import an OpenAPI spec next.</p>
@@ -243,8 +243,8 @@
 		</div>
 		{#if createError}<p class="text-xs text-rose-400" role="alert">{createError}</p>{/if}
 		<div class="flex justify-end gap-3">
-			<button type="button" onclick={() => dialog.close()} class="h-9 rounded-md border border-[#2a3142] px-4 text-[13px] hover:bg-[#0d111a]">Cancel</button>
-			<button type="submit" disabled={creating} class="h-9 rounded-md bg-[#7b7dfb] px-4 text-[13px] font-semibold text-[#0b0d1a] hover:bg-[#8d8ffc] disabled:opacity-60">
+			<button type="button" onclick={() => dialog.close()} class="h-9 rounded-md border border-line-strong px-4 text-[13px] hover:bg-field">Cancel</button>
+			<button type="submit" disabled={creating} class="h-9 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60">
 				{creating ? 'Creating…' : 'Create project'}
 			</button>
 		</div>

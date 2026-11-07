@@ -89,7 +89,7 @@
 </form>
 
 <p
-	class="mt-6 border-t border-[#1a1f2b] pt-5 text-center text-[11px] text-slate-500"
+	class="mt-6 border-t border-line-faint pt-5 text-center text-[11px] text-slate-500"
 >
 	Need access? Contact your instance administrator.
 </p>

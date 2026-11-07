@@ -66,7 +66,7 @@
 	<div class="flex items-start justify-between gap-4">
 		<div class="min-w-0">
 			<h2 class="flex items-center gap-2 text-[15px] font-semibold">
-				<svg viewBox="0 0 24 24" class="size-4 text-[#a5a6fd]" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html icon}</svg>
+				<svg viewBox="0 0 24 24" class="size-4 text-accent-ink" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{@html icon}</svg>
 				{title}
 			</h2>
 			<p class="mt-1 text-xs text-slate-500">{subtitle}</p>
@@ -78,20 +78,20 @@
 {/snippet}
 
 {#snippet empty(message: string)}
-	<p class="grid min-h-32 flex-1 place-items-center rounded-md border border-dashed border-[#1e2433] px-4 text-center text-xs text-slate-500">
+	<p class="grid min-h-32 flex-1 place-items-center rounded-md border border-dashed border-line px-4 text-center text-xs text-slate-500">
 		{message}
 	</p>
 {/snippet}
 
 <header class="flex flex-wrap items-start justify-between gap-6">
 	<div class="flex min-w-0 gap-4">
-		<span class="grid size-9 shrink-0 place-items-center rounded-md bg-[#1b1d3a] font-mono text-xs text-[#a5a6fd]" aria-hidden="true">&lt;/&gt;</span>
+		<span class="grid size-9 shrink-0 place-items-center rounded-md bg-accent-tint font-mono text-xs text-accent-ink" aria-hidden="true">&lt;/&gt;</span>
 		<div class="min-w-0">
 			<p class="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Project</p>
 			<div class="mt-1 flex flex-wrap items-center gap-4">
 				<h1 class="text-3xl font-bold tracking-tight">{project.name}</h1>
 				{#if project.defaultEnvironment}
-					<span class="rounded-md bg-[#1b1d3a] px-3 py-1 text-[11px] text-[#c3c4fe]">{project.defaultEnvironment.name}</span>
+					<span class="rounded-md bg-accent-tint px-3 py-1 text-[11px] text-accent-ink-strong">{project.defaultEnvironment.name}</span>
 				{/if}
 			</div>
 			<p class="mt-3 flex items-center gap-3 text-[13px]">
@@ -110,20 +110,20 @@
 	<div class="flex items-center gap-6">
 		<div class="text-right">
 			<p class="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Latest resilience score</p>
-			<p class="mt-1 text-3xl font-bold text-[#a5a6fd]">{score(latest?.score)}<span class="ml-1 text-sm font-normal text-slate-500">/100</span></p>
+			<p class="mt-1 text-3xl font-bold text-accent-ink">{score(latest?.score)}<span class="ml-1 text-sm font-normal text-slate-500">/100</span></p>
 		</div>
-		<button type="button" disabled title="Running tests is not available yet" class="flex h-10 items-center gap-2 rounded-md bg-[#7b7dfb]/50 px-6 text-[13px] font-semibold text-[#0b0d1a]">
+		<button type="button" disabled title="Running tests is not available yet" class="flex h-10 items-center gap-2 rounded-md bg-accent/50 px-6 text-[13px] font-semibold text-on-accent">
 			<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
 			Run Test
 		</button>
-		<button type="button" disabled title="Project actions are not available yet" aria-label="Project actions" class="grid size-10 place-items-center rounded-md border border-[#2a3142] text-slate-600">⋮</button>
+		<button type="button" disabled title="Project actions are not available yet" aria-label="Project actions" class="grid size-10 place-items-center rounded-md border border-line-strong text-slate-600">⋮</button>
 	</div>
 </header>
 
-<nav aria-label="Project sections" class="mt-8 flex gap-8 overflow-x-auto border-b border-[#1e2433] text-[13px]">
+<nav aria-label="Project sections" class="mt-8 flex gap-8 overflow-x-auto border-b border-line text-[13px]">
 	{#each tabs as tab (tab)}
 		{#if tab === 'Overview'}
-			<span aria-current="page" class="shrink-0 border-b-2 border-[#7b7dfb] pb-3 font-semibold text-[#c3c4fe]">{tab}</span>
+			<span aria-current="page" class="shrink-0 border-b-2 border-accent pb-3 font-semibold text-accent-ink-strong">{tab}</span>
 		{:else}
 			<span class="flex shrink-0 items-center gap-2 pb-3 text-slate-500" title="Not available yet">
 				{tab}
@@ -135,7 +135,7 @@
 	{/each}
 </nav>
 
-<dl class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[#1e2433] bg-[#1e2433] lg:grid-cols-5">
+<dl class="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-5">
 	{#each [
 		{ label: 'OpenAPI endpoints', value: project.endpointCount, note: 'In the imported specification' },
 		{ label: 'Failure scenarios available', value: project.scenarioCount, note: 'Ready for your next test' },
@@ -143,7 +143,7 @@
 		{ label: 'Open findings', value: project.failedFindingCount, note: 'From the latest run', alert: project.failedFindingCount > 0 },
 		{ label: 'Team members', value: project.members.length, note: 'Working on this project' }
 	] as stat (stat.label)}
-		<div class="bg-[#07090e] p-5 first:col-span-2 lg:first:col-span-1">
+		<div class="bg-canvas p-5 first:col-span-2 lg:first:col-span-1">
 			<dt class="text-xs text-slate-400">{stat.label}</dt>
 			<dd class="mt-3 text-2xl font-semibold {stat.alert ? 'text-rose-400' : ''}">{stat.value}</dd>
 			<dd class="mt-2 text-[11px] {stat.alert ? 'text-rose-400' : 'text-slate-500'}">{stat.alert ? 'Require attention' : stat.note}</dd>
@@ -152,7 +152,7 @@
 </dl>
 
 <div class="mt-6 grid gap-6 lg:grid-cols-[3fr_2fr]">
-	<section class="flex flex-col gap-6 rounded-lg border border-[#1e2433] p-6">
+	<section class="flex flex-col gap-6 rounded-lg border border-line p-6">
 		{@render panelHeader(
 			'Latest resilience score',
 			latest ? `Completed ${dateTime(latest.completedAt)}` : 'No scored test runs yet',
@@ -183,16 +183,16 @@
 				</div>
 				{#if latest.previousScore != null}
 					<div class="w-full space-y-3 text-[11px] text-slate-400 sm:w-52">
-						{#each [{ label: 'Previous', value: latest.previousScore, color: 'bg-slate-500' }, { label: 'Latest', value: latest.score, color: 'bg-[#7b7dfb]' }] as bar (bar.label)}
+						{#each [{ label: 'Previous', value: latest.previousScore, color: 'bg-slate-500' }, { label: 'Latest', value: latest.score, color: 'bg-accent' }] as bar (bar.label)}
 							<div>
 								<p class="flex justify-between"><span>{bar.label}</span><span>{score(bar.value)}</span></p>
-								<span class="mt-1 block h-1 rounded-full bg-[#1e2433]"><span class="block h-full rounded-full {bar.color}" style:width="{bar.value}%"></span></span>
+								<span class="mt-1 block h-1 rounded-full bg-line"><span class="block h-full rounded-full {bar.color}" style:width="{bar.value}%"></span></span>
 							</div>
 						{/each}
 					</div>
 				{/if}
 			</div>
-			<div class="border-t border-[#1e2433] pt-5">
+			<div class="border-t border-line pt-5">
 				<p class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">Resilience breakdown</p>
 				<dl class="mt-4 grid gap-x-8 gap-y-5 sm:grid-cols-2">
 					{#each breakdown as item (item.label)}
@@ -201,8 +201,8 @@
 								<dt class="text-slate-300">{item.label}</dt>
 								<dd class="font-semibold {item.value != null && item.value < 70 ? 'text-amber-300' : ''}">{score(item.value)}</dd>
 							</div>
-							<span class="mt-2 block h-1 rounded-full bg-[#1e2433]">
-								<span class="block h-full rounded-full {item.value != null && item.value < 70 ? 'bg-amber-400' : 'bg-[#7b7dfb]'}" style:width="{item.value ?? 0}%"></span>
+							<span class="mt-2 block h-1 rounded-full bg-line">
+								<span class="block h-full rounded-full {item.value != null && item.value < 70 ? 'bg-amber-400' : 'bg-accent'}" style:width="{item.value ?? 0}%"></span>
 							</span>
 						</div>
 					{/each}
@@ -213,10 +213,10 @@
 		{/if}
 	</section>
 
-	<section class="flex flex-col gap-6 rounded-lg border border-[#1e2433] p-6">
+	<section class="flex flex-col gap-6 rounded-lg border border-line p-6">
 		{@render panelHeader('Recent findings', 'Prioritize issues from the latest run.', '<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>', 'View all')}
 		{#if project.findings.length}
-			<ul class="-mt-2 divide-y divide-[#1a1f2b]">
+			<ul class="-mt-2 divide-y divide-line-faint">
 				{#each project.findings as finding (finding.id)}
 					<li class="py-4">
 						<p class="flex flex-wrap items-center gap-3 text-[13px]">
@@ -235,19 +235,19 @@
 	</section>
 </div>
 
-<section class="mt-6 flex flex-col gap-6 rounded-lg border border-[#1e2433] p-6">
+<section class="mt-6 flex flex-col gap-6 rounded-lg border border-line p-6">
 	{@render panelHeader('Recent test runs', 'Execution history for this API project', '<path d="M7 5v14l11-7z"/>', 'View all runs')}
 	{#if project.recentRuns.length}
 		<div class="-mx-6 overflow-x-auto">
 			<table class="w-full min-w-[52rem] text-left text-[13px]">
-				<thead class="border-y border-[#1a1f2b] text-[10px] tracking-wider text-slate-500 uppercase">
+				<thead class="border-y border-line-faint text-[10px] tracking-wider text-slate-500 uppercase">
 					<tr>
 						{#each ['Run ID', 'Environment', 'Started by', 'Date', 'Duration', 'Scenarios', 'Result', 'Score'] as heading (heading)}
 							<th scope="col" class="px-6 py-3 font-semibold last:text-right">{heading}</th>
 						{/each}
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-[#1a1f2b]">
+				<tbody class="divide-y divide-line-faint">
 					{#each project.recentRuns as run (run.id)}
 						{@const [resultLabel, resultClass] = result(run)}
 						<tr>
@@ -270,7 +270,7 @@
 </section>
 
 <div class="mt-6 grid gap-6 lg:grid-cols-[3fr_2fr]">
-	<section class="flex flex-col gap-6 rounded-lg border border-[#1e2433] p-6">
+	<section class="flex flex-col gap-6 rounded-lg border border-line p-6">
 		{@render panelHeader(
 			'API specification',
 			project.spec ? 'The active specification used for scenario generation.' : 'No specification imported yet.',
@@ -291,16 +291,16 @@
 					<dd class="mt-2 text-lg">{dateTime(project.spec.importedAt)}</dd>
 				</div>
 			</dl>
-			<div class="flex items-center justify-between gap-4 border-t border-[#1e2433] pt-5 text-[13px]">
+			<div class="flex items-center justify-between gap-4 border-t border-line pt-5 text-[13px]">
 				<span class="text-slate-500" title="Specification validation results are not stored yet">Validation {PLACEHOLDER}</span>
-				<button type="button" disabled title="Not available yet" class="rounded-md border border-[#2a3142] px-4 py-2 text-xs text-slate-500">View specification →</button>
+				<button type="button" disabled title="Not available yet" class="rounded-md border border-line-strong px-4 py-2 text-xs text-slate-500">View specification →</button>
 			</div>
 		{:else}
 			{@render empty('Import an OpenAPI 3.x specification to generate failure scenarios.')}
 		{/if}
 	</section>
 
-	<section class="flex flex-col gap-6 rounded-lg border border-[#1e2433] p-6">
+	<section class="flex flex-col gap-6 rounded-lg border border-line p-6">
 		{@render panelHeader(
 			'Project team',
 			`${project.members.length} member${project.members.length === 1 ? ' has' : 's have'} access to ${project.name}.`,
@@ -310,7 +310,7 @@
 		<div class="flex items-center gap-4">
 			<div class="flex -space-x-2">
 				{#each project.members.slice(0, 4) as member (member.userId)}
-					<span class="grid size-9 place-items-center rounded-full border-2 border-[#07090e] bg-[#1b1d3a] text-[11px] font-semibold text-[#a5a6fd]" title={member.displayName}>{initials(member.displayName)}</span>
+					<span class="grid size-9 place-items-center rounded-full border-2 border-canvas bg-accent-tint text-[11px] font-semibold text-accent-ink" title={member.displayName}>{initials(member.displayName)}</span>
 				{/each}
 			</div>
 			<div class="min-w-0">
@@ -319,10 +319,10 @@
 			</div>
 		</div>
 		{#if owner}
-			<div class="border-t border-[#1e2433] pt-5">
+			<div class="border-t border-line pt-5">
 				<p class="flex items-center justify-between text-[13px]">
 					{owner.displayName}
-					<span class="rounded bg-[#1b1d3a] px-2 py-0.5 text-[11px] text-[#c3c4fe]">Owner</span>
+					<span class="rounded bg-accent-tint px-2 py-0.5 text-[11px] text-accent-ink-strong">Owner</span>
 				</p>
 				{#if others.length}
 					<p class="mt-2 text-[11px] text-slate-500">{others.map((m) => m.displayName).join(' · ')}</p>

@@ -2,11 +2,81 @@
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
 
+/* Semantic surfaces. Dark values here; light values under [data-theme='light'] below. */
+@theme {
+	--color-canvas: #07090e;
+	--color-panel: #0b0e15;
+	--color-field: #0d111a;
+	--color-line-faint: #1a1f2b;
+	--color-line: #1e2433;
+	--color-line-strong: #2a3142;
+	--color-strong: #ffffff;
+	--color-accent: #7b7dfb;
+	--color-accent-hover: #8d8ffc;
+	--color-accent-ink: #a5a6fd;
+	--color-accent-ink-strong: #c3c4fe;
+	--color-accent-tint: #1b1d3a;
+	--color-on-accent: #0b0d1a;
+	--color-danger-panel: #0f0a0e;
+	--color-danger-line: #3a1d27;
+	--color-danger-divide: #2a1a22;
+	--color-chip-sky: #0f2a33;
+	--color-chip-emerald: #0f2a20;
+	--color-chip-rose: #2a1520;
+	--color-chip-fuchsia: #2a1a2a;
+}
+
+:root {
+	color-scheme: dark;
+}
+
+/* Cool porcelain: the same instrument panel in daylight, periwinkle signal deepened for contrast. */
+:root[data-theme='light'] {
+	color-scheme: light;
+	--color-canvas: #f3f4f8;
+	--color-panel: #ffffff;
+	--color-field: #ffffff;
+	--color-line-faint: #e4e7ee;
+	--color-line: #d7dbe5;
+	--color-line-strong: #bcc2cf;
+	--color-strong: #07090e;
+	--color-accent: #4f50d6;
+	--color-accent-hover: #4243bf;
+	--color-accent-ink: #4546c4;
+	--color-accent-ink-strong: #34359e;
+	--color-accent-tint: #e7e7fb;
+	--color-on-accent: #ffffff;
+	--color-danger-panel: #fdf4f6;
+	--color-danger-line: #f1cbd5;
+	--color-danger-divide: #f6dce3;
+	--color-chip-sky: #e0f1f9;
+	--color-chip-emerald: #ddf3e8;
+	--color-chip-rose: #fbe3e9;
+	--color-chip-fuchsia: #f6e2f6;
+
+	/* shortcut: pages use dark-tuned shades (slate-100 = body text, rose-300 = error text), so light mode
+	   re-points those shades instead of editing every class. Move to semantic text tokens if this grows. */
+	--color-slate-100: #121624;
+	--color-slate-200: #222838;
+	--color-slate-300: #384053;
+	--color-slate-400: #4f586b;
+	--color-slate-500: #646d80;
+	--color-slate-600: #9aa1b0;
+	--color-rose-300: #be123c;
+	--color-rose-400: #e11d48;
+	--color-emerald-300: #047857;
+	--color-emerald-400: #059669;
+	--color-amber-300: #b45309;
+	--color-amber-400: #d97706;
+	--color-sky-300: #0369a1;
+	--color-fuchsia-300: #a21caf;
+}
+
 @layer components {
 	.auth-input {
-		@apply block h-11 w-full rounded-md border border-[#1e2433] bg-[#0d111a] px-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#7b7dfb] focus:ring-1 focus:ring-[#7b7dfb];
+		@apply block h-11 w-full rounded-md border border-line bg-field px-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-accent focus:ring-1 focus:ring-accent;
 	}
 	.auth-submit {
-		@apply flex h-10 w-full items-center justify-center gap-8 rounded-md bg-[#7b7dfb] text-[13px] font-semibold text-[#0b0d1a] hover:bg-[#8d8ffc] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7b7dfb];
+		@apply flex h-10 w-full items-center justify-center gap-8 rounded-md bg-accent text-[13px] font-semibold text-on-accent hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent;
 	}
 }

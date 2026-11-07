@@ -32,7 +32,7 @@
 		onclick={() => (visible = !visible)}
 		aria-label={visible ? 'Hide password' : 'Show password'}
 		aria-pressed={visible}
-		class="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-slate-500 hover:text-slate-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#7b7dfb]"
+		class="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-slate-500 hover:text-slate-300 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
 	>
 		<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
 			<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />

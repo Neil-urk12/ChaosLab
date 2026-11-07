@@ -70,7 +70,7 @@
     "/findings": data.overview.failedFindingCount,
   });
 
-  // Search, notifications and theme switching have no backend yet; shown disabled as placeholders.
+  // Search and notifications have no backend yet; shown disabled as placeholders.
   const placeholders = [
     {
       label: "Search",
@@ -80,11 +80,17 @@
       label: "Notifications",
       icon: '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15zM10 20.5a2 2 0 004 0"/>',
     },
-    {
-      label: "Theme",
-      icon: '<circle cx="12" cy="12" r="3.5"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
-    },
   ];
+
+  // app.html sets the initial theme before paint; this only flips and remembers it.
+  let theme = $state(document.documentElement.dataset.theme ?? "dark");
+  function toggleTheme() {
+    theme = theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {}
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -93,10 +99,10 @@
 </script>
 
 <div
-  class="flex min-h-screen bg-[#07090e] font-['Inter_Variable',system-ui,sans-serif] text-slate-100"
+  class="flex min-h-screen bg-canvas font-['Inter_Variable',system-ui,sans-serif] text-slate-100"
 >
   <aside
-    class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-[#1a1f2b] px-3 py-6 lg:flex"
+    class="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line-faint px-3 py-6 lg:flex"
   >
     <a href="/" class="px-3 text-lg font-bold tracking-tight">Chaos Lab</a>
     <nav aria-label="Main" class="mt-10 space-y-8">
@@ -117,8 +123,8 @@
                   class={[
                     "flex items-center gap-3 rounded-md px-3 py-2 text-[13px]",
                     active
-                      ? "bg-[#1b1d3a] text-slate-100"
-                      : "text-slate-400 hover:bg-[#0d111a] hover:text-slate-200",
+                      ? "bg-accent-tint text-slate-100"
+                      : "text-slate-400 hover:bg-field hover:text-slate-200",
                   ]}
                 >
                   <svg
@@ -134,7 +140,7 @@
                   {link.label}
                   {#if badges[link.href]}
                     <span
-                      class="ml-auto rounded bg-[#1e2433] px-1.5 text-[10px] text-slate-300"
+                      class="ml-auto rounded bg-line px-1.5 text-[10px] text-slate-300"
                       >{badges[link.href]}</span
                     >
                   {/if}
@@ -147,10 +153,10 @@
     </nav>
 
     <div
-      class="mt-auto flex items-center gap-3 rounded-lg border border-[#1e2433] px-3 py-3"
+      class="mt-auto flex items-center gap-3 rounded-lg border border-line px-3 py-3"
     >
       <span
-        class="grid size-8 shrink-0 place-items-center rounded-full bg-[#1b1d3a] text-[11px] font-semibold text-[#a5a6fd]"
+        class="grid size-8 shrink-0 place-items-center rounded-full bg-accent-tint text-[11px] font-semibold text-accent-ink"
         aria-hidden="true">{initials}</span
       >
       <div class="min-w-0">
@@ -164,7 +170,7 @@
 
   <div class="flex min-w-0 flex-1 flex-col">
     <header
-      class="flex h-16 items-center justify-between border-b border-[#1a1f2b] px-6 lg:px-8"
+      class="flex h-16 items-center justify-between border-b border-line-faint px-6 lg:px-8"
     >
       <nav
         aria-label="Breadcrumb"
@@ -204,6 +210,32 @@
         {/each}
         <button
           type="button"
+          onclick={toggleTheme}
+          class="rounded-md p-1.5 text-slate-400 hover:text-slate-100"
+          aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+          title={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            class="size-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            {#if theme === "light"}
+              <path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" />
+            {:else}
+              <circle cx="12" cy="12" r="3.5" /><path
+                d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"
+              />
+            {/if}
+          </svg>
+        </button>
+        <button
+          type="button"
           onclick={logout}
           class="rounded-md p-1.5 text-slate-400 hover:text-slate-100"
           aria-label="Sign out"
@@ -224,7 +256,7 @@
           </svg>
         </button>
         <span
-          class="grid size-8 place-items-center rounded-full bg-[#1b1d3a] text-[11px] font-semibold text-[#a5a6fd]"
+          class="grid size-8 place-items-center rounded-full bg-accent-tint text-[11px] font-semibold text-accent-ink"
           title={data.me.displayName}>{initials}</span
         >
       </div>

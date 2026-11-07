@@ -108,7 +108,7 @@
 </form>
 
 <div
-	class="mt-6 space-y-2 border-t border-[#1a1f2b] pt-5 text-center text-[11px] text-slate-500"
+	class="mt-6 space-y-2 border-t border-line-faint pt-5 text-center text-[11px] text-slate-500"
 >
 	<p class="text-slate-400">Your administrator requires a password change.</p>
 </div>

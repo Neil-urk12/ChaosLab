@@ -9,13 +9,13 @@
 
 <div class="relative grid shrink-0 place-items-center" style:width="{size}px" style:height="{size}px">
 	<svg viewBox="0 0 100 100" class="absolute inset-0 -rotate-90" aria-hidden="true">
-		<circle cx="50" cy="50" r="42" fill="none" stroke="#1e2433" stroke-width="7" />
+		<circle cx="50" cy="50" r="42" fill="none" stroke="var(--color-line)" stroke-width="7" />
 		<circle
 			cx="50"
 			cy="50"
 			r="42"
 			fill="none"
-			stroke="#7b7dfb"
+			stroke="var(--color-accent)"
 			stroke-width="7"
 			stroke-linecap="round"
 			stroke-dasharray="{filled} {circumference}"
