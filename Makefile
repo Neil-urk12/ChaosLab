@@ -3,12 +3,13 @@ SECRET_FILE       ?= secret.yaml
 KUBE_FILE         ?= backend-pod.yaml
 POD_NAME          ?= chaoslab-stack
 
-.PHONY: help build up down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be
+.PHONY: help build up start down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be
 
 help:
 	@echo "Available commands:"
 	@echo "  make build         - Build the backend container image (IMAGE_NAME=$(IMAGE_NAME))"
 	@echo "  make up            - Start the pod stack with secrets and dynamic image substitution"
+	@echo "  make start         - Start with deployed db"
 	@echo "  make down          - Stop and remove the pod (preserves database data)"
 	@echo "  make restart       - Restart the pod stack"
 	@echo "  make dev-fe        - Run frontend"
@@ -31,6 +32,11 @@ build:
 
 up: secret-init
 	(cat $(SECRET_FILE) && echo "---" && envsubst '$${IMAGE_NAME}' < $(KUBE_FILE)) | podman play kube -
+
+start:
+	@echo "Starting backend (http://localhost:5274) and frontend (http://localhost:5173) against the deployed database..."
+	@echo "Press Ctrl+C to stop both."
+	@$(MAKE) --no-print-directory -j2 dev-be dev-fe
 
 down:
 	@if [ -f $(SECRET_FILE) ]; then \
