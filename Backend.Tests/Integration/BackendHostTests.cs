@@ -23,6 +23,7 @@ public sealed class BackendHostTests(PostgreSqlFixture postgres)
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(database.ConnectionString, context.Database.GetConnectionString());
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
-        Assert.Equal("20261004013735_InitialCreate", Assert.Single(await context.Database.GetAppliedMigrationsAsync()));
+        Assert.Equal(context.Database.GetMigrations(), await context.Database.GetAppliedMigrationsAsync());
+        Assert.Contains("20261004013735_InitialCreate", context.Database.GetMigrations());
     }
 }

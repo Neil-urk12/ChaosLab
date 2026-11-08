@@ -70,6 +70,9 @@ namespace Backend.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<int>("Testing")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ApiSpecId", "Path", "HttpMethod")

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Backend.Domain.Enums;
 
 namespace Backend.Domain.Entities;
 
@@ -19,6 +20,8 @@ public class ApiEndpoint
     public JsonDocument Responses { get; set; } = null!;
     public JsonDocument? SecurityRequirements { get; set; }
     public bool IsDeprecated { get; set; }
+    // Carried over to the matching endpoint (same path and method) when the spec is re-imported.
+    public EndpointTesting Testing { get; set; }
 
     // Metadata
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

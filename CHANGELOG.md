@@ -87,6 +87,34 @@ released yet, so history is grouped by date.
 - `PROJECT.md`, the full product specification, which merges the earlier project
   notes and context export with the current state of the repository and collects
   undecided items in section 25.
+- OpenAPI specification import: `POST /api/projects/{id}/spec` accepts a pasted
+  document, an uploaded file, or a URL the backend fetches once (15-second timeout,
+  5 MB limit, at most 3 redirects, proxy environment variables ignored). Every
+  resolved address is checked at connect time, and link-local (including cloud
+  metadata), unspecified, and multicast addresses are refused, as are the AWS IPv6
+  and Alibaba Cloud metadata hosts and NAT64 forms of any blocked IPv4 address;
+  private and loopback hosts stay reachable because test targets usually live there. OpenAPI 3.x JSON and YAML are read with `Microsoft.OpenApi`, and
+  Swagger 2.0 is converted to 3.0. Unresolved local `$ref`s, undeclared path
+  parameters, and parser or validation errors block the import and come back as a
+  `422` validation report; OAuth2 and OpenID Connect schemes produce a warning. A
+  successful import replaces the active spec, and earlier versions stay for
+  historical runs. Viewers get `403`.
+- `GET /api/projects/{id}/spec` lists the active spec's endpoints with tag, effective
+  security, request body, response codes, scenario count, and testing choice, and
+  marks operations added or modified since the previous import along with the ones
+  removed. `GET /api/projects/{id}/spec/document` returns the original document as
+  plain text.
+- Per-endpoint testing choice (`Included`, `Excluded`, `NeverTest`) stored in the new
+  `ApiEndpoints.Testing` column (migration `AddEndpointTesting`), set through
+  `PATCH /api/projects/{id}/spec/endpoints/{endpointId}` and carried over to the
+  matching path and method on re-import.
+- API specification page at `/projects/[id]/spec` with import by paste, file upload
+  or drag-and-drop, or URL, a validation report that can be downloaded, the
+  discovered endpoints table with search, testing filters, and pagination, and a
+  summary of the last re-import. Viewers see the page read-only, without import,
+  re-import, or testing controls. The project header and tabs moved into a shared
+  `projects/[id]` layout, and the overview's "View specification" button now opens
+  the page.
 
 ### Changed
 

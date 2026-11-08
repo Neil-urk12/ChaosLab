@@ -88,3 +88,44 @@ export type ProjectDetail = {
 	findings: FindingRow[];
 	recentRuns: TestRunRow[];
 };
+
+// Backend/Features/ApiSpecs
+export type EndpointTesting = 'Included' | 'Excluded' | 'NeverTest';
+export type SpecSource = 'Paste' | 'FileUpload' | 'Url';
+
+export type SpecIssue = { severity: 'Error' | 'Warning'; location: string; message: string };
+
+export type SpecImportReport = {
+	filename: string | null;
+	openApiVersion: string | null;
+	operationCount: number;
+	issues: SpecIssue[];
+};
+
+export type SpecEndpoint = {
+	id: string;
+	httpMethod: string;
+	path: string;
+	operationId: string | null;
+	tag: string | null;
+	security: string[];
+	requestBody: string | null;
+	responses: string[];
+	scenarioCount: number;
+	testing: EndpointTesting;
+	change: 'New' | 'Modified' | null;
+};
+
+export type ApiSpecDetail = {
+	id: string;
+	title: string | null;
+	openApiVersion: string;
+	filename: string | null;
+	sourceType: SpecSource;
+	sourceUrl: string | null;
+	importedAt: string;
+	importedBy: string;
+	securitySchemes: { name: string; type: string; global: boolean }[];
+	endpoints: SpecEndpoint[];
+	changes: { added: number; modified: number; removed: string[] } | null;
+};

@@ -1,3 +1,4 @@
+using Backend.Features.ApiSpecs;
 using Backend.Features.Auth;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
@@ -29,6 +30,11 @@ builder.Services.AddOptions<BootstrapSetupOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<BootstrapSetupToken>();
+builder.Services.AddHttpClient(ImportSpec.FetchClient, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.MaxResponseContentBufferSize = SpecDocument.MaxBytes;
+}).ConfigurePrimaryHttpMessageHandler(ImportSpec.CreateFetchHandler);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -78,6 +84,7 @@ app.UseAuthorization();
 var api = app.MapGroup("/api");
 api.MapAuthEndpoints();
 api.MapProjectEndpoints();
+api.MapApiSpecEndpoints();
 
 app.Run();
 
