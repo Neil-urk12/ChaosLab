@@ -129,3 +129,91 @@ export type ApiSpecDetail = {
 	endpoints: SpecEndpoint[];
 	changes: { added: number; modified: number; removed: string[] } | null;
 };
+
+// Backend/Features/Scenarios
+export type ScenarioType =
+	| 'Baseline'
+	| 'Latency'
+	| 'ServerErrorStorm'
+	| 'Throttle429'
+	| 'TimeoutDrop'
+	| 'MalformedJson'
+	| 'EmptyResponse'
+	| 'SlowDrip'
+	| 'AuthExpiry'
+	| 'DnsFailure'
+	| 'DuplicateRequest';
+
+export type InvariantType =
+	| 'StatusCodeIn'
+	| 'FieldEquals'
+	| 'FieldNotBelow'
+	| 'MaxRecordsAfterDuplicates'
+	| 'MaxDurationMs'
+	| 'HeaderPresent';
+
+export type Invariant = {
+	type: InvariantType;
+	params: { codes?: number[]; path?: string; value?: string; min?: number; max?: number; ms?: number; name?: string };
+	readBack?: { method: 'GET'; path: string };
+};
+
+export type Scenario = {
+	id: string;
+	endpointId: string;
+	httpMethod: string;
+	path: string;
+	operationId: string | null;
+	type: ScenarioType;
+	parameters: Record<string, string | number>;
+	reason: string;
+	enabled: boolean;
+	invariants: Invariant[];
+};
+
+export type ScenarioList = { endpointCount: number; scenarios: Scenario[] };
+
+// Backend/Features/Environments
+export type EnvironmentKind = 'Development' | 'Test' | 'Staging' | 'ProductionMirror';
+export type AuthType = 'None' | 'Bearer' | 'ApiKey' | 'Basic';
+
+export type TargetSettings = {
+	id: string;
+	name: string;
+	baseUrl: string;
+	kind: EnvironmentKind;
+	requestTimeoutSeconds: number;
+	verifyTls: boolean;
+	authorizedBy: string | null;
+	authorizedAt: string | null;
+};
+
+export type Credential = {
+	authType: AuthType;
+	label: string | null;
+	hint: string | null;
+	username: string | null;
+	validatedAt: string | null;
+	valid: boolean | null;
+	validation: string | null;
+};
+
+export type SecurityScheme = {
+	name: string;
+	inSpec: boolean;
+	type: string;
+	httpScheme: string | null;
+	in: string | null;
+	parameterName: string | null;
+	operations: string[];
+	credential: Credential | null;
+};
+
+export type GlobalHeader = { id: string; name: string; value: string | null; secret: boolean; hint: string | null; appliesTo: string[] };
+
+export type EnvironmentSettings = {
+	target: TargetSettings | null;
+	specServers: string[];
+	schemes: SecurityScheme[];
+	headers: GlobalHeader[];
+};

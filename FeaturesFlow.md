@@ -143,7 +143,7 @@ The data model exists; the endpoints and screens do not.
 4. To remove: select a member, confirm, check the requester's permission, mark the membership removed, refresh the list.
 5. The permission matrix (what each role may do) is **[Open]**.
 
-### 2.9 API target configuration [Planned]
+### 2.9 API target configuration [Done]
 
 1. Open the project and select API configuration.
 2. Enter the base URL, environment label, and TLS verification setting. Validate the URL format.
@@ -171,7 +171,7 @@ The data model exists; the endpoints and screens do not.
 4. Display discovered endpoints.
 5. Let the user include or exclude endpoints from testing, and flag operations that must never be tested.
 
-### 2.12 Target API authentication configuration [Planned]
+### 2.12 Target API authentication configuration [Done]
 
 1. Read the security schemes declared in the specification.
 2. If none is required, continue to validation.
@@ -180,7 +180,7 @@ The data model exists; the endpoints and screens do not.
 5. Store them encrypted, apart from non-secret configuration. They are never shown in reports or logs.
 6. Send a validation request to the target. On failure, show the error and let the user update credentials. On success, mark the configuration validated.
 
-### 2.13 Chaos scenario generation [Planned]
+### 2.13 Chaos scenario generation [Done]
 
 1. The user selects Generate Scenarios after import and configuration.
 2. Analyze each endpoint (method, request body, response types, status codes, security, idempotency expectations).
@@ -191,7 +191,7 @@ The data model exists; the endpoints and screens do not.
 7. The design target is 100+ applicable scenarios for sufficiently large APIs; small APIs are never padded.
 8. Continue to invariants and test-run configuration.
 
-### 2.14 Developer invariants [Planned]
+### 2.14 Developer invariants [Partial]
 
 1. On a scenario, the user chooses Add invariant.
 2. Pick an assertion type and fill in its parameters. Examples: status code in a set, record count after duplicate requests at most N, a field never below a value, maximum duration, required header present. The final list of types is **[Open]**.

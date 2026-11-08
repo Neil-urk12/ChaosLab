@@ -16,7 +16,7 @@ public class ScenarioExecution
     // Execution-time snapshots preserve historical TestRuns when a generated scenario is edited or regenerated.
     public ScenarioType ScenarioType { get; set; }
     public JsonDocument Parameters { get; set; } = null!;
-    public string? DeveloperInvariant { get; set; }
+    public JsonDocument Invariants { get; set; } = JsonDocument.Parse("[]");
     public ScenarioExecutionStatus Status { get; set; } = ScenarioExecutionStatus.Queued;
     public ScenarioOutcome? Outcome { get; set; }
     public decimal? Score { get; set; }

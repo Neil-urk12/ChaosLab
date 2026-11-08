@@ -143,9 +143,9 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         };
         var endpoints = new[] { "/payments", "/payments/{id}", "/refunds" }
             .Select(path => Endpoint(spec.Id, path)).ToArray();
-        var scenarios = Enumerable.Range(0, 2).Select(_ => new ChaosScenario
+        var scenarios = new[] { ScenarioType.Latency, ScenarioType.TimeoutDrop }.Select(type => new ChaosScenario
         {
-            Id = Guid.NewGuid(), EndpointId = endpoints[0].Id, Parameters = JsonDocument.Parse("{}")
+            Id = Guid.NewGuid(), EndpointId = endpoints[0].Id, ScenarioType = type, Parameters = JsonDocument.Parse("{}")
         });
         var previous = Run(projectId, spec.Id, environment.Id, userId, now.AddDays(-2), 70);
         var latest = Run(projectId, spec.Id, environment.Id, userId, now.AddDays(-1), 78);

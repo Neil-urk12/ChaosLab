@@ -127,6 +127,7 @@ public static class ImportSpec
             // Another import for this project committed first.
             return TypedResults.Conflict();
         }
+        // Scenarios are not generated here: the user starts generation from the Scenarios page (FeaturesFlow §2.13).
         await transaction.CommitAsync(cancellationToken);
 
         return TypedResults.Created($"/api/projects/{id}/spec",

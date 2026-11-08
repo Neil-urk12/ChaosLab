@@ -14,6 +14,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ApiEndpoint> ApiEndpoints => Set<ApiEndpoint>();
     public DbSet<ApiEnvironment> ApiEnvironments => Set<ApiEnvironment>();
     public DbSet<AuthProfile> AuthProfiles => Set<AuthProfile>();
+    public DbSet<EnvironmentHeader> EnvironmentHeaders => Set<EnvironmentHeader>();
     public DbSet<ChaosScenario> ChaosScenarios => Set<ChaosScenario>();
     public DbSet<TestRun> TestRuns => Set<TestRun>();
     public DbSet<ScenarioExecution> ScenarioExecutions => Set<ScenarioExecution>();
@@ -85,8 +86,24 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.CreatedBy).WithMany()
                 .HasForeignKey(x => x.CreatedById).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.AuthorizationConfirmedBy).WithMany()
+                .HasForeignKey(x => x.AuthorizationConfirmedById).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.ProjectId, x.Name }).IsUnique();
             entity.HasIndex(x => x.ProjectId).IsUnique().HasFilter("\"IsDefault\" = TRUE");
+            entity.ToTable(table => table.HasCheckConstraint(
+                "CK_ApiEnvironments_RequestTimeoutSeconds", "\"RequestTimeoutSeconds\" BETWEEN 1 AND 300"));
+        });
+
+        builder.Entity<EnvironmentHeader>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(200);
+            entity.Property(x => x.Value).HasMaxLength(4096);
+            entity.Property(x => x.Hint).HasMaxLength(4);
+            // Headers are configuration, not run history, so they go with their environment.
+            entity.HasOne(x => x.Environment).WithMany(x => x.Headers)
+                .HasForeignKey(x => x.EnvironmentId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.EnvironmentId, x.Name }).IsUnique();
+            entity.Property(x => x.AppliesTo).HasColumnType("jsonb");
         });
 
         builder.Entity<AuthProfile>(entity =>
@@ -105,7 +122,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.HasOne(x => x.Endpoint).WithMany(x => x.ChaosScenarios)
                 .HasForeignKey(x => x.EndpointId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.Parameters).HasColumnType("jsonb");
+            entity.Property(x => x.Invariants).HasColumnType("jsonb");
+            entity.Property(x => x.Reason).HasMaxLength(500);
             entity.HasIndex(x => new { x.EndpointId, x.CreatedAt });
+            // The generator makes at most one scenario per fault type per endpoint.
+            entity.HasIndex(x => new { x.EndpointId, x.ScenarioType }).IsUnique();
         });
 
         builder.Entity<TestRun>(entity =>
@@ -148,6 +169,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasPrincipalKey(x => new { x.Id, x.EndpointId }).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(x => new { x.TestRunId, x.SequenceNo }).IsUnique();
             entity.Property(x => x.Parameters).HasColumnType("jsonb");
+            entity.Property(x => x.Invariants).HasColumnType("jsonb");
             entity.Property(x => x.Score).HasPrecision(5, 2);
             entity.ToTable(table =>
             {

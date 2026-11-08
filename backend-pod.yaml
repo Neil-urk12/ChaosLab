@@ -50,6 +50,13 @@ spec:
             secretKeyRef:
               name: chaoslab-secret
               key: connection-string
+        # Optional so older secret.yaml files still start; secret credentials and secret header values cannot be saved or used until it is set.
+        - name: Credentials__Key
+          valueFrom:
+            secretKeyRef:
+              name: chaoslab-secret
+              key: credentials-key
+              optional: true
       ports:
         - containerPort: 8080
           hostPort: 8080

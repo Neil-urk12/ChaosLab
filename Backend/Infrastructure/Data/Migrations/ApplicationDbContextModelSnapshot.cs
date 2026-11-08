@@ -87,6 +87,12 @@ namespace Backend.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("AuthorizationConfirmedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AuthorizationConfirmedById")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("BaseUrl")
                         .IsRequired()
                         .HasMaxLength(2048)
@@ -101,6 +107,9 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -109,6 +118,9 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("RequestTimeoutSeconds")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -116,6 +128,8 @@ namespace Backend.Infrastructure.Data.Migrations
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AuthorizationConfirmedById");
 
                     b.HasIndex("CreatedById");
 
@@ -126,7 +140,10 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.HasIndex("ProjectId", "Name")
                         .IsUnique();
 
-                    b.ToTable("ApiEnvironments");
+                    b.ToTable("ApiEnvironments", t =>
+                        {
+                            t.HasCheckConstraint("CK_ApiEnvironments_RequestTimeoutSeconds", "\"RequestTimeoutSeconds\" BETWEEN 1 AND 300");
+                        });
                 });
 
             modelBuilder.Entity("Backend.Domain.Entities.ApiSpec", b =>
@@ -240,11 +257,12 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("DeveloperInvariant")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("EndpointId")
                         .HasColumnType("uuid");
+
+                    b.Property<JsonDocument>("Invariants")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<bool>("IsDefaultEnabled")
                         .HasColumnType("boolean");
@@ -253,12 +271,20 @@ namespace Backend.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<int>("ScenarioType")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
 
                     b.HasIndex("EndpointId", "CreatedAt");
+
+                    b.HasIndex("EndpointId", "ScenarioType")
+                        .IsUnique();
 
                     b.ToTable("ChaosScenarios");
                 });
@@ -320,6 +346,46 @@ namespace Backend.Infrastructure.Data.Migrations
                         {
                             t.HasCheckConstraint("CK_EndpointResults_Scores", "\"RetryScore\" BETWEEN 0 AND 100 AND \"TimeoutScore\" BETWEEN 0 AND 100 AND \"CircuitBreakerScore\" BETWEEN 0 AND 100 AND \"FallbackScore\" BETWEEN 0 AND 100 AND \"IdempotencyScore\" BETWEEN 0 AND 100 AND \"OverallScore\" BETWEEN 0 AND 100");
                         });
+                });
+
+            modelBuilder.Entity("Backend.Domain.Entities.EnvironmentHeader", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<JsonDocument>("AppliesTo")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EnvironmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Hint")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<byte[]>("SecretCipherText")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("EnvironmentHeaders");
                 });
 
             modelBuilder.Entity("Backend.Domain.Entities.HttpObservation", b =>
@@ -606,14 +672,15 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("DeveloperInvariant")
-                        .HasColumnType("text");
-
                     b.Property<Guid>("EndpointId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("FailureReason")
                         .HasColumnType("text");
+
+                    b.Property<JsonDocument>("Invariants")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<int?>("Outcome")
                         .HasColumnType("integer");
@@ -977,6 +1044,11 @@ namespace Backend.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("Backend.Domain.Entities.ApiEnvironment", b =>
                 {
+                    b.HasOne("Backend.Domain.Entities.User", "AuthorizationConfirmedBy")
+                        .WithMany()
+                        .HasForeignKey("AuthorizationConfirmedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Backend.Domain.Entities.User", "CreatedBy")
                         .WithMany()
                         .HasForeignKey("CreatedById")
@@ -988,6 +1060,8 @@ namespace Backend.Infrastructure.Data.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AuthorizationConfirmedBy");
 
                     b.Navigation("CreatedBy");
 
@@ -1052,6 +1126,17 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Navigation("Endpoint");
 
                     b.Navigation("TestRun");
+                });
+
+            modelBuilder.Entity("Backend.Domain.Entities.EnvironmentHeader", b =>
+                {
+                    b.HasOne("Backend.Domain.Entities.ApiEnvironment", "Environment")
+                        .WithMany("Headers")
+                        .HasForeignKey("EnvironmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Environment");
                 });
 
             modelBuilder.Entity("Backend.Domain.Entities.HttpObservation", b =>
@@ -1309,6 +1394,8 @@ namespace Backend.Infrastructure.Data.Migrations
             modelBuilder.Entity("Backend.Domain.Entities.ApiEnvironment", b =>
                 {
                     b.Navigation("AuthProfiles");
+
+                    b.Navigation("Headers");
 
                     b.Navigation("TestRuns");
                 });

@@ -123,6 +123,9 @@ public static partial class SpecDocument
 
         foreach (var path in paths.EnumerateObject())
         {
+            // Other keys are x- extensions, not operations; as a path, "x-@evil.test" would move requests to another host.
+            if (!path.Name.StartsWith('/'))
+                continue;
             if (path.Name.Length > 1024)
             {
                 issues.Add(new(IssueSeverity.Error, $"paths.{path.Name[..64]}…", "Paths longer than 1024 characters are not supported."));
@@ -219,7 +222,7 @@ public static partial class SpecDocument
     }
 
     // Resolves a local JSON pointer reference ("#/components/schemas/X"); external references are not followed.
-    private static JsonElement? Resolve(JsonElement root, string? reference)
+    internal static JsonElement? Resolve(JsonElement root, string? reference)
     {
         if (reference is null || !reference.StartsWith("#"))
             return null;

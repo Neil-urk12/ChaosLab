@@ -129,7 +129,7 @@ public static class GetSpec
             spec.CreatedAt, spec.ImportedBy, schemes, rows, changes));
     }
 
-    private static List<string> SchemeNames(JsonElement requirements) =>
+    internal static List<string> SchemeNames(JsonElement requirements) =>
         requirements.ValueKind == JsonValueKind.Array
             ? requirements.EnumerateArray()
                 .Where(requirement => requirement.ValueKind == JsonValueKind.Object)

@@ -96,7 +96,9 @@ released yet, so history is grouped by date.
   private and loopback hosts stay reachable because test targets usually live there. OpenAPI 3.x JSON and YAML are read with `Microsoft.OpenApi`, and
   Swagger 2.0 is converted to 3.0. Unresolved local `$ref`s, undeclared path
   parameters, and parser or validation errors block the import and come back as a
-  `422` validation report; OAuth2 and OpenID Connect schemes produce a warning. A
+  `422` validation report; OAuth2 and OpenID Connect schemes produce a warning.
+  Keys under `paths` that do not start with `/`, such as `x-` extensions, are not
+  imported as operations, so a spec cannot point requests at another host. A
   successful import replaces the active spec, and earlier versions stay for
   historical runs. Viewers get `403`.
 - `GET /api/projects/{id}/spec` lists the active spec's endpoints with tag, effective
@@ -115,6 +117,65 @@ released yet, so history is grouped by date.
   re-import, or testing controls. The project header and tabs moved into a shared
   `projects/[id]` layout, and the overview's "View specification" button now opens
   the page.
+- Chaos scenario generation, started by the user. Importing a spec does not create
+  scenarios; `POST /api/projects/{id}/scenarios/generate` does. It adds at most one
+  scenario per applicable fault type for each endpoint, decided from its method,
+  response bodies and declared status codes, security, and an `Idempotency-Key`
+  header, and records why each one applies. After a re-import, generating carries
+  edits over from the latest earlier spec that had scenarios, matched by path,
+  method, and fault. Running it again re-applies the rules, keeping edits and only
+  removing scenarios that no longer apply and that no run has used; it returns `409`
+  when a simultaneous generation changed the same scenarios first.
+  Throttle scenarios are on by default only where the spec declares `429`. Slow drip
+  and dependency failure start disabled because their injectors are still proofs of
+  concept.
+- `GET /api/projects/{id}/scenarios` lists the scenarios of included endpoints, and
+  `PATCH /api/projects/{id}/scenarios/{scenarioId}` changes a scenario's default,
+  its parameters (validated against a fixed field list per fault type), or its
+  structured invariants: status code in set, field equals, field not below, record
+  count after duplicates (duplicate requests only, with a required read-back
+  request), maximum duration, and required header present. A read-back is an
+  optional `GET` path. A `null` entry in the invariants list is a validation error.
+- Scenarios page at `/projects/[id]/scenarios` with a Generate scenarios button
+  before the first generation (Regenerate afterwards), summary counts, fault filters,
+  search, per-scenario enable toggles, and a detail panel for parameters and
+  invariants. State-changing scenarios carry a test-data warning. Viewers see the
+  page read-only.
+- Target environment settings. `PUT /api/projects/{id}/environment` saves the
+  project's default target (base URL, environment label, request timeout of 1 to
+  300 seconds, TLS verification); the environment's name, shown in project lists and
+  run rows, follows the label on every save. It requires the caller to confirm that they own
+  or may test the API and that it is not production. The confirmation is recorded
+  with the user and time, and again whenever the base URL changes. Moving the target
+  to another scheme, host, or port clears every stored credential secret and deletes
+  secret headers, so secrets are never sent to a host they were not entered for.
+  `POST /api/projects/{id}/environment/check` tests reachability with the same
+  address guard as the spec fetch. Two first saves of the same target at once
+  return `409` instead of failing.
+- Target credentials per spec security scheme (Bearer, API key, Basic, or none)
+  under `/api/projects/{id}/environment/credentials/{scheme}`. Secrets are encrypted
+  with AES-256-GCM using the new `Credentials:Key` setting (base64, 32 bytes), bound
+  to their row, and only their last four characters are ever returned. Validation
+  calls one included `GET` operation without path parameters that uses the scheme
+  and records the result; it returns `422` when a stored secret no longer decrypts,
+  for example after `Credentials:Key` changed, and records an undecryptable credential
+  as invalid. API keys go in the query, the `Cookie` header, or a named
+  header, as their scheme declares; a header API key replaces a global header of the
+  same name. Bearer tokens and API keys must be ASCII, because HTTP header values
+  cannot carry other characters. Requests to the target never follow redirects
+  and are refused when an operation path would change the base URL's scheme, host,
+  or port, so credentials stay with the target host.
+- Global headers under `/api/projects/{id}/environment/headers`, sent with every
+  scenario request or only with listed operations. Secret values are encrypted like
+  credentials and cannot be made plain again; reserved headers such as `Host` and
+  `Authorization` are refused. Values must be printable ASCII.
+- Settings page at `/projects/[id]/settings` with the target, credentials, and global
+  headers sections. Viewers see it read-only.
+- `Credentials:Key` in the environment templates, `secret.yaml.example`
+  (`credentials-key`), and the pod definition, where it is optional so existing
+  secrets still start. Without the key, saving or validating a secret credential and
+  adding a secret header value fail; plain headers and credentials of type none
+  still work.
 
 ### Changed
 
@@ -132,6 +193,12 @@ released yet, so history is grouped by date.
   `Features/Projects` is the reference slice.
 - Rewrote `FeaturesFlow.md` to match `PROJECT.md`, tagging each process as Done,
   Partial, or Planned.
+- Migration `AddScenariosAndTargetSettings` replaces the free-text
+  `DeveloperInvariant` on `ChaosScenarios` and `ScenarioExecutions` with a JSONB
+  `Invariants` array, adds `ChaosScenarios.Reason` and a unique
+  `(EndpointId, ScenarioType)` index, adds the environment label, timeout budget, and
+  authorization confirmation to `ApiEnvironments`, and adds the `EnvironmentHeaders`
+  table.
 
 ### Removed
 

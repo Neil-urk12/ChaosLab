@@ -105,6 +105,31 @@ public sealed class ApiSpecEndpointTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task Import_skips_path_extensions_that_would_point_at_another_host()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var projectId = await CreateProjectAsync(client);
+
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new
+        {
+            source = "Paste",
+            content = """
+                {"openapi": "3.1.0", "info": {"title": "t", "version": "1"},
+                 "paths": {
+                   "/me": {"get": {"responses": {"200": {"description": "ok"}}}},
+                   "x-@evil.test/me": {"get": {"responses": {"200": {"description": "ok"}}}}}}
+                """
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(1, (await response.Content.ReadFromJsonAsync<ImportSpec.Report>(Json))!.OperationCount);
+        var spec = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        Assert.Equal("/me", Assert.Single(spec!.Endpoints).Path);
+    }
+
+    [Fact]
     public async Task Import_reports_unparseable_document()
     {
         await using var database = await postgres.CreateDatabaseAsync();

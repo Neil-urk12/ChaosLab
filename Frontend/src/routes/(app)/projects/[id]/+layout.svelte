@@ -11,11 +11,11 @@
 	const tabs = $derived([
 		{ label: 'Overview', href: base },
 		{ label: 'API specification', href: `${base}/spec` },
-		{ label: 'Scenarios' },
+		{ label: 'Scenarios', href: `${base}/scenarios` },
 		{ label: 'Test runs' },
 		{ label: 'Findings' },
 		{ label: 'Team' },
-		{ label: 'Settings' }
+		{ label: 'Settings', href: `${base}/settings` }
 	]);
 
 	let copied = $state(false);

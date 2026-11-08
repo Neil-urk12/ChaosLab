@@ -19,7 +19,11 @@ public sealed class BackendFactory(
     {
         builder.UseEnvironment("Testing");
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-            new Dictionary<string, string?> { ["BootstrapSetup:PublicUrl"] = publicUrl }));
+            new Dictionary<string, string?>
+            {
+                ["BootstrapSetup:PublicUrl"] = publicUrl,
+                ["Credentials:Key"] = Convert.ToBase64String(new byte[32])
+            }));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ApplicationDbContext>();
