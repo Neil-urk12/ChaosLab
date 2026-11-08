@@ -1,448 +1,328 @@
-# App flow for the Community/Self-hosted version
+# ChaosLab App Flow: Community / Self-Hosted Version
 
-## System flow I think
+**Status:** updated 8 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
 
-### Web Unidirectional flow (with the assumption that user already downloaded the app)
+Conventions used below:
 
-1. Start app
-2. Show login page (IF First login/initial login, show and allow default Super Admin credentials)
-3. Enter new credentials (Require user to update credentials after login)
-4. Override the default super admin credentials in the users table of the database with the new credentials
-5. Authenticate the user.
-6. Generate the authentication/session tokens in the backend.
-7. Store the authentication token/session information securely in browser cookies.
-8. Display dashboard page with CTAs
-9. Show optional step-by-step overview of features that can be skipped
-10. Create project 
-11. Enter project info
-12. Add Project Members
-13. Assign roles/permissions to Project Members
-14. Set the target API Base URL
-15. Import an OpenAPI Spec
-16. Parse the OpenAPI spec
-17. Display discovered API endpoints, methods, parameters, schemas, and security requirements 
-18. Configure auth credentials required by the target API
-19. Validate the API Base URL and target API connectivity
-20. Match the imported OepanAPI Spec against the target API config
-21. Generate applicable chaos/failure scenarios
-22. Display generated scenarios
-23. Enter optional developer invariants
-24. Configure the resilience test
-25. Select endpoitns/scenarios to inculd in the test
-26. Start the resilience test
-27. Send test requests toward the target API throgh the ChaosLab testing/proxy layer
-28. Inject configured failure conditions/primitives
-29. Observe the target API/application responses
-30. Record request, response, timing, failure, and recovery info
-31. Evaluate detected resilience behavior
-32. Determine whether retry, timeout, cricuit breaker, fallback, and related resilience mechanisms behaved as expected
-33. Calcuate test results and resilience metrics
-34. Generate the resilinece score
-35. Display the test run results. 
-36. Display failure timelines and scenario-level findings
-37. Display recommendations
-38. Save the completed test run and its results to the database
-39. Allow the user to generate/export a PDF report
-40. Retun to the Project Dashboard
-41. User can run another test, modify api config, import/update openapi spec, review test history, manage members, or view exported stuff anything
-42. User log out
-43. Invalidate the active authentication session/tokens
-44. Return to the login page
+- **Outcomes** are Pass, Degraded, Fail, Inconclusive, and Not Applicable, with severity Info, Low, Medium, High, Critical.
+- **Execution is direct-first.** The runner sends requests to the target API. A supporting proxy or dependency simulator is used only when a fault cannot be produced from the request path alone.
+- **Three kinds of failure** are always kept apart: the target API failed (a legitimate result), the ChaosLab runner failed (infrastructure error, never counted against the target), or the target was unreachable before the experiment (skipped with a reason, excluded from scoring).
 
-### Mobile App unidirectional system flow
+---
 
-1. Start mobile app
-2. Check whether an authenticated session exists
-3. If no valid session exists, display the Login page
-4. User enters credentials 
-5. Send credentials to the backend for authentication
-6. Backend validates the creds
-7. Generate auth/session tokens
-8. Store auth information securely on the mobile device
-9. Display the Mobile Dashboard
-10. Retrieve projects accessible to the authenticated user
-11. Display project list
-12. User selects a project
-13. Retrieve project info
-14. Display project overview
-15. Display configtured API info
-16. Display recent Test runs
-17. User selects a Test run
-18. Retrieve test run results
-19. Display test run results (Test status, resilience score, scenario results, failure timeline, detected resilience behavior, )
-20. Display test run recommendations
-21. Allow the user to view available reports
-22. Allow the user to receive/view test completions
-23. User areturns to the dashboard or selects another project
-23. User logs out
-24. Remove/invalidate the authenticated session.
-25. Return to the login page
+## 1. End-to-end flows
 
-## Flow of different processes
+### 1.1 Web flow (primary client)
 
-### Initial Super Admin setup
-1. Start the app
-2. Check wether 
+Assumes the user has already installed the app.
 
-### Login
+**Instance setup and sign-in**
 
-3. Show login page (IF First login/initial login, show and allow default Super Admin credentials)
-4. Enter new credentials (Require user to update credentials after login)
-5. Override the default super admin credentials in the users table of the database with the new credentials
-6. Generate access token in the backend and store the access token in the browser cookies
+1. Start the app and backend.
+2. If the instance is uninitialized, the backend prints a one-hour setup link to the terminal. Open it (it points to `/install`, with the token in the URL fragment).
+3. Enter name, username, email, and password to create the first SuperAdmin. The backend creates the account and role in one transaction and signs the user in.
+4. On later visits, or if the instance is already initialized, show the login page. There are no default credentials and no public registration.
+5. Authenticate with a username or email. The backend sets a secure session cookie.
+6. If the account has a pending password change (for example an account an administrator created), redirect to the password-change page before anything else.
 
-### Logout
+**Projects and setup**
 
-1. User clicks logout button
-2. Send logout request to the backend
-3. Invalidate/revoke the active session/refresh token 
-4. Delete authenticateon cookies/local session info
-5. Clear user-specific application state
-6. Redirect to the Login page
+7. Show the dashboard with the user's projects, recent runs, and calls to action.
+8. Create a project (name, description). The creator becomes Owner.
+9. Add project members and assign roles (Owner, Editor, Viewer).
+10. Set the target API base URL and validate connectivity.
+11. Import an OpenAPI specification (paste, upload, or URL).
+12. Parse and validate the spec. Display discovered endpoints, methods, parameters, schemas, and security requirements.
+13. Configure the target environment label (development, test, staging, mirror) and the target API credentials.
+14. Optionally configure dependency simulation for faults that need it. **[Proposed]**
+15. Validate connectivity and authentication against the target.
+16. Include or exclude endpoints and mark operations that must not be tested.
+17. Generate applicable scenarios and review them.
+18. Optionally attach developer invariants to scenarios.
 
-### Importing of OpenAPI Spec
-1. Set API Base url
-2. Paste openapi spec json or enter url of openapi docs
-2. 
+**Running a test**
 
-### Project Creation
+19. Create a test run: choose endpoints, scenarios, and options, including concurrency (default one at a time, up to five).
+20. Confirm warnings for state-changing operations and duplicate-request scenarios.
+21. Start the run. Baseline requests run first where needed.
+22. Execute scenarios, inject the configured failures, and observe the target.
+23. Record requests, responses, timing, failures, and recovery information.
+24. Evaluate behavior and produce findings (outcome, severity, category, evidence).
+25. Calculate category scores and the overall Resilience Score.
+26. Display results: score, evidence coverage, outcome counts, endpoint and scenario findings, failure timeline, recommendations.
+27. Save the completed run and its results.
+28. Optionally export a PDF report.
+29. Return to the project dashboard.
 
-1. User selecs/clicks 'Create Project'
-2. Display Project Creation form
-3. User enters (project name, description, and other metadata)
-4. Validate project info
-5. If validation fails, display validation errors
-6. If validation succeeds, create the project
-7. Assign the creator as Project Owner
-8. Save the project in the db
-9. Display dialog to user to either add project members, configur target api, or import openapi spec
+**After a run**
 
-### Project Member Management
+30. The user can run another test, change API configuration, update the OpenAPI spec, review run history, manage members, or open reports.
+31. Log out. The session is revoked and the user returns to the login page.
 
-1. User opens Project Members
-2. Retrieve current Project Members
-3. Display Project members and assigned roles
-4. User selects add member
-5. Enter/select the user to add
-6. Select the project role/permissions
-7. Validate whether the user can be added
-8. Check whether the user is already a member
-9. If invalid, display error or reason
-10. If not, create project membership
-11. Assign selected role/permissionw
-12. Save membership info
-13. Refresh Project Members list
+### 1.2 Mobile flow (read-only viewer, v1)
 
-#### Removing member
+The mobile app is a **viewer only**. It cannot configure targets, import specifications, or start tests. The mobile stack is **[Open]**. Test-completion push notifications are not part of the v1 decision.
 
-1. User selects a project member
-2. Select Remove member
-3. Display confirmation dialog
-4. Confirm removal
-5. Validate whether the requesting user has permission to remove the member
-6. Remove/deactivate Project membership
-7. Refresh Project Members list
+1. Start the mobile app and check for an authenticated session.
+2. If none exists, show the login page and sign in with the backend's bearer-token endpoint. Store tokens securely on the device and refresh them as needed.
+3. Show the mobile dashboard and the list of accessible projects.
+4. Select a project to see its overview: project info, API configuration summary, latest Resilience Score, and recent test runs.
+5. Select a test run to see status, Resilience Score, evidence coverage, scenario results, findings, failure timeline, detected resilience behavior, and recommendations.
+6. Select a scenario or finding for details.
+7. View available reports.
+8. Log out. Tokens are revoked and the user returns to the login page.
 
-### API Target COnfiguration
+---
 
-1. User opens the project
-2. Select API configuration
-3. Enter API Base URL
-4. Validate th URL format
-5. Test connectivity and reachability of API
-6. If unreachable, display connection failure and allow the user to edit the base url
-7. If reachable, display successful connectivity status
-8. Save the Base URL to the project configuration
+## 2. Process details
 
-### Importing OpenAPI Specification
+### 2.1 Instance setup (first run) [Done]
 
-1. User opens API Spec configuration
-2. Choose an import method ( Paste OpenAPI JSON/YAML, upload the json/yaml file, or enter the url of an openapi document)
-3. Submit the OpenAPI spec
-4. Backend receives the specification
-5. Determine whether the input is JSON or YAML
-6. Parse the OpenAPI doc
-7. Verify that the spec is supported
-8. Validate the OpenAPI Structure
-9. If parsing or validation fails > Return validation errors > Display errors to the user > Allow the user to correct/re-import the specification
-10. If valid, extract API information
-11. Extract (API metadata, servers/base URLs, Paths, Endpoints, HTTP Methods, parameters, request & response schemas, status codes, security schemas)
-12. Save the imported OpenAPI Spec
-13. Save parsed API metadata and endpoint information
-14. Displayt the discovered endpoints to the user
-15. Allow the user to review the imported API structure
-16. Continue to authentication/API configuration
+1. Start the backend against an uninitialized database.
+2. The backend creates a random 64-character token held only in memory, valid for one hour, and prints a link ending in `/install#token=...`. The base URL comes from `BootstrapSetup:PublicUrl`, which must be an absolute HTTP(S) URL.
+3. The `/install` page reads the token from the URL fragment, validates its format, and replaces the history entry so Back does not return to the secret link.
+4. The user enters name, username, email, and password.
+5. `POST /api/auth/setup` compares the token in constant time. A missing, invalid, or expired token returns 403.
+6. The backend takes a PostgreSQL advisory lock, then creates the SuperAdmin role and account in one transaction. A second simultaneous request cannot also initialize the instance.
+7. The new administrator is signed in immediately and is not forced to change the password just chosen.
+8. After setup the endpoint returns 409. The `SuperAdmin` role is the permanent setup marker, so deleting or disabling the administrator never reopens installation.
+9. Restarting an uninitialized backend issues a new link and invalidates the old one. Initialized instances print no setup link. Terminal output and container logs that contain setup links must stay restricted.
 
-### Target API Authentication Configuration
+### 2.2 Login [Done]
 
-1. Read security schemes declared by the imported OpenAPI Spec
-2. Determine whether authentication is required
-3. If authentication is not required, continue to API validation
-4. If auth is rquired, display the required authentication configuration (Bearer token, cookie, etc)
-5. Determine authentication type (Bearer token, API Key, Basic auth)
-6. User supplies the required test credentials
-7. Store credentials securely for the Project/Test configuration
-8. Send a validation request to the target API
-9. If authentication fails, display authentication error and allow the user to update crds
-10. If auth succeeds, mark the confg as validatied
-11. Continue to scenario generation
+1. Show the login page.
+2. The user enters a username or email and a password. An email shared by two accounts is rejected.
+3. The backend validates credentials and counts failures toward lockout.
+4. On success the backend sets an HttpOnly, Secure, SameSite=Lax cookie (web).
+5. If `MustChangePassword` is set, redirect to the password-change page. Until the password is replaced, only `me`, `change-password`, and `logout` are reachable.
+6. Otherwise open the dashboard.
 
-### Endpoint Discovery and Processing
+### 2.3 Required password change [Done]
 
-1. Retrive the parsed OpenAPI Spec
-2. Read each API path
-3. Identify each supported HTTP op
-4. Extract request requirements
-5. Extract params
-6. Extract request body params
-7. Extract expected response schemas/status codes
-8. Create/update Endpoint records (inserts/updates to db)
-9. Link endpoints with the Project/API spec
-10. Display discovered endpoints
-11. Allow the user to include/exclude endpoints from testing
+1. The user opens the password-change page (reached after login for accounts with a pending change).
+2. Enter current password, new password, and confirmation.
+3. The backend validates through Identity and updates the account.
+4. The pending-change flag is cleared and the user continues to the dashboard.
 
-### Chaos Scenario Generation
+### 2.4 Logout [Done]
 
-1. User selects 'Generate Scenarios' after API spec import and configuration
-2. Retreive parsed API endpoints
-3. Analyze each endpoint
-4. Determine which failure scenarios are applicable to each endpoint
-5. Generate scenarios using supported chaos primitives
-6. Generate applicable duplicate-request scenarios for idempotency evaluation
-7. Exclude scenarios that are not applicable toa particular endpoint
-8. Assign scenario configuration/default parameters
-9. Svae generated scenarios
-10. Associate each scenario with its corresponding target
-11. Allow the user to (enable/disable scenarios, review scenario parameter, configure supported parameters)
-12. Continue to Test Run configuration
+1. The user selects Log out.
+2. The client calls the logout endpoint.
+3. Web: the cookie session ends. Mobile with a bearer token: the security stamp rotates, which revokes the user's refresh tokens on every device.
+4. Local session and user-specific application state are cleared.
+5. Redirect to the login page.
 
-### Test Run Configuration
+### 2.5 Dashboard [Done]
 
-1. User selects Create/Start Test run
-2. Retreive following info (project, api config, endpoints, generated scenarios)
-3. Verify API connectivity
-4. Verify authentication configuration
-5. Display test configuration
-6. User selects endpoints to test
-7. User selects scenarios to execute
-8. Configure supported testing options
-9. Vlaidate the Test Run config
-10. If invalid, display configuration errors
-11. If not, create test run record and insert to db
-12. Set TEst Run status to Pending/Queued
-13. Continue to Test Execution
+1. After sign-in, retrieve the projects the user belongs to (active memberships only).
+2. Retrieve recent runs, score trend, current failed findings, and project summaries.
+3. Display the dashboard: project count, endpoint count, recent run counts, average score with comparison to the previous period, score trend, recent runs, recent projects.
+4. Calls to action, not finalized: create project, open project, configure API, import OpenAPI spec, start test run, view recent runs, view reports.
+5. The selected action redirects to the matching process.
 
-### Resilience Test Execution
+### 2.6 Project creation [Done]
 
-1. User clicks Execute Tests
-2. Set test run status to Running
-3. Select the first endpoint/scenario combination
-4. Construct the required API request
-5. Apply authentication credentials
-6. Send baseline/control request when required
-7. Route the test reuqest through the chaos injection/testing layer
-8. Apply the configured failure condition
-9. Send the request toward the target API
-10. Observe target API/application behavior
-11. Capture (req info, resp info, http status, resp time, errors/exceptions, timeout info, retry attempts, recovery behavior)
-12. Store the scenario exeuction result
-13. Determine whether more scenarios remain
-14. If yes, execute next
-15. If no, finish the test run
-16. Set Test run status to completed or failed/partially completed if execution problems occured
-17. Continue to Results evaluation
+1. The user selects Create Project.
+2. Enter name (required, at most 200 characters) and optional description.
+3. Validate. On failure, show validation errors.
+4. Create the project and add the creator as Owner.
+5. Show next steps: add members, configure the target API, or import an OpenAPI spec.
 
-### Resilience Pattern Evaluation
+### 2.7 Project list and project detail [Done]
 
-1. Retrieve observations collected during the Test Run
-2. Evaluate behavior under each injected failure
-3. Analyze evidence of (retry handling, timeout handling, circuit breaker behavior, fallback behavior, and idempotency behavior)
-4. Compare expected behavior with observed behavior
-5. Identify resilence successes
-6. Identify resilience weaknesses
-7. Record findings
-8. Associate findings with (Test run, enpoint, scenario)
-9. Send findings to the scoring process
+1. Retrieve the projects where the caller has an active membership, newest first.
+2. Display the list. Selecting a project shows its detail: latest score, recent runs, API summary.
 
-### Resilience Score Calculation
+### 2.8 Project member management [Planned]
 
-1. Retrieve completed scenario results
-2. Retrieve resilience-pattern evaluation results
-3. Determine successful and unsuccessful resilience checks
-4. Apply the defined scoring methodology
-5. Calculate relevant scenario/category scores
-6. Calculate the overall Resilience Score from 0 - 100
-7. Save the calculated score to db
-8. Associate the score with the test run
-9. Send the completed results to the Results Dashboard
+The data model exists; the endpoints and screens do not.
 
-### Viewing Test Results
+1. The user opens Project Members and sees current members and roles.
+2. To add: choose a user and a role (Owner, Editor, Viewer). Validate, check the user is not already a member, create the membership, refresh the list.
+3. Removing and re-adding a user changes the same membership record.
+4. To remove: select a member, confirm, check the requester's permission, mark the membership removed, refresh the list.
+5. The permission matrix (what each role may do) is **[Open]**.
 
-1. User opens a completed Test Run
-2. Retrieve Test Run info
-3. Retrieve scenario execution results
-4. Retrieve resilience evaluation findings
-5. Retrieve calculated Resilience score
-6. Display: 
-  - Overall resilience score
-  - Test status
-  - Tested endpoints
-  - execution scenariors
-  - Passed/failed findings
-  - Respone and timing info
-  - Detected resilience mechanisms
-  - Failure timeline
-  - Recommendations
-7. User may inspect an individual endpoint
-8. User may inspect and individiual scenario
-9. Display detailed obserations for the selected item
-10. Allow the user to return to the overall Test Run results
+### 2.9 API target configuration [Planned]
 
-### Failure Timeline
+1. Open the project and select API configuration.
+2. Enter the base URL, environment label, and TLS verification setting. Validate the URL format.
+3. Test reachability. If unreachable, show the failure and let the user edit the URL.
+4. If reachable, show success and save the configuration.
+5. Optional global headers and reusable test values can be saved here.
+6. Production targets are not supported. The user must confirm that they own or are authorized to test the target.
 
-1. Retrieve execution events form the Test Run
-2. Arrange events chronologically
-3. Identify
-  - Failure injection start
-  - Requests sent
-  - Errors/responses received
-  - Retry attempts
-  - Timeout events
-  - Recovery events
-  - Scenario completion
-4. Generate timeline entries
-5. Display the timelin
-6. Allow the user to inspect individual events
+### 2.10 OpenAPI specification import [Planned]
 
-### Recommendation Generation
+1. Open API spec configuration.
+2. Choose an import method: paste JSON or YAML, upload a file, or enter the URL of an OpenAPI document.
+3. The backend receives the input and detects JSON or YAML.
+4. Parse, verify the version is supported (OpenAPI 3.x; Swagger-compatible where convertible), and validate the structure.
+5. On failure, return validation errors and let the user correct and re-import.
+6. On success, extract metadata, servers, paths, methods, parameters, request and response schemas, status codes, and security schemes.
+7. Save the specification and its parsed endpoint information.
+8. Display the discovered endpoints for review, then continue to authentication configuration.
 
-1. Retrieve failed/weak resilience findings
-2. Identify the type of resilience problem
-3. Map detected weaknesses to applicable recommendations
-4. Generate actionable recommendations
-5. Associate recommendations with:
-  - Endpoint
-  - Scenario
-  - Resilience pattern
-6. Save generated recommendations
-7. Display recommendations in Test Results
-8. Include recommendations in exported reports
+### 2.11 Endpoint discovery and selection [Planned]
 
-### Test Run History
+1. Read each path and each supported HTTP operation.
+2. Extract request requirements, parameters, request bodies, and expected response schemas and status codes.
+3. Create or update endpoint records linked to the project and spec.
+4. Display discovered endpoints.
+5. Let the user include or exclude endpoints from testing, and flag operations that must never be tested.
 
-1. User opens Tets History
-2. Retrieve Test Runs belonging to the selected Project
-3. Display previous Test Runs
-4. Show summary information such as:
-  - Datetime
-  - Status
-  - Resilience score
-  - Number of endpoints tested
-  - Number of scenarios executed
-5. User selects a Test Run
-6. Retrieve saved results
-7. Display the Test Run results page
+### 2.12 Target API authentication configuration [Planned]
 
-### PDF Report Generation 
+1. Read the security schemes declared in the specification.
+2. If none is required, continue to validation.
+3. Otherwise show the required scheme and let the user choose the type: Bearer token, API key, or Basic authentication.
+4. The user supplies test credentials. They cannot be derived from the specification.
+5. Store them encrypted, apart from non-secret configuration. They are never shown in reports or logs.
+6. Send a validation request to the target. On failure, show the error and let the user update credentials. On success, mark the configuration validated.
 
-1. User opens a completed Test Run
-2. Select Generate/Export Report
-3. Retrieve:
-  - Project information
-  - API information
-  - Test configuration
-  - Test Run results
-  - Resilience score
-  - Failure timeline
-  - Findings
-  - Recommendations
-4. Generate the PDF Report
-5. Store report meatadata
-6. Return the generated report
-7. Allow the user to view/download the PDF report
+### 2.13 Chaos scenario generation [Planned]
 
-### Updating an OpenAPI Specification
+1. The user selects Generate Scenarios after import and configuration.
+2. Analyze each endpoint (method, request body, response types, status codes, security, idempotency expectations).
+3. Decide which of the nine chaos primitives apply. Do not generate scenarios that do not apply.
+4. Generate duplicate-request scenarios for suitable state-changing operations. These are behavioral scenarios, not a tenth primitive.
+5. Assign default parameters, record why each scenario was generated, and save them.
+6. Let the user enable or disable scenarios and adjust supported parameters.
+7. The design target is 100+ applicable scenarios for sufficiently large APIs; small APIs are never padded.
+8. Continue to invariants and test-run configuration.
 
-1. User opens the API Specification settings
-2. Select Update/Re-import Specification
-3. Provide the new OpenAPI docu
-4. Parse and validate the new spec
-5. Compare it against the currently stored spec
-6. Identify:
-  - Added endpoints
-  - Removed endpoints
-  - Modified endpoints
-7. Update stored API info
-8. Update endpoints records
-9. Determine whether existing generated scenarios remain applicable
-10. Regenerate scenarios where necessary
-11. Save the updated specification
-12. Display the updated API structure
+### 2.14 Developer invariants [Planned]
 
-### Dashboard
+1. On a scenario, the user chooses Add invariant.
+2. Pick an assertion type and fill in its parameters. Examples: status code in a set, record count after duplicate requests at most N, a field never below a value, maximum duration, required header present. The final list of types is **[Open]**.
+3. Optionally define a read-back request used to verify resulting state.
+4. Save the invariant on the scenario. Each execution keeps a snapshot of it.
 
-1. User successfully authenticates
-2. Retrieve Projects acceessible by the user
-3. Retreive recent Test Runs
-4. Retrieve relevant Project/Test summary info
-5. Display Dashboard
-6. Show available cta like (not finalized yet):
-  - Create project
-  - Open Project
-  - Configure API
-  - Import OpenAPI Spec
-  - Start Test Run
-  - View Recent Test Runs
-  - View Reports
-7. User selects an action
-8. Redirect to the corresponding process
+### 2.15 Test run configuration [Planned]
 
-### Mobile Login
+1. The user selects Create Test Run.
+2. Retrieve the project, API configuration, endpoints, and scenarios.
+3. Verify connectivity and the authentication configuration. If the target is unreachable, stop here; nothing runs.
+4. Display the configuration.
+5. Select endpoints and scenarios.
+6. Set options, including concurrency: one experiment at a time by default, up to five if the user opts in.
+7. Warn about state-changing methods and duplicate-request scenarios and require confirmation. Excluded operations are skipped.
+8. Validate the configuration. If invalid, show the errors.
+9. Create the run with the scoring version and configuration snapshot, set status to Queued, and continue to execution.
 
-1. Open the mobile app
-2. Check for existing authenticated session
-3. If valid session exists, open mobile dashboard
-4. If no valid session exists, display login page
-5. User enters credentials
-6. Send credentials to backend API
-7. Validate credentials
-8. If invalid, display auth error
-9. If valid, generate session/token 
-10. Store auth info securely on mobile
-11. Retrieve user info and permissions
-12. Display mobile dashboard
+### 2.16 Resilience test execution [Planned]
 
-### Mobile Project Viewing
+1. The user clicks Execute Tests. Set status to Running.
+2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
+3. Apply the configured failure. Most faults are applied through direct requests or the injector in the request path. Dependency faults use the simulator in the target's outbound path.
+4. Observe the target's behavior and capture request, response, status, timing, errors, timeout information, repeated attempts, and recovery behavior.
+5. Store the scenario execution result with a snapshot of its configuration.
+6. Classify any problem as a target failure, a runner failure, or an unreachable target (skipped with a reason). Runner failures may be retried a limited number of times automatically.
+7. When no scenarios remain, set the run status to Completed, PartiallyCompleted, or Failed.
+8. Continue to evaluation.
 
-1. User opens the mobile dshboard
-2. Retrieve Projects accessible to the authenticated user
-3. Display Projects
-4. User selects a project
-5. Retreive project info
-6. Display: 
-  - Project info
-  - API config summary
-  - Project members
-  - Recent test runs
-  - Latest resilience score
-7. User selects the desired information or Test run
+### 2.17 Cancelling a run [Planned]
 
-### Mobile Test Result Viewing
+1. The user selects Cancel on a queued or running test.
+2. The runner stops starting new scenarios and lets in-flight requests finish or time out.
+3. Set the run status to Cancelled and keep the evidence collected so far.
+4. Partial runs are not scored as complete. **[Open]**: how a cancelled run is shown in history.
 
-1. User selects a Test Run
-2. Request Test Run results from the backend
-3. Retrieve:
-  - Test status
-  - Resilience score
-  - Scenario results
-  - Failure timleine
-  - Findings
-  - Recommendations
-4. Display Test Run summary
-5. User selects a scenario/finding
-6. Display detailed info
-7. User returns to Test Run Summary or Project page
+### 2.18 Resilience pattern evaluation [Planned]
 
-### 
+1. Retrieve the observations for the run.
+2. Evaluate behavior under each injected failure and each duplicate-request scenario.
+3. Look for evidence of retry, backoff, timeout enforcement, rate-limit handling, circuit-breaker behavior, fallback and graceful degradation, authentication failure handling, response validation, dependency-failure handling, and idempotency.
+4. Evaluate developer invariants. A violated invariant makes the finding Fail.
+5. Compare expected behavior with observed behavior. Classify each finding as Pass, Degraded, Fail, Inconclusive (not enough observable evidence), or Not Applicable, with a severity.
+6. Use cautious wording: state what was observed, what it suggests, and what is not proven. Never claim an implementation detail that cannot be observed.
+7. Tag each finding with one scoring category, link it to the run, endpoint, and scenario execution, and attach evidence.
+8. Send the findings to scoring.
 
+### 2.19 Resilience Score calculation [Planned]
 
+1. Retrieve the scored findings. Exclude Not Applicable and Inconclusive.
+2. Convert outcomes to points. **[Proposed]** Pass 100, Degraded 50, Fail 0.
+3. A category score is the mean of its findings, so many easy scenarios in one category cannot dominate.
+4. Apply the locked weights (scoring version 1.0): Timeout 20, Retry 15, Graceful Degradation 15, Rate-Limit 10, Idempotency 10, Authentication Failure 10, Response Validation 10, Dependency Failure 10.
+5. Omit any category with no scored findings and redistribute its weight proportionally.
+6. The overall score is the weighted mean of the remaining categories, from 0 to 100. Endpoint scores use the same method per endpoint.
+7. Calculate evidence coverage: scored findings versus all findings, including Inconclusive.
+8. Save category scores, the overall score, evidence coverage, and the scoring version to the run, then send them to the dashboard.
+
+### 2.20 Viewing test results [Planned]
+
+1. The user opens a completed run.
+2. Retrieve run information, scenario executions, findings, scores, and recommendations.
+3. Display: overall score and evidence coverage, run status, category breakdown, counts of Pass / Degraded / Fail / Inconclusive / N/A, tested endpoints, executed scenarios, findings with severity, response and timing information, detected resilience behavior, failure timeline, and recommendations.
+4. The user may open an individual endpoint or scenario to see detailed observations, then return to the run.
+
+### 2.21 Failure timeline [Planned]
+
+1. Retrieve the execution events of the run and order them chronologically.
+2. Identify failure-injection start, requests sent, errors and responses received, repeated attempts, timeout events, recovery events, and scenario completion.
+3. Build and display the timeline. The user can inspect individual events.
+
+### 2.22 Recommendation generation [Planned]
+
+1. Retrieve the Fail, Degraded, and weak findings.
+2. Identify the type of problem.
+3. Map it to deterministic, rule-based recommendations (for example bounded retries with exponential backoff and jitter, honoring `Retry-After`, idempotency keys, schema validation, explicit timeout budgets).
+4. Attach each recommendation to the endpoint, scenario, pattern, and severity.
+5. Save, display in the results, and include in reports. ChaosLab does not change source code.
+
+### 2.23 Test run history [Planned]
+
+1. The user opens Test History for a project.
+2. Show previous runs with date, status, score, evidence coverage, endpoints tested, and scenarios executed.
+3. Selecting a run opens its results.
+4. A run can be compared with the previous one. Failed or degraded scenarios can be rerun manually.
+
+### 2.24 PDF report generation [Planned]
+
+1. The user opens a completed run and selects Generate Report.
+2. Retrieve project and API information (sensitive values redacted), test configuration, results, scores, failure timeline, findings, recommendations, invariant results, limitations, and the comparison with the previous run when available.
+3. Generate the PDF, store report metadata with a storage reference, and let the user view or download it.
+
+### 2.25 Updating an OpenAPI specification [Planned]
+
+1. Open API specification settings and select Update / Re-import.
+2. Provide the new document. Parse and validate it.
+3. Compare it with the stored spec and identify added, removed, and modified endpoints.
+4. Update endpoint records.
+5. Decide which existing scenarios still apply and regenerate where needed. Past runs keep their execution-time snapshots.
+6. Save the new specification and display the updated structure.
+
+### 2.26 Mobile login and viewing [Planned]
+
+Mobile login
+
+1. Open the app and check for a valid session. If one exists, open the dashboard.
+2. Otherwise show the login page, send credentials to the backend, and show an error if they are invalid.
+3. On success, receive bearer and refresh tokens, store them securely, load the user's permissions, and open the dashboard.
+
+Mobile project viewing
+
+1. Retrieve accessible projects and display them.
+2. Selecting a project shows project info, API configuration summary, recent runs, and latest score.
+
+Mobile test result viewing
+
+1. Selecting a run requests its results from the backend.
+2. Display status, score, evidence coverage, scenario results, failure timeline, findings, and recommendations.
+3. Selecting a scenario or finding shows detail. The user can return to the run summary or the project.
+
+---
+
+## 3. What changed from the earlier version of this document
+
+- Removed the default-SuperAdmin-credentials flow. Setup now uses the one-time setup link, and the user chooses their own credentials.
+- Added a username to setup, and a separate required password-change flow.
+- Execution is described as direct-first with an optional supporting injector, instead of always routing through a proxy.
+- Replaced pass/fail language with the five outcomes and severity, and added the three failure kinds.
+- Invariants are structured assertions, not free text.
+- Scoring now follows the locked categories and rules, including evidence coverage.
+- Added concurrency (default one, up to five), safety confirmations, run cancellation, and partial-run handling.
+- Mobile is a read-only viewer. Member lists and test-completion notifications were removed from the mobile flow.
+- Completed the empty "Initial Super Admin setup" and "Importing of OpenAPI Spec" sections and merged the duplicate import sections.
+- Added status tags so the flow shows what exists today.

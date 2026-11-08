@@ -57,6 +57,36 @@ released yet, so history is grouped by date.
 - `(app)` route group with a client-side session guard (`ssr = false`) that redirects
   unauthenticated visitors to `/login` and pending password changes to `/setup`, plus
   a sidebar shell and an overview page listing the caller's recent projects.
+- PostgreSQL integration test suite in `Backend.Tests`: real PostgreSQL via
+  Testcontainers (no EF InMemory), `BackendFactory` for HTTP tests through
+  `WebApplicationFactory<Program>`, and tests covering model invariants, check
+  constraints, and the initial-admin bootstrap, plus `Backend.Tests/README.md`.
+- Workspace overview and project detail dashboards: `GET /api/projects/overview`
+  aggregates project, endpoint, and run counts, average and trending resilience
+  scores, failed findings, and recent activity across the caller's projects;
+  `GET /api/projects/{id}` returns one project's dashboard with its latest score,
+  breakdown, spec, members, findings, and recent runs (non-members get `404` so
+  project ids are not disclosed). The frontend adds the overview and
+  `projects/[id]` pages with a `ScoreRing` component, date/score formatting
+  helpers, and a typed `src/lib/api.ts` client.
+- Projects inventory page at `/projects`, backed by an extended `GET /api/projects`
+  response that adds the default environment name and base URL, active scenario
+  count, last run time, and latest resilience score per project.
+- Light mode theme toggle in the sidebar: a semantic color palette
+  (`--color-canvas`, `--color-panel`, `--color-line`, ...) in `layout.css` with
+  light values under `[data-theme='light']`, an inline script in `app.html` that
+  sets the stored or system theme before first paint so the page never flashes the
+  wrong theme, and a toggle that remembers the choice in `localStorage`.
+- `make start` recipe for running the backend and frontend together outside the
+  kube pod against the deployed database.
+- `make migrate` recipe for applying EF migrations to the database configured in
+  `Backend/.env.local`.
+- Highlighted first-run setup link in the backend console: a framed, ANSI-colored
+  block with the expiry note, falling back to plain text when output is redirected
+  or `NO_COLOR` is set (so pod logs stay clean).
+- `PROJECT.md`, the full product specification, which merges the earlier project
+  notes and context export with the current state of the repository and collects
+  undecided items in section 25.
 
 ### Changed
 
@@ -72,6 +102,8 @@ released yet, so history is grouped by date.
 - Backend HTTP features are organized as vertical slices under `Backend/Features/`,
   one file per query or command, with routes grouped under `/api` in `Program.cs`.
   `Features/Projects` is the reference slice.
+- Rewrote `FeaturesFlow.md` to match `PROJECT.md`, tagging each process as Done,
+  Partial, or Planned.
 
 ### Removed
 
