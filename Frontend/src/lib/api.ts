@@ -217,3 +217,32 @@ export type EnvironmentSettings = {
 	schemes: SecurityScheme[];
 	headers: GlobalHeader[];
 };
+
+// Backend/Features/TestRuns
+export type RunHistoryRow = {
+	id: string;
+	number: number;
+	environmentName: string;
+	status: TestRunStatus;
+	completedScenarios: number;
+	totalScenarios: number;
+	requestedBy: string;
+	createdAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	score: number | null;
+	previousScore: number | null;
+	scoringVersion: string;
+	failureMessage: string | null;
+	evidenceCoverage: number | null;
+};
+
+export type RunHistoryPage = {
+	total: number;
+	matched: number;
+	page: number;
+	pageSize: number;
+	environments: string[];
+	scoringVersions: string[];
+	runs: RunHistoryRow[];
+};

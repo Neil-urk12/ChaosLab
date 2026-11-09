@@ -12,7 +12,7 @@
 		{ label: 'Overview', href: base },
 		{ label: 'API specification', href: `${base}/spec` },
 		{ label: 'Scenarios', href: `${base}/scenarios` },
-		{ label: 'Test runs' },
+		{ label: 'Test runs', href: `${base}/runs` },
 		{ label: 'Findings' },
 		{ label: 'Team' },
 		{ label: 'Settings', href: `${base}/settings` }
@@ -88,4 +88,7 @@
 	{/each}
 </nav>
 
-{@render children()}
+<!-- SvelteKit reuses page components across projects; rebuild so page state (selections, inputs) doesn't carry over. -->
+{#key project.id}
+	{@render children()}
+{/key}

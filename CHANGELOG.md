@@ -176,6 +176,17 @@ released yet, so history is grouped by date.
   secrets still start. Without the key, saving or validating a secret credential and
   adding a secret header value fail; plain headers and credentials of type none
   still work.
+- Test run history: `GET /api/projects/{id}/runs` returns one page of a project's
+  runs, newest first, with a per-project run number, the change from the previous
+  completed run on the same environment and scoring version, and evidence coverage (Passed and Failed findings as a share of those
+  plus Inconclusive). It filters on the server by `query` (run ID or person),
+  `status`, `environment`, and `days`, and pages with `page` and `pageSize` (at most
+  100). The Test runs tab at `/projects/[id]/runs` keeps these filters in the URL
+  (a date range outside the menu falls back to the last 30 days), shows how many runs
+  match when filters narrow the list, pages with first, last and nearby page links,
+  and lets you select two runs on the same environment and scoring version for
+  comparison. Starting runs and the comparison view are not built yet, so their
+  buttons stay disabled.
 
 ### Changed
 

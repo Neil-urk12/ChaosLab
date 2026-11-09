@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Backend.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
@@ -92,6 +93,78 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Equal(2, row.ScenarioCount);
         Assert.Equal(78m, row.LatestScore);
         Assert.NotNull(row.LastRunAt);
+    }
+
+    [Fact]
+    public async Task Run_history_numbers_runs_and_reports_score_change_and_coverage()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+
+        var url = $"/api/projects/{seeded.ProjectId}/runs";
+        async Task<ListRuns.Response> Get(string query = "") =>
+            (await client.GetFromJsonAsync<ListRuns.Response>(url + query, Json))!;
+
+        var all = await Get();
+        var runs = all.Runs;
+        Assert.Equal((3, 3, 1), (all.Total, all.Matched, all.Page));
+        Assert.Equal(["Prod-like test"], all.Environments);
+        Assert.Equal(["1.0"], all.ScoringVersions);
+        Assert.Equal([3, 2, 1], runs.Select(run => run.Number));
+        Assert.Equal(TestRunStatus.Running, runs[0].Status);
+        Assert.Null(runs[0].EvidenceCoverage);
+        Assert.Equal((seeded.LatestRunId, 78m, 70m), (runs[1].Id, runs[1].Score, runs[1].PreviousScore));
+        Assert.Equal(100, runs[1].EvidenceCoverage);
+        Assert.Null(runs[2].PreviousScore);
+
+        var second = await Get("?pageSize=2&page=2");
+        Assert.Equal((3, 2), (second.Matched, second.Page));
+        Assert.Equal([1], second.Runs.Select(run => run.Number));
+        Assert.Equal(2, (await Get("?pageSize=2&page=9")).Page);
+        Assert.Equal([2], (await Get("?query=RUN-002")).Runs.Select(run => run.Number));
+        Assert.Equal(3, (await Get("?query=admin")).Matched);
+        Assert.Equal(0, (await Get("?query=nobody")).Matched);
+        Assert.Equal([3], (await Get("?status=Running")).Runs.Select(run => run.Number));
+        Assert.Equal(0, (await Get("?environment=Staging")).Matched);
+        Assert.Equal([3, 2], (await Get("?days=2")).Runs.Select(run => run.Number));
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(url + "?pageSize=500")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync(url + "?status=Bogus")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync($"/api/projects/{seeded.OtherProjectId}/runs")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Run_history_score_change_compares_only_completed_runs_on_same_environment_and_scoring_version()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var latest = await db.TestRuns.SingleAsync(run => run.Id == seeded.LatestRunId);
+            var staging = new ApiEnvironment
+            {
+                Id = Guid.NewGuid(), ProjectId = seeded.ProjectId, Name = "Staging", BaseUrl = "https://staging.example.test",
+                CreatedById = latest.RequestedById
+            };
+            // Each scored between the 70 run (-2d) and the 78 run (-1d), and each must be skipped.
+            var now = DateTimeOffset.UtcNow;
+            var otherEnvironment = Run(seeded.ProjectId, latest.ApiSpecId, staging.Id, latest.RequestedById, now.AddHours(-36), 40);
+            var otherVersion = Run(seeded.ProjectId, latest.ApiSpecId, latest.EnvironmentId, latest.RequestedById, now.AddHours(-32), 50);
+            otherVersion.ScoringVersion = "2.0";
+            var partial = Run(seeded.ProjectId, latest.ApiSpecId, latest.EnvironmentId, latest.RequestedById, now.AddHours(-28), 60);
+            partial.Status = TestRunStatus.PartiallyCompleted;
+            db.AddRange(staging, otherEnvironment, otherVersion, partial);
+            await db.SaveChangesAsync();
+        }
+
+        var all = await client.GetFromJsonAsync<ListRuns.Response>($"/api/projects/{seeded.ProjectId}/runs", Json);
+        Assert.Equal(70m, all!.Runs.Single(run => run.Id == seeded.LatestRunId).PreviousScore);
     }
 
     [Fact]
