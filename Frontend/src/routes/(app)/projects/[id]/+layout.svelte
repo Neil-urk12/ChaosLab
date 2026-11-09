@@ -13,7 +13,7 @@
 		{ label: 'API specification', href: `${base}/spec` },
 		{ label: 'Scenarios', href: `${base}/scenarios` },
 		{ label: 'Test runs', href: `${base}/runs` },
-		{ label: 'Findings' },
+		{ label: 'Findings', href: `${base}/findings`, badge: project.failedFindingCount },
 		{ label: 'Team' },
 		{ label: 'Settings', href: `${base}/settings` }
 	]);
@@ -75,15 +75,15 @@
 			<a
 				href={tab.href}
 				aria-current={current ? 'page' : undefined}
-				class="shrink-0 border-b-2 pb-3 {current ? 'border-accent font-semibold text-accent-ink-strong' : 'border-transparent text-slate-400 hover:text-slate-100'}"
-			>{tab.label}</a>
-		{:else}
-			<span class="flex shrink-0 items-center gap-2 pb-3 text-slate-500" title="Not available yet">
+				class="flex shrink-0 items-center gap-2 border-b-2 pb-3 {current ? 'border-accent font-semibold text-accent-ink-strong' : 'border-transparent text-slate-400 hover:text-slate-100'}"
+			>
 				{tab.label}
-				{#if tab.label === 'Findings' && project.failedFindingCount}
-					<span class="rounded bg-rose-500/15 px-1.5 text-[10px] text-rose-300">{project.failedFindingCount}</span>
+				{#if tab.badge}
+					<span class="rounded bg-rose-500/15 px-1.5 text-[10px] font-normal text-rose-300">{tab.badge}</span>
 				{/if}
-			</span>
+			</a>
+		{:else}
+			<span class="shrink-0 pb-3 text-slate-500" title="Not available yet">{tab.label}</span>
 		{/if}
 	{/each}
 </nav>

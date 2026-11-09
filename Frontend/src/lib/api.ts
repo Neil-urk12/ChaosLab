@@ -246,3 +246,38 @@ export type RunHistoryPage = {
 	scoringVersions: string[];
 	runs: RunHistoryRow[];
 };
+
+// Backend/Features/Findings
+export type FindingOutcome = 'Passed' | 'Degraded' | 'Failed' | 'Inconclusive' | 'NotApplicable';
+export type Severity = 'Info' | 'Low' | 'Medium' | 'High' | 'Critical';
+
+// Free-form JSONB written by the evaluator; every key is optional, so read it defensively.
+export type FindingEvidence = {
+	detail?: string;
+	expected?: string;
+	observed?: string;
+	invariantViolated?: boolean;
+	facts?: { label: string; value: string }[];
+	interpretation?: { observed?: string; suggests?: string; notProven?: string };
+};
+
+export type RunFinding = {
+	id: string;
+	severity: Severity;
+	outcome: FindingOutcome;
+	pattern: ResiliencePattern;
+	httpMethod: string;
+	path: string;
+	scenarioType: ScenarioType | null;
+	summary: string;
+	evidence: FindingEvidence;
+	recommendation: { title: string; text: string } | null;
+};
+
+export type FindingRunOption = { id: string; number: number; status: TestRunStatus; completedAt: string | null };
+
+export type RunFindings = {
+	runs: FindingRunOption[];
+	run: FindingRunOption | null;
+	findings: RunFinding[];
+};
