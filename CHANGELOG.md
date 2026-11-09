@@ -187,9 +187,23 @@ released yet, so history is grouped by date.
   and lets you select two runs on the same environment and scoring version for
   comparison. Starting runs and the comparison view are not built yet, so their
   buttons stay disabled.
+- Findings: `GET /api/projects/{id}/findings` returns every finding of one run with
+  its severity, endpoint, scenario fault, evidence and linked recommendation, plus
+  the 50 newest runs that have findings. Without `?run=` it picks the newest
+  completed run with findings. Any of the project's runs with findings can be
+  requested, including ones older than that list; another project's run or a run
+  without findings returns 404. The Findings
+  tab at `/projects/[id]/findings` shows outcome counts, filters by search,
+  outcome (Fail and Degraded by default), severity, category and endpoint, exports
+  the filtered rows as CSV, and opens a detail panel with expected versus observed
+  behavior, evidence, interpretation and the recommendation. Rerunning a scenario
+  and the failure timeline are not built yet, so their buttons stay disabled.
+- Resilience findings gained a `Degraded` outcome and a `Severity` column
+  (migration `AddFindingSeverity`; existing findings default to Info).
 
 ### Changed
 
+- Run history evidence coverage now counts Degraded findings as scored.
 - The `(auth)/setup` page now changes a password for real against
   `/api/auth/change-password` (current password, new password, confirmation) instead
   of being an unwired placeholder for the initial administrator credentials.

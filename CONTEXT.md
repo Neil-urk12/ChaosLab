@@ -10,6 +10,6 @@ ChaosLab evaluates API resilience in a self-hosted installation.
 
 **Scenario execution**: One selected scenario executed within a TestRun, retaining the scenario configuration used at execution time.
 
-**Resilience finding**: Evidence about an endpoint's Retry, Timeout, CircuitBreaker, Fallback, or Idempotency behavior in a TestRun. Its outcome can be Passed, Failed, Inconclusive, or NotApplicable.
+**Resilience finding**: Evidence about an endpoint's Retry, Timeout, CircuitBreaker, Fallback, or Idempotency behavior in a TestRun. Its outcome can be Passed, Degraded, Failed, Inconclusive, or NotApplicable, and it carries a severity (Info, Low, Medium, High, Critical).
 
 **DuplicateRequest**: An idempotency test scenario, separate from the nine chaos primitives.

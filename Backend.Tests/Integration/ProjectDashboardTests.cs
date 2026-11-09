@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Domain.Entities;
 using Backend.Domain.Enums;
+using Backend.Features.Findings;
 using Backend.Features.Projects;
 using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
@@ -165,6 +166,99 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
 
         var all = await client.GetFromJsonAsync<ListRuns.Response>($"/api/projects/{seeded.ProjectId}/runs", Json);
         Assert.Equal(70m, all!.Runs.Single(run => run.Id == seeded.LatestRunId).PreviousScore);
+    }
+
+    [Fact]
+    public async Task Findings_default_to_latest_completed_run_and_carry_severity_and_recommendation()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+        var critical = seeded.FindingRuns.First(pair => pair.Value == seeded.LatestRunId).Key;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var finding = await db.ResilienceFindings.SingleAsync(row => row.Id == critical);
+            finding.Severity = RecommendationSeverity.Critical;
+            finding.Outcome = ResilienceFindingOutcome.Degraded;
+            var scenario = await db.ChaosScenarios.SingleAsync(row =>
+                row.EndpointId == finding.EndpointId && row.ScenarioType == ScenarioType.TimeoutDrop);
+            var execution = new ScenarioExecution
+            {
+                Id = Guid.NewGuid(), TestRunId = finding.TestRunId, EndpointId = finding.EndpointId, ScenarioId = scenario.Id,
+                SequenceNo = 1, ScenarioType = ScenarioType.TimeoutDrop, Parameters = JsonDocument.Parse("{}")
+            };
+            db.Add(execution);
+            finding.ScenarioExecutionId = execution.Id;
+            db.Add(new Recommendation
+            {
+                Id = Guid.NewGuid(), TestRunId = finding.TestRunId, ResilienceFindingId = finding.Id, Category = "Idempotency",
+                Severity = RecommendationSeverity.Critical, Title = "Persist keys", Description = "Generic",
+                Remediation = "Persist the Idempotency-Key.", Evidence = JsonDocument.Parse("{}")
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var url = $"/api/projects/{seeded.ProjectId}/findings";
+        var latest = (await client.GetFromJsonAsync<ListFindings.Response>(url, Json))!;
+
+        // The running run has no findings, so the picker offers the two completed runs, newest first.
+        Assert.Equal([2, 1], latest.Runs.Select(run => run.Number));
+        Assert.Equal(seeded.LatestRunId, latest.Run!.Id);
+        Assert.Equal(3, latest.Findings.Count);
+        var top = latest.Findings[0];
+        Assert.Equal((critical, RecommendationSeverity.Critical, ResilienceFindingOutcome.Degraded), (top.Id, top.Severity, top.Outcome));
+        Assert.Equal(new ListFindings.RecommendationInfo("Persist keys", "Persist the Idempotency-Key."), top.Recommendation);
+        Assert.Null(latest.Findings[1].Recommendation);
+        // ScenarioType comes from the linked execution; a finding without one gets null.
+        Assert.Equal(ScenarioType.TimeoutDrop, top.ScenarioType);
+        Assert.Null(latest.Findings[1].ScenarioType);
+
+        var older = (await client.GetFromJsonAsync<ListFindings.Response>($"{url}?run={latest.Runs[1].Id}", Json))!;
+        Assert.Equal(1, older.Run!.Number);
+        Assert.Single(older.Findings);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{url}?run={Guid.NewGuid()}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await client.GetAsync($"/api/projects/{seeded.OtherProjectId}/findings")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Findings_serve_a_requested_run_older_than_the_picker_list()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var latest = await db.TestRuns.SingleAsync(run => run.Id == seeded.LatestRunId);
+            var endpointId = await db.ResilienceFindings.Where(finding => finding.TestRunId == latest.Id)
+                .Select(finding => finding.EndpointId).FirstAsync();
+            // Enough newer runs with findings to push both seeded completed runs out of the picker.
+            for (var i = 0; i < ListFindings.MaxRuns; i++)
+            {
+                var newer = Run(seeded.ProjectId, latest.ApiSpecId, latest.EnvironmentId, latest.RequestedById,
+                    DateTimeOffset.UtcNow.AddMinutes(i + 1), 80);
+                db.AddRange(newer, new ResilienceFinding
+                {
+                    Id = Guid.NewGuid(), TestRunId = newer.Id, EndpointId = endpointId,
+                    Outcome = ResilienceFindingOutcome.Passed, Evidence = JsonDocument.Parse("{}")
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var url = $"/api/projects/{seeded.ProjectId}/findings";
+        var newest = (await client.GetFromJsonAsync<ListFindings.Response>(url, Json))!;
+        Assert.Equal(ListFindings.MaxRuns, newest.Runs.Count);
+        Assert.DoesNotContain(newest.Runs, run => run.Id == seeded.LatestRunId);
+
+        var old = (await client.GetFromJsonAsync<ListFindings.Response>($"{url}?run={seeded.LatestRunId}", Json))!;
+        Assert.Equal((seeded.LatestRunId, 2), (old.Run!.Id, old.Run.Number));
+        Assert.Equal(3, old.Findings.Count);
     }
 
     [Fact]

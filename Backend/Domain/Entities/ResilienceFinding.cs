@@ -14,6 +14,7 @@ public class ResilienceFinding
     // Table properties
     public ResiliencePattern Pattern { get; set; }
     public ResilienceFindingOutcome Outcome { get; set; } = ResilienceFindingOutcome.Inconclusive;
+    public RecommendationSeverity Severity { get; set; } = RecommendationSeverity.Info;
     public string Summary { get; set; } = string.Empty;
     public JsonDocument Evidence { get; set; } = null!;
 

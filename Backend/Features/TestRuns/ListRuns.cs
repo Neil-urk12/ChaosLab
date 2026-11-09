@@ -42,7 +42,7 @@ public static partial class ListRuns
         decimal? PreviousScore,
         string ScoringVersion,
         string? FailureMessage,
-        // Scored findings (Passed/Failed) as a percentage of scored plus Inconclusive; null with no such findings.
+        // Scored findings (Passed/Degraded/Failed) as a percentage of scored plus Inconclusive; null with no such findings.
         int? EvidenceCoverage);
 
     // "RUN-027", "run27" or "27" searches by run number.
@@ -118,7 +118,7 @@ public static partial class ListRuns
                         .Select(other => other.ResilienceScore).FirstOrDefault(),
                 row.Run.ScoringVersion, row.Run.FailureMessage,
                 Scored = row.Run.ResilienceFindings.Count(finding => finding.Outcome == ResilienceFindingOutcome.Passed
-                    || finding.Outcome == ResilienceFindingOutcome.Failed),
+                    || finding.Outcome == ResilienceFindingOutcome.Degraded || finding.Outcome == ResilienceFindingOutcome.Failed),
                 Inconclusive = row.Run.ResilienceFindings.Count(finding =>
                     finding.Outcome == ResilienceFindingOutcome.Inconclusive)
             })

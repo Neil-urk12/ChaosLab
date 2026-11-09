@@ -642,6 +642,9 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<Guid?>("ScenarioExecutionId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("Severity")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Summary")
                         .IsRequired()
                         .HasColumnType("text");
