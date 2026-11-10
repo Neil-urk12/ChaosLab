@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 const origin = 'http://localhost:4173';
 
-const member = (userId: string, displayName: string, role: string, removedAt: string | null = null) => ({
-	userId, displayName, email: `${displayName.split(' ')[0].toLowerCase()}@chaoslab.test`, role, joinedAt: '2026-09-12T08:00:00Z', removedAt
+const member = (userId: string, displayName: string, role: string, removedAt: string | null = null, removedBy: string | null = null) => ({
+	userId, displayName, email: `${displayName.split(' ')[0].toLowerCase()}@chaoslab.test`, role, joinedAt: '2026-09-12T08:00:00Z', removedAt, removedBy
 });
 
 // Signed in as Maya, an owner of project "a" alongside a second owner, Alex.
@@ -39,7 +39,7 @@ async function mockTeam(page: Page) {
 			json: {
 				yourRole: 'Owner',
 				members: [member('maya', 'Maya Chen', 'Owner'), member('alex', 'Alex Morgan', 'Owner')],
-				removed: [member('lee', 'Lee Park', 'Editor', '2026-09-28T08:00:00Z')]
+				removed: [member('lee', 'Lee Park', 'Editor', '2026-09-28T08:00:00Z', 'Maya Chen')]
 			}
 		});
 	});
@@ -50,7 +50,7 @@ test('owner searches, picks and adds a member, and can re-add a removed one', as
 	const posted = await mockTeam(page);
 	await page.goto(`${origin}/projects/a/team`);
 	await expect(page.getByText('2 active members')).toBeVisible();
-	await expect(page.getByText('was Editor')).toBeVisible();
+	await expect(page.getByText('by Maya Chen · was Editor')).toBeVisible();
 
 	await page.getByRole('searchbox', { name: 'Search members' }).fill('alex');
 	await expect(page.locator('tbody tr')).toHaveCount(1);

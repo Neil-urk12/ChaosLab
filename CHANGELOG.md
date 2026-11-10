@@ -211,8 +211,12 @@ released yet, so history is grouped by date.
   is asked to confirm first, then taken back to the project list. The Team tab at
   `/projects/[id]/team` shows members with inline role changes, a removed list with
   Re-add, and an add-member panel with account search, role choice and role
-  descriptions. Last-active times, who removed a member, and member activity are not
-  tracked yet, so they are not shown.
+  descriptions. Last-active times and member activity are not tracked yet, so they
+  are not shown.
+- Removing a project member now records who removed them (migration
+  `AddMemberRemovedBy`), and the Team tab's removed list shows it, for example
+  "Removed Sep 28 by Maya Chen · was Editor". Removals made before this change show
+  no name, and re-adding a member clears it.
 
 ### Changed
 

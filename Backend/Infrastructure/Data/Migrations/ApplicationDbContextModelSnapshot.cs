@@ -504,10 +504,15 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset?>("RemovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("RemovedById")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
                     b.HasKey("ProjectId", "UserId");
+
+                    b.HasIndex("RemovedById");
 
                     b.HasIndex("UserId");
 
@@ -1172,6 +1177,11 @@ namespace Backend.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Backend.Domain.Entities.User", "RemovedBy")
+                        .WithMany()
+                        .HasForeignKey("RemovedById")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Backend.Domain.Entities.User", "User")
                         .WithMany("ProjectMemberships")
                         .HasForeignKey("UserId")
@@ -1179,6 +1189,8 @@ namespace Backend.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Project");
+
+                    b.Navigation("RemovedBy");
 
                     b.Navigation("User");
                 });

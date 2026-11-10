@@ -183,7 +183,7 @@
 						<li class="flex flex-wrap items-center gap-3 py-2">
 							{@render avatar(m, true)}
 							<div class="min-w-0 flex-1"><p class="text-slate-400">{m.displayName}</p><p class="truncate text-[11px] text-slate-600">{m.email ?? ''}</p></div>
-							<span class="text-[11px] text-slate-500">Removed {day(m.removedAt!)} · was {m.role}</span>
+							<span class="text-[11px] text-slate-500">Removed {day(m.removedAt!)}{m.removedBy ? ` by ${m.removedBy}` : ''} · was {m.role}</span>
 							{#if canManage}
 								<button type="button" disabled={busy} onclick={() => reAdd(m)} class="text-[13px] font-semibold text-accent-ink hover:text-accent-ink-strong disabled:opacity-50">↶ Re-add</button>
 							{/if}

@@ -25,6 +25,7 @@ public static class RemoveMember
             return TypedResults.Conflict(MemberRules.LastOwnerMessage);
 
         member.RemovedAt = DateTimeOffset.UtcNow;
+        member.RemovedById = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.NoContent();
     }

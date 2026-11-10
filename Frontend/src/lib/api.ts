@@ -290,6 +290,7 @@ export type ProjectMemberRow = {
 	role: ProjectRole;
 	joinedAt: string;
 	removedAt: string | null;
+	removedBy: string | null;
 };
 
 export type ProjectMembers = { yourRole: ProjectRole; members: ProjectMemberRow[]; removed: ProjectMemberRow[] };

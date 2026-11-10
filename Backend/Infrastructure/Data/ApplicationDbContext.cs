@@ -48,6 +48,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.User).WithMany(x => x.ProjectMemberships)
                 .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.RemovedBy).WithMany()
+                .HasForeignKey(x => x.RemovedById).OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<ApiSpec>(entity =>

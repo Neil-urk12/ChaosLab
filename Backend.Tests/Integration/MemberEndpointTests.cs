@@ -34,7 +34,8 @@ public sealed class MemberEndpointTests(PostgreSqlFixture postgres)
         var priya = new User { Id = Guid.NewGuid(), UserName = "priya", Email = "priya.nair@chaoslab.test", Firstname = "Priya", Lastname = "Nair", DisplayName = "Priya Nair" };
         db.Users.Add(priya);
         await db.SaveChangesAsync();
-        var adminId = (await db.Users.SingleAsync(user => user.UserName == admin.Username)).Id;
+        var adminUser = await db.Users.AsNoTracking().SingleAsync(user => user.UserName == admin.Username);
+        var adminId = adminUser.Id;
 
         var found = await client.GetFromJsonAsync<List<SearchCandidates.Row>>($"{members}/candidates?q=PRI", Json);
         Assert.Equal((priya.Id, (ProjectRole?)null), (Assert.Single(found!).UserId, found![0].Role));
@@ -52,11 +53,12 @@ public sealed class MemberEndpointTests(PostgreSqlFixture postgres)
         var listed = await client.GetFromJsonAsync<ListMembers.Response>(members, Json);
         Assert.Equal(ProjectRole.Owner, listed!.YourRole);
         Assert.Equal(adminId, Assert.Single(listed.Members).UserId);
-        Assert.Equal((priya.Id, ProjectRole.Viewer), (Assert.Single(listed.Removed).UserId, listed.Removed[0].Role));
+        Assert.Equal((priya.Id, ProjectRole.Viewer, adminUser.DisplayName),
+            (Assert.Single(listed.Removed).UserId, listed.Removed[0].Role, listed.Removed[0].RemovedBy));
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(members, new { userId = priya.Id, role = "Viewer" })).StatusCode);
         var readded = await db.ProjectMembers.AsNoTracking().SingleAsync(m => m.UserId == priya.Id);
-        Assert.Equal((joinedAt, (DateTimeOffset?)null), (readded.JoinedAt, readded.RemovedAt));
+        Assert.Equal((joinedAt, (DateTimeOffset?)null, (Guid?)null), (readded.JoinedAt, readded.RemovedAt, readded.RemovedById));
     }
 
     [Fact]

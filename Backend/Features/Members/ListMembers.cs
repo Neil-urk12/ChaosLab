@@ -12,9 +12,10 @@ public static class ListMembers
 {
     public sealed record Response(ProjectRole YourRole, List<Row> Members, List<Row> Removed);
 
-    // Role of a removed row is the role the member held when removed.
+    // Role of a removed row is the role the member held when removed; RemovedBy is the remover's display name.
     public sealed record Row(
-        Guid UserId, string DisplayName, string? Email, ProjectRole Role, DateTimeOffset JoinedAt, DateTimeOffset? RemovedAt);
+        Guid UserId, string DisplayName, string? Email, ProjectRole Role, DateTimeOffset JoinedAt, DateTimeOffset? RemovedAt,
+        string? RemovedBy);
 
     public static async Task<Results<Ok<Response>, NotFound>> Handle(
         Guid id, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
@@ -26,7 +27,7 @@ public static class ListMembers
             .Where(member => member.ProjectId == id)
             .OrderBy(member => member.Role).ThenBy(member => member.JoinedAt)
             .Select(member => new Row(member.UserId, member.User.DisplayName, member.User.Email, member.Role,
-                member.JoinedAt, member.RemovedAt))
+                member.JoinedAt, member.RemovedAt, member.RemovedBy == null ? null : member.RemovedBy.DisplayName))
             .ToListAsync(cancellationToken);
 
         return TypedResults.Ok(new Response(role,
