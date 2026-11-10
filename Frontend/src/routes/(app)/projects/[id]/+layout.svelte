@@ -14,7 +14,7 @@
 		{ label: 'Scenarios', href: `${base}/scenarios` },
 		{ label: 'Test runs', href: `${base}/runs` },
 		{ label: 'Findings', href: `${base}/findings`, badge: project.failedFindingCount },
-		{ label: 'Team' },
+		{ label: 'Team', href: `${base}/team` },
 		{ label: 'Settings', href: `${base}/settings` }
 	]);
 

@@ -200,9 +200,24 @@ released yet, so history is grouped by date.
   and the failure timeline are not built yet, so their buttons stay disabled.
 - Resilience findings gained a `Degraded` outcome and a `Severity` column
   (migration `AddFindingSeverity`; existing findings default to Info).
+- Project membership: `GET /api/projects/{id}/members` lists active and removed
+  members with the caller's role, and owners can search existing accounts
+  (`GET .../members/candidates?q=`), add a member (`POST`), change a role (`PATCH
+  .../members/{userId}`) and remove a member (`DELETE`). Removal is a soft delete,
+  and adding a removed person reactivates the same membership row, keeping its
+  original join date. Adding someone who is already a member returns 409, including
+  when two owners add the same person at once. The last owner can be neither demoted
+  nor removed (409), and editors and viewers get 403. An owner who removes themselves
+  is asked to confirm first, then taken back to the project list. The Team tab at
+  `/projects/[id]/team` shows members with inline role changes, a removed list with
+  Re-add, and an add-member panel with account search, role choice and role
+  descriptions. Last-active times, who removed a member, and member activity are not
+  tracked yet, so they are not shown.
 
 ### Changed
 
+- The shared 403 message now reads "You don't have permission to do this." instead of
+  naming project settings, because every page shows it, the Team tab included.
 - Run history evidence coverage now counts Degraded findings as scored.
 - The `(auth)/setup` page now changes a password for real against
   `/api/auth/change-password` (current password, new password, confirmation) instead

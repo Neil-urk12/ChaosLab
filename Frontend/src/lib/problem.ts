@@ -6,7 +6,7 @@ export async function problemMessage(res: Response): Promise<string> {
 		return Object.values<string[]>(problem?.errors ?? {})[0]?.[0] ?? 'Check the values and try again.';
 	}
 	if (res.status === 409 || res.status === 422) return (await res.json().catch(() => null)) ?? 'The request could not be completed.';
-	if (res.status === 403) return 'Only project owners and editors can change settings.';
+	if (res.status === 403) return "You don't have permission to do this.";
 	return 'The request failed. Try again.';
 }
 

@@ -6,6 +6,7 @@ using Backend.Infrastructure.Security;
 using Backend.Features.Projects;
 using Backend.Features.TestRuns;
 using Backend.Features.Findings;
+using Backend.Features.Members;
 using Backend.Infrastructure.Data;
 using Backend.Domain.Entities;
 using Backend.Infrastructure.Identity;
@@ -96,6 +97,7 @@ api.MapScenarioEndpoints();
 api.MapEnvironmentEndpoints();
 api.MapTestRunEndpoints();
 api.MapFindingEndpoints();
+api.MapMemberEndpoints();
 
 app.Run();
 

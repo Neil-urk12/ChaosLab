@@ -281,3 +281,17 @@ export type RunFindings = {
 	run: FindingRunOption | null;
 	findings: RunFinding[];
 };
+
+// Backend/Features/Members
+export type ProjectMemberRow = {
+	userId: string;
+	displayName: string;
+	email: string | null;
+	role: ProjectRole;
+	joinedAt: string;
+	removedAt: string | null;
+};
+
+export type ProjectMembers = { yourRole: ProjectRole; members: ProjectMemberRow[]; removed: ProjectMemberRow[] };
+
+export type MemberCandidate = { userId: string; displayName: string; email: string | null; role: ProjectRole | null };
