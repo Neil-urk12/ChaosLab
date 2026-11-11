@@ -1,4 +1,4 @@
-import type { RunHistoryRow } from './api';
+import type { RunHistoryRow, TestRunStatus } from './api';
 
 // Date range used when the URL names none.
 export const DEFAULT_DAYS = '30';
@@ -33,3 +33,14 @@ export function compareProblem(runs: Pick<RunHistoryRow, 'environmentName' | 'sc
 	if (a.scoringVersion !== b.scoringVersion) return 'Runs use different scoring versions';
 	return null;
 }
+
+// [label, chip classes] per run status.
+export const statusStyles: Record<TestRunStatus, [string, string]> = {
+	Queued: ['Queued', 'bg-sky-500/10 text-sky-300'],
+	Running: ['Running', 'bg-accent-tint text-accent-ink'],
+	Completed: ['Completed', 'bg-emerald-500/10 text-emerald-300'],
+	PartiallyCompleted: ['Partially completed', 'bg-amber-500/10 text-amber-300'],
+	Cancelled: ['Cancelled', 'bg-slate-500/10 text-slate-400'],
+	// A failed run is a runner problem; target failures are findings, not run status.
+	Failed: ['Failed · runner error', 'bg-rose-500/10 text-rose-300']
+};

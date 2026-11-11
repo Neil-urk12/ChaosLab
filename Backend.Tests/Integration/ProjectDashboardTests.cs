@@ -169,6 +169,63 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task Run_detail_reports_number_previous_run_and_failing_timelines()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+        var failed = seeded.FindingRuns.First(pair => pair.Value == seeded.LatestRunId).Key;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var finding = await db.ResilienceFindings.SingleAsync(row => row.Id == failed);
+            var scenario = await db.ChaosScenarios.FirstAsync(row => row.EndpointId == finding.EndpointId);
+            var execution = new ScenarioExecution
+            {
+                Id = Guid.NewGuid(), TestRunId = finding.TestRunId, EndpointId = finding.EndpointId, ScenarioId = scenario.Id,
+                SequenceNo = 1, ScenarioType = ScenarioType.DuplicateRequest, Parameters = JsonDocument.Parse("{}")
+            };
+            var start = DateTimeOffset.UtcNow.AddDays(-1);
+            db.Add(execution);
+            // Inserted out of order: the timeline sorts by request start.
+            foreach (var (attempt, at) in new[] { (2, start.AddSeconds(3)), (1, start) })
+                db.Add(new HttpObservation
+                {
+                    Id = Guid.NewGuid(), ScenarioExecutionId = execution.Id, AttemptNo = attempt, RequestMethod = "POST",
+                    RequestPath = "/payments", RequestStartedAt = at, ClientStatusCode = 201, Metadata = JsonDocument.Parse("{}")
+                });
+            // A skipped execution with only a passing finding: counted as skipped, no timeline.
+            db.Add(new ScenarioExecution
+            {
+                Id = Guid.NewGuid(), TestRunId = finding.TestRunId, EndpointId = finding.EndpointId, ScenarioId = scenario.Id,
+                SequenceNo = 2, ScenarioType = ScenarioType.Latency, Parameters = JsonDocument.Parse("{}"),
+                Status = ScenarioExecutionStatus.Skipped
+            });
+            finding.ScenarioExecutionId = execution.Id;
+            await db.SaveChangesAsync();
+        }
+
+        var url = $"/api/projects/{seeded.ProjectId}/runs";
+        var run = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{seeded.LatestRunId}", Json))!;
+
+        Assert.Equal((2, 78m, 1), (run.Number, run.Score, run.SkippedScenarios));
+        Assert.Equal((1, 70m), (run.Previous!.Number, run.Previous.Score));
+        var timeline = Assert.Single(run.Timelines);
+        Assert.Equal((ScenarioType.DuplicateRequest, "/payments"), (timeline.ScenarioType, timeline.Path));
+        Assert.Equal([1, 2], timeline.Events.Select(e => e.AttemptNo));
+
+        var first = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{run.Previous.Id}", Json))!;
+        Assert.Null(first.Previous);
+        Assert.Empty(first.Timelines);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{url}/{Guid.NewGuid()}")).StatusCode);
+        // Another project's run is not served through this project.
+        var otherRun = seeded.FindingRuns.Values.Except([seeded.LatestRunId, run.Previous.Id]).Single();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{url}/{otherRun}")).StatusCode);
+    }
+
+    [Fact]
     public async Task Findings_default_to_latest_completed_run_and_carry_severity_and_recommendation()
     {
         await using var database = await postgres.CreateDatabaseAsync();

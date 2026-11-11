@@ -6,5 +6,6 @@ public static class TestRunEndpoints
     {
         var runs = api.MapGroup("/projects/{id:guid}/runs").WithTags("Test runs");
         runs.MapGet("/", ListRuns.Handle);
+        runs.MapGet("/{runId:guid}", GetRun.Handle);
     }
 }

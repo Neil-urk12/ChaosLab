@@ -98,3 +98,36 @@ test('Back within a project refills the search box from the URL', async ({ page 
 	await expect(page).toHaveURL(`${origin}/projects/a/runs?query=foo`);
 	await expect(search(page)).toHaveValue('foo');
 });
+
+test('a run opens its results with scores computed from findings', async ({ page }) => {
+	const finding = {
+		id: 'f1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', httpMethod: 'POST', path: '/payments',
+		scenarioType: 'DuplicateRequest', summary: 'Duplicate charge after a timeout retry', evidence: {},
+		recommendation: { title: 'Persist idempotency keys', text: 'Store the key server-side.' }
+	};
+	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
+		json: {
+			...run('a', 30), skippedScenarios: 2, score: 78, previous: { id: 'a-29', number: 29, score: 70 },
+			timelines: [{
+				executionId: 'e1', httpMethod: 'POST', path: '/payments', scenarioType: 'DuplicateRequest', outcome: 'Failed',
+				failureReason: 'record count ≤ 1 · actual 2', completedAt: '2026-11-01T00:00:06Z',
+				events: [{ attemptNo: 1, requestMethod: 'POST', requestPath: '/payments', startedAt: '2026-11-01T00:00:02Z', durationMs: 140,
+					clientStatusCode: 201, upstreamStatusCode: 201, outcomeType: 'Forwarded', errorType: null }]
+			}]
+		}
+	}));
+	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({
+		json: { runs: [], run: null, findings: [finding, { ...finding, id: 'f2', outcome: 'Passed', severity: 'Info' }] }
+	}));
+
+	await page.goto(`${origin}/projects/a/runs`);
+	await page.getByRole('link', { name: 'RUN-030' }).click();
+	await expect(page).toHaveURL(`${origin}/projects/a/runs/a-30`);
+	await expect(page.getByRole('heading', { name: 'RUN-030 results' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Project sections' }).getByRole('link', { name: 'Test runs' })).toHaveAttribute('aria-current', 'page');
+	await expect(page.getByText('+8 vs RUN-029')).toBeVisible();
+	await expect(page.getByRole('row', { name: /Idempotency 10% 50 2 findings/ })).toBeVisible();
+	await expect(page.getByText('Persist idempotency keys')).toBeVisible();
+	await expect(page.getByText('2 scenarios were skipped.')).toBeVisible();
+	await expect(page.getByText('record count ≤ 1 · actual 2')).toBeVisible();
+});

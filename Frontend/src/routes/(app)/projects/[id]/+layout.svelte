@@ -71,7 +71,7 @@
 <nav aria-label="Project sections" class="mt-8 flex gap-8 overflow-x-auto border-b border-line text-[13px]">
 	{#each tabs as tab (tab.label)}
 		{#if tab.href}
-			{@const current = page.url.pathname === tab.href}
+			{@const current = page.url.pathname === tab.href || (tab.href !== base && page.url.pathname.startsWith(`${tab.href}/`))}
 			<a
 				href={tab.href}
 				aria-current={current ? 'page' : undefined}

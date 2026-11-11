@@ -247,6 +247,57 @@ export type RunHistoryPage = {
 	runs: RunHistoryRow[];
 };
 
+export type ObservationOutcome =
+	| 'Forwarded'
+	| 'SyntheticResponse'
+	| 'ModifiedResponse'
+	| 'Dropped'
+	| 'Timeout'
+	| 'ConnectionError'
+	| 'ProxyError';
+
+export type TimelineEvent = {
+	attemptNo: number;
+	requestMethod: string;
+	requestPath: string;
+	startedAt: string;
+	durationMs: number | null;
+	clientStatusCode: number | null;
+	upstreamStatusCode: number | null;
+	outcomeType: ObservationOutcome;
+	errorType: string | null;
+};
+
+export type RunTimeline = {
+	executionId: string;
+	httpMethod: string;
+	path: string;
+	scenarioType: ScenarioType;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | null;
+	failureReason: string | null;
+	completedAt: string | null;
+	events: TimelineEvent[];
+};
+
+export type RunDetail = {
+	id: string;
+	number: number;
+	status: TestRunStatus;
+	environmentName: string;
+	requestedBy: string;
+	createdAt: string;
+	startedAt: string | null;
+	completedAt: string | null;
+	completedScenarios: number;
+	totalScenarios: number;
+	skippedScenarios: number;
+	score: number | null;
+	scoringVersion: string;
+	failureMessage: string | null;
+	previous: { id: string; number: number; score: number } | null;
+	timelines: RunTimeline[];
+};
+
 // Backend/Features/Findings
 export type FindingOutcome = 'Passed' | 'Degraded' | 'Failed' | 'Inconclusive' | 'NotApplicable';
 export type Severity = 'Info' | 'Low' | 'Medium' | 'High' | 'Critical';

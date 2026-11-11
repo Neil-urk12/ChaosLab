@@ -1,24 +1,15 @@
 <script lang="ts">
 	import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import type { RunHistoryRow, TestRunStatus } from '$lib/api';
+	import type { RunHistoryRow } from '$lib/api';
 	import { dateTime, duration, PLACEHOLDER, score } from '$lib/format';
-	import { compareProblem, DAY_RANGES, DEFAULT_DAYS, pageWindow, runLabel } from '$lib/runs';
+	import { compareProblem, DAY_RANGES, DEFAULT_DAYS, pageWindow, runLabel, statusStyles } from '$lib/runs';
 
 	let { data } = $props();
 	const project = $derived(data.project);
 	const history = $derived(data.history);
 	const runs = $derived(history.runs);
 
-	const statusStyles: Record<TestRunStatus, [string, string]> = {
-		Queued: ['Queued', 'bg-sky-500/10 text-sky-300'],
-		Running: ['Running', 'bg-accent-tint text-accent-ink'],
-		Completed: ['Completed', 'bg-emerald-500/10 text-emerald-300'],
-		PartiallyCompleted: ['Partially completed', 'bg-amber-500/10 text-amber-300'],
-		Cancelled: ['Cancelled', 'bg-slate-500/10 text-slate-400'],
-		// A failed run is a runner problem; target failures are findings, not run status.
-		Failed: ['Failed · runner error', 'bg-rose-500/10 text-rose-300']
-	};
 	const active = (run: RunHistoryRow) => run.status === 'Queued' || run.status === 'Running';
 
 	function note(run: RunHistoryRow) {
@@ -173,7 +164,7 @@
 								<input type="checkbox" aria-label="Select {runLabel(run)}" {checked} onchange={(e) => toggle(run, e.currentTarget.checked)} class={checkboxClass} />
 							</td>
 							<td class="max-w-48 px-4 py-4">
-								<p class="font-semibold text-accent-ink">{runLabel(run)}</p>
+								<a href="/projects/{project.id}/runs/{run.id}" class="font-semibold text-accent-ink hover:text-accent-ink-strong">{runLabel(run)}</a>
 								{#if subtitle}<p class="truncate text-[11px] text-slate-500" title={subtitle}>{subtitle}</p>{/if}
 							</td>
 							<td class="px-4 py-4">

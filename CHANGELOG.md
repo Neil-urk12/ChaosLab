@@ -217,6 +217,18 @@ released yet, so history is grouped by date.
   `AddMemberRemovedBy`), and the Team tab's removed list shows it, for example
   "Removed Sep 28 by Maya Chen · was Editor". Removals made before this change show
   no name, and re-adding a member clears it.
+- Run results: `GET /api/projects/{id}/runs/{runId}` returns one run's number,
+  status, timing, skipped scenarios, score, the previous comparable run (same
+  environment and scoring version) and the request timelines of up to 20 scenarios
+  that produced a failed or degraded finding, worst first. Another project's run
+  returns 404. The page at `/projects/[id]/runs/[runId]`, opened from a run ID in the
+  Test runs tab, shows the score with its change and evidence coverage, outcome
+  counts, the category breakdown with the locked scoring version 1.0 weights, top
+  findings, the failure timeline, recommendations and endpoint scores. Category and
+  endpoint scores are computed in the browser from the run's findings (Pass 100,
+  Degraded 50, Fail 0; empty categories are left out and their weight redistributed).
+  Comparing runs, rerunning failed scenarios and PDF reports are not built yet, so
+  their buttons stay disabled.
 
 ### Changed
 
