@@ -224,7 +224,7 @@ The data model exists; the endpoints and screens do not.
 ### 2.17 Cancelling a run [Planned]
 
 1. The user selects Cancel on a queued or running test.
-2. The runner stops starting new scenarios and lets in-flight requests finish or time out.
+2. The runner stops starting new scenarios and lets in-flight requests finish or time out. It marks the scenario executions that never started as Skipped.
 3. Set the run status to Cancelled and keep the evidence collected so far.
 4. Partial runs are not scored as complete. **[Open]**: how a cancelled run is shown in history.
 
