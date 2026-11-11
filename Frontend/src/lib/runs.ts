@@ -1,4 +1,4 @@
-import type { RunHistoryRow, TestRunStatus } from './api';
+import type { FeedRow, RunHistoryRow, TestRunStatus } from './api';
 
 // Date range used when the URL names none.
 export const DEFAULT_DAYS = '30';
@@ -44,3 +44,40 @@ export const statusStyles: Record<TestRunStatus, [string, string]> = {
 	// A failed run is a runner problem; target failures are findings, not run status.
 	Failed: ['Failed · runner error', 'bg-rose-500/10 text-rose-300']
 };
+
+export type FeedResult = 'Running' | 'Passed' | 'Degraded' | 'Failed' | 'Inconclusive' | 'NotApplicable' | 'Evaluating' | 'RunnerError' | 'Skipped';
+
+// A row's result in the live feed: the worst finding once evaluated, else the execution's own outcome.
+// Runner errors and skips are ChaosLab's problems, never the target's.
+export function feedResult(row: Pick<FeedRow, 'status' | 'outcome' | 'findings'>): FeedResult {
+	if (row.status === 'Running' || row.status === 'Queued') return 'Running';
+	if (row.status === 'Skipped') return 'Skipped';
+	if (row.status === 'Failed') return 'RunnerError';
+	return row.findings[0]?.outcome ?? row.outcome ?? 'Evaluating';
+}
+
+// [label, chip classes] per feed result.
+export const feedResultStyles: Record<FeedResult, [string, string]> = {
+	Running: ['Running', 'bg-accent-tint text-accent-ink'],
+	Passed: ['Pass', 'bg-emerald-500/10 text-emerald-300'],
+	Degraded: ['Degraded', 'bg-amber-500/10 text-amber-300'],
+	Failed: ['Fail', 'bg-rose-500/10 text-rose-300'],
+	Inconclusive: ['Inconclusive', 'bg-slate-500/10 text-slate-300'],
+	NotApplicable: ['N/A', 'bg-slate-500/10 text-slate-400'],
+	Evaluating: ['Evaluating', 'bg-slate-500/10 text-slate-400'],
+	RunnerError: ['Runner error', 'bg-slate-500/10 text-slate-300'],
+	Skipped: ['Skipped', 'bg-slate-500/10 text-slate-400']
+};
+
+// Linear estimate from the pace so far; null until one scenario has finished.
+export function remainingMs(elapsedMs: number, done: number, total: number): number | null {
+	if (done <= 0 || elapsedMs <= 0) return null;
+	return Math.max(0, Math.round((elapsedMs / done) * (total - done)));
+}
+
+// "3m 05s", "42s".
+export function clockDuration(ms: number) {
+	const seconds = Math.max(0, Math.round(ms / 1000));
+	const minutes = Math.floor(seconds / 60);
+	return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`;
+}

@@ -229,6 +229,21 @@ released yet, so history is grouped by date.
   Degraded 50, Fail 0; empty categories are left out and their weight redistributed).
   Comparing runs, rerunning failed scenarios and PDF reports are not built yet, so
   their buttons stay disabled.
+- Live run view: while a run is Queued or Running, `GET /api/projects/{id}/runs/{runId}`
+  also returns `live`, with every started scenario execution (newest first, with its
+  findings worst first) and the oldest execution still running, including its
+  parameters, invariants and requests so far. The run page then shows progress with
+  elapsed and estimated remaining time, Pass / Degraded / Fail / Inconclusive /
+  Runner error / Skipped counts, an execution feed filterable to problems or runner
+  errors, and a "Now running" panel. It reloads the run every 3 seconds and switches
+  to the results view when the run finishes. A reload that fails keeps the last data
+  on screen and is retried.
+- Run cancellation: `POST /api/projects/{id}/runs/{runId}/cancel` marks a Queued or
+  Running run Cancelled and keeps its evidence. Owners and editors can cancel; viewers
+  get 403, another project's run 404, and a run that already finished 409. The status
+  change is a single conditional update, so it never overwrites a run the runner
+  finishes at the same moment. There is no runner yet; when one is built it must
+  re-check the run status before starting each scenario.
 
 ### Changed
 

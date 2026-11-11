@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
@@ -31,7 +32,29 @@ public static class GetRun
         string? FailureMessage,
         // Previous completed, scored run on the same environment and scoring version (see ListRuns.Row.PreviousScore).
         Previous? Previous,
-        List<Timeline> Timelines);
+        List<Timeline> Timelines,
+        // Set only while the run is Queued or Running.
+        Live? Live);
+
+    // Every started execution, newest first, and the oldest one still running with its requests so far.
+    public sealed record Live(List<FeedRow> Feed, Current? Current);
+
+    public sealed record FeedRow(
+        Guid ExecutionId,
+        string HttpMethod,
+        string Path,
+        ScenarioType ScenarioType,
+        ScenarioExecutionStatus Status,
+        ScenarioOutcome? Outcome,
+        string? FailureReason,
+        DateTimeOffset? StartedAt,
+        DateTimeOffset? CompletedAt,
+        // Worst outcome first; empty until the evaluator has judged the execution.
+        List<FeedFinding> Findings);
+
+    public sealed record FeedFinding(ResilienceFindingOutcome Outcome, string Summary);
+
+    public sealed record Current(Guid ExecutionId, JsonElement Parameters, JsonElement Invariants, List<Event> Events);
 
     public sealed record Previous(Guid Id, int Number, decimal Score);
 
@@ -120,6 +143,50 @@ public static class GetRun
         return TypedResults.Ok(new Response(
             run.Id, run.Number, run.Status, run.EnvironmentName, run.RequestedBy, run.CreatedAt, run.StartedAt,
             run.CompletedAt, run.CompletedScenarios, run.TotalScenarios, run.Skipped, run.ResilienceScore,
-            run.ScoringVersion, run.FailureMessage, previous, timelines));
+            run.ScoringVersion, run.FailureMessage, previous, timelines,
+            run.Status is TestRunStatus.Queued or TestRunStatus.Running ? await LiveAsync(db, runId, cancellationToken) : null));
+    }
+
+    // shortcut: the feed holds every started execution of the run (bounded by the run's scenario count); page it if runs grow past a few hundred scenarios.
+    private static async Task<Live> LiveAsync(ApplicationDbContext db, Guid runId, CancellationToken cancellationToken)
+    {
+        var feed = await db.ScenarioExecutions.AsNoTracking()
+            .Where(execution => execution.TestRunId == runId && execution.Status != ScenarioExecutionStatus.Queued)
+            // Never null, so an execution that was skipped before it started can't sort above newer rows (DESC puts NULLs first).
+            .OrderByDescending(execution => execution.CompletedAt ?? execution.StartedAt ?? execution.CreatedAt)
+            .ThenByDescending(execution => execution.SequenceNo)
+            .Select(execution => new FeedRow(
+                execution.Id, execution.Endpoint.HttpMethod, execution.Endpoint.Path, execution.ScenarioType,
+                execution.Status, execution.Outcome, execution.FailureReason, execution.StartedAt, execution.CompletedAt,
+                db.ResilienceFindings
+                    .Where(finding => finding.ScenarioExecutionId == execution.Id)
+                    // Enum values aren't in severity order (Degraded was appended), so rank explicitly.
+                    .OrderBy(finding => finding.Outcome == ResilienceFindingOutcome.Failed ? 0
+                        : finding.Outcome == ResilienceFindingOutcome.Degraded ? 1
+                        : finding.Outcome == ResilienceFindingOutcome.Inconclusive ? 2
+                        : finding.Outcome == ResilienceFindingOutcome.Passed ? 3 : 4)
+                    .ThenByDescending(finding => finding.Severity)
+                    .Select(finding => new FeedFinding(finding.Outcome, finding.Summary))
+                    .ToList()))
+            .ToListAsync(cancellationToken);
+
+        var current = await db.ScenarioExecutions.AsNoTracking()
+            .Where(execution => execution.TestRunId == runId && execution.Status == ScenarioExecutionStatus.Running)
+            .OrderBy(execution => execution.SequenceNo)
+            .Select(execution => new
+            {
+                execution.Id, execution.Parameters, execution.Invariants,
+                Events = execution.Observations
+                    .OrderBy(observation => observation.RequestStartedAt).ThenBy(observation => observation.AttemptNo)
+                    .Select(observation => new Event(
+                        observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
+                        observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
+                        observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
+                    .ToList()
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new Live(feed, current is null ? null : new Current(
+            current.Id, current.Parameters.RootElement.Clone(), current.Invariants.RootElement.Clone(), current.Events));
     }
 }

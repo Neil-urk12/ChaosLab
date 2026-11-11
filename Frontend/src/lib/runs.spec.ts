@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareProblem, dayRange, DEFAULT_DAYS, pageWindow, runLabel } from './runs';
+import { clockDuration, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
 
 const run = (environmentName = 'Staging', scoringVersion = '1.0') => ({ environmentName, scoringVersion });
 
@@ -29,5 +29,24 @@ describe('runs', () => {
 		expect(compareProblem([run()])).toMatch(/exactly two/);
 		expect(compareProblem([run(), run('Prod-like test')])).toMatch(/environments/);
 		expect(compareProblem([run(), run('Staging', '2.0')])).toMatch(/scoring versions/);
+	});
+
+	it('ranks a feed row by its worst finding, then the execution outcome', () => {
+		const row = (status: 'Running' | 'Completed' | 'Failed' | 'Skipped', outcome: 'Passed' | 'Failed' | null = null, findings: ('Degraded' | 'Passed')[] = []) =>
+			({ status, outcome, findings: findings.map((o) => ({ outcome: o, summary: '' })) });
+		expect(feedResult(row('Running'))).toBe('Running');
+		expect(feedResult(row('Skipped'))).toBe('Skipped');
+		expect(feedResult(row('Failed', 'Failed'))).toBe('RunnerError');
+		expect(feedResult(row('Completed', 'Passed', ['Degraded', 'Passed']))).toBe('Degraded');
+		expect(feedResult(row('Completed', 'Failed'))).toBe('Failed');
+		expect(feedResult(row('Completed'))).toBe('Evaluating');
+	});
+
+	it('estimates the remaining time from the pace so far', () => {
+		expect(remainingMs(60_000, 0, 10)).toBeNull();
+		expect(remainingMs(60_000, 2, 10)).toBe(240_000);
+		expect(remainingMs(60_000, 10, 10)).toBe(0);
+		expect(clockDuration(185_000)).toBe('3m 05s');
+		expect(clockDuration(42_000)).toBe('42s');
 	});
 });

@@ -296,6 +296,34 @@ export type RunDetail = {
 	failureMessage: string | null;
 	previous: { id: string; number: number; score: number } | null;
 	timelines: RunTimeline[];
+	// Set only while the run is Queued or Running.
+	live: RunLive | null;
+};
+
+export type ScenarioExecutionStatus = 'Queued' | 'Running' | 'Completed' | 'Failed' | 'Skipped';
+
+export type FeedRow = {
+	executionId: string;
+	httpMethod: string;
+	path: string;
+	scenarioType: ScenarioType;
+	status: ScenarioExecutionStatus;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | null;
+	failureReason: string | null;
+	startedAt: string | null;
+	completedAt: string | null;
+	// Worst outcome first; empty until the evaluator has judged the execution.
+	findings: { outcome: FindingOutcome; summary: string }[];
+};
+
+export type RunLive = {
+	feed: FeedRow[];
+	current: {
+		executionId: string;
+		parameters: Record<string, string | number>;
+		invariants: Invariant[];
+		events: TimelineEvent[];
+	} | null;
 };
 
 // Backend/Features/Findings
