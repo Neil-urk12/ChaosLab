@@ -1,4 +1,5 @@
-import type { FeedRow, RunHistoryRow, TestRunStatus } from './api';
+import type { FeedRow, ProjectRole, RunHistoryRow, Scenario, TestRunStatus } from './api';
+import { isStateChanging } from './scenarios';
 
 // Date range used when the URL names none.
 export const DEFAULT_DAYS = '30';
@@ -80,4 +81,25 @@ export function clockDuration(ms: number) {
 	const seconds = Math.max(0, Math.round(ms / 1000));
 	const minutes = Math.floor(seconds / 60);
 	return minutes ? `${minutes}m ${String(seconds % 60).padStart(2, '0')}s` : `${seconds}s`;
+}
+
+// Mirrors CreateRun on the backend: these scenarios can create records, so a run that includes them needs confirmation.
+export const needsConfirmation = (s: Pick<Scenario, 'httpMethod' | 'type'>) => isStateChanging(s.httpMethod) || s.type === 'DuplicateRequest';
+
+// Per-endpoint counts of the scenarios that need confirmation, in the order given.
+export function confirmationRows(scenarios: Pick<Scenario, 'endpointId' | 'httpMethod' | 'path' | 'type'>[]) {
+	const rows = new Map<string, { httpMethod: string; path: string; count: number; duplicates: number }>();
+	for (const s of scenarios.filter(needsConfirmation)) {
+		const row = rows.get(s.endpointId) ?? { httpMethod: s.httpMethod, path: s.path, count: 0, duplicates: 0 };
+		row.count++;
+		if (s.type === 'DuplicateRequest') row.duplicates++;
+		rows.set(s.endpointId, row);
+	}
+	return [...rows.values()];
+}
+
+// Owners and editors can start and cancel runs; viewers and non-members can't. The backend answers 403 regardless.
+export function canStartRuns(project: { members: { userId: string; role: ProjectRole }[] }, me: { id: string }) {
+	const role = project.members.find((m) => m.userId === me.id)?.role;
+	return role === 'Owner' || role === 'Editor';
 }

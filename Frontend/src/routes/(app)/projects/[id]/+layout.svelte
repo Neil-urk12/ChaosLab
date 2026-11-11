@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { score } from '$lib/format';
+	import { canStartRuns } from '$lib/runs';
 
 	let { data, children } = $props();
 	const project = $derived(data.project);
 	const latest = $derived(project.latest);
 
 	const base = $derived(`/projects/${project.id}`);
+	// Viewers can't start runs; the backend answers 403 regardless.
+	const canRun = $derived(canStartRuns(project, data.me));
 	// Tabs without an href are not built yet.
 	const tabs = $derived([
 		{ label: 'Overview', href: base },
@@ -60,10 +63,12 @@
 			<p class="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">Latest resilience score</p>
 			<p class="mt-1 text-3xl font-bold text-accent-ink">{score(latest?.score)}<span class="ml-1 text-sm font-normal text-slate-500">/100</span></p>
 		</div>
-		<button type="button" disabled title="Running tests is not available yet" class="flex h-10 items-center gap-2 rounded-md bg-accent/50 px-6 text-[13px] font-semibold text-on-accent">
-			<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
-			Run Test
-		</button>
+		{#if canRun}
+			<a href="{base}/runs/new" class="flex h-10 items-center gap-2 rounded-md bg-accent px-6 text-[13px] font-semibold text-on-accent hover:bg-accent-hover">
+				<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
+				Run Test
+			</a>
+		{/if}
 		<button type="button" disabled title="Project actions are not available yet" aria-label="Project actions" class="grid size-10 place-items-center rounded-md border border-line-strong text-slate-600">⋮</button>
 	</div>
 </header>

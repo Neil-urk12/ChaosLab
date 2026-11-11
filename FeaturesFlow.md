@@ -198,7 +198,7 @@ The data model exists; the endpoints and screens do not.
 3. Optionally define a read-back request used to verify resulting state.
 4. Save the invariant on the scenario. Each execution keeps a snapshot of it.
 
-### 2.15 Test run configuration [Planned]
+### 2.15 Test run configuration [Partial]
 
 1. The user selects Create Test Run.
 2. Retrieve the project, API configuration, endpoints, and scenarios.

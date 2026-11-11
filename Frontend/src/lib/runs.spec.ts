@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clockDuration, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
+import { canStartRuns, clockDuration, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
 
 const run = (environmentName = 'Staging', scoringVersion = '1.0') => ({ environmentName, scoringVersion });
 
@@ -48,5 +48,20 @@ describe('runs', () => {
 		expect(remainingMs(60_000, 10, 10)).toBe(0);
 		expect(clockDuration(185_000)).toBe('3m 05s');
 		expect(clockDuration(42_000)).toBe('42s');
+	});
+
+	it('asks to confirm state-changing methods and duplicate requests', () => {
+		expect(needsConfirmation({ httpMethod: 'GET', type: 'Latency' })).toBe(false);
+		expect(needsConfirmation({ httpMethod: 'GET', type: 'DuplicateRequest' })).toBe(true);
+		expect(needsConfirmation({ httpMethod: 'DELETE', type: 'Latency' })).toBe(true);
+		const s = (endpointId: string, httpMethod: string, type: 'Latency' | 'DuplicateRequest') => ({ endpointId, httpMethod, path: `/${endpointId}`, type });
+		expect(confirmationRows([s('a', 'POST', 'Latency'), s('b', 'GET', 'Latency'), s('a', 'POST', 'DuplicateRequest')])).toEqual([
+			{ httpMethod: 'POST', path: '/a', count: 2, duplicates: 1 }
+		]);
+	});
+
+	it('lets owners and editors start runs, not viewers or non-members', () => {
+		const project = { members: [{ userId: 'o', role: 'Owner' as const }, { userId: 'e', role: 'Editor' as const }, { userId: 'v', role: 'Viewer' as const }] };
+		expect(['o', 'e', 'v', 'x'].map((id) => canStartRuns(project, { id }))).toEqual([true, true, false, false]);
 	});
 });

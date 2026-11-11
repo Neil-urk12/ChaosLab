@@ -244,6 +244,21 @@ released yet, so history is grouped by date.
   change is a single conditional update, so it never overwrites a run the runner
   finishes at the same moment. There is no runner yet; when one is built it must
   re-check the run status before starting each scenario.
+- New test run page (`/projects/{id}/runs/new`), opened from the Run Test and New test
+  run buttons, which only owners and editors now see. A preflight
+  (`GET /api/projects/{id}/runs/preflight`) probes the default environment's base URL
+  and shows the last credential validation of each security scheme the included
+  operations use, the spec version and the scoring version. A missing spec, no
+  included endpoints, a missing or unconfirmed target, or an unreachable target blocks
+  the run; credential problems are only warnings. The page selects endpoints and
+  scenarios (enabled defaults, or chosen per fault group or per scenario), concurrency
+  1–5, baseline requests and 0–3 runner retries, and asks for confirmation when
+  scenarios call POST, PUT, PATCH or DELETE or send duplicate requests.
+  `POST /api/projects/{id}/runs` re-checks all of this, probes the target again, and
+  creates a Queued run with scoring version 1.0, a configuration snapshot and one
+  queued scenario execution per scenario with snapshots of its parameters and
+  invariants. Viewers get 403. Execution is not built yet, so new runs stay Queued
+  until cancelled.
 
 ### Changed
 

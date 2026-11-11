@@ -247,6 +247,16 @@ export type RunHistoryPage = {
 	runs: RunHistoryRow[];
 };
 
+// GET /projects/{id}/runs/preflight. Blockers stop a run from being created; credential problems are warnings.
+export type RunPreflight = {
+	target: { name: string; baseUrl: string; kind: EnvironmentKind; authorized: boolean } | null;
+	reachability: { reachable: boolean; status: number | null; error: string | null; elapsedMs: number } | null;
+	credentials: { scheme: string; configured: boolean; valid: boolean | null; validation: string | null; validatedAt: string | null }[];
+	spec: { openApiVersion: string; operationCount: number; neverTestCount: number } | null;
+	scoringVersion: string;
+	blockers: string[];
+};
+
 export type ObservationOutcome =
 	| 'Forwarded'
 	| 'SyntheticResponse'

@@ -5,7 +5,7 @@
 	import { categoryScores, endpointScores, findingCategory, isScored, outcomeLabels } from '$lib/findings';
 	import { dateTime, duration, PLACEHOLDER, score, scoreLabel } from '$lib/format';
 	import { send } from '$lib/problem';
-	import { clockDuration, feedResult, feedResultStyles, remainingMs, runLabel, statusStyles, type FeedResult } from '$lib/runs';
+	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, runLabel, statusStyles, type FeedResult } from '$lib/runs';
 	import { categories as faultCategories, describeInvariant, describeParameters, faultLabels } from '$lib/scenarios';
 
 	let { data } = $props();
@@ -95,8 +95,7 @@
 	// Live view while the run is Queued or Running.
 	const live = $derived(run.live);
 	const active = $derived(live != null);
-	const myRole = $derived(project.members.find((m) => m.userId === data.me.id)?.role);
-	const canCancel = $derived(myRole === 'Owner' || myRole === 'Editor');
+	const canCancel = $derived(canStartRuns(project, data.me));
 
 	let now = $state(Date.now());
 	// A failed poll keeps the last good data and the next tick tries again; a 4xx (run gone, signed out) goes to load.

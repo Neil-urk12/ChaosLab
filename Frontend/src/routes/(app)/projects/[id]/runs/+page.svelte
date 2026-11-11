@@ -3,12 +3,13 @@
 	import { page } from '$app/state';
 	import type { RunHistoryRow } from '$lib/api';
 	import { dateTime, duration, PLACEHOLDER, score } from '$lib/format';
-	import { compareProblem, DAY_RANGES, DEFAULT_DAYS, pageWindow, runLabel, statusStyles } from '$lib/runs';
+	import { canStartRuns, compareProblem, DAY_RANGES, DEFAULT_DAYS, pageWindow, runLabel, statusStyles } from '$lib/runs';
 
 	let { data } = $props();
 	const project = $derived(data.project);
 	const history = $derived(data.history);
 	const runs = $derived(history.runs);
+	const canRun = $derived(canStartRuns(project, data.me));
 
 	const active = (run: RunHistoryRow) => run.status === 'Queued' || run.status === 'Running';
 
@@ -91,10 +92,12 @@
 			{history.matched === history.total ? '' : `${history.matched} of `}{history.total} run{history.total === 1 ? '' : 's'}{#if history.scoringVersions.length} · scored with scoring version {history.scoringVersions.join(', ')}{/if}
 		</p>
 	</div>
-	<button type="button" disabled title="Running tests is not available yet" class="flex h-9 items-center gap-2 rounded-md bg-accent/50 px-4 text-[13px] font-semibold text-on-accent">
-		<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
-		New test run
-	</button>
+	{#if canRun}
+		<a href="/projects/{project.id}/runs/new" class="flex h-9 items-center gap-2 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent-hover">
+			<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
+			New test run
+		</a>
+	{/if}
 </div>
 
 <div class="mt-5 flex flex-wrap gap-3">
