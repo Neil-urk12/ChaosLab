@@ -54,7 +54,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         """;
 
     private sealed record Received(
-        string Method, string Path, string? Authorization, string? IdempotencyKey, string? ContentType, string Body);
+        string Method, string Path, string? Authorization, string? IdempotencyKey, string? ContentType, string Body,
+        string? Cookie, string Query);
 
     [Fact]
     public async Task Runs_direct_faults_records_every_request_and_finishes_the_run()
@@ -126,6 +127,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         // The preflight probe calls the base URL itself, without the credential.
         Assert.All(received.Where(r => r.Path != "/v1"), r => Assert.Equal($"Bearer {Token}", r.Authorization));
         Assert.Contains(received, r => r.Method == "GET" && r.Path == "/v1/orders/7");
+        // The target sets a session cookie on every response; no later request sends it back.
+        Assert.All(received, r => Assert.Null(r.Cookie));
     }
 
     [Fact]
@@ -333,6 +336,49 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.All(execution.Observations, o => Assert.Equal(
             (ObservationOutcomeType.Forwarded, 200, "The target closed the connection before the response body ended."),
             (o.OutcomeType, o.UpstreamStatusCode ?? 0, o.ErrorType)));
+        // The 5 bytes that arrived before the reset are kept as evidence.
+        Assert.All(execution.Observations, o => Assert.Equal((5L, "{\"id\""),
+            (o.ResponseBytes ?? 0, o.Metadata.RootElement.GetProperty("body").GetString())));
+    }
+
+    [Fact]
+    public async Task Operations_needing_several_schemes_get_every_credential_or_none()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        // One requirement with two schemes: the bearer token and an app key in the query, both needed together.
+        var spec = Spec
+            .Replace("security: [{bearerAuth: []}]", "security: [{bearerAuth: [], appKey: []}]")
+            .Replace("bearerAuth: {type: http, scheme: bearer}",
+                "bearerAuth: {type: http, scheme: bearer}\n    appKey: {type: apiKey, in: query, name: app_key}")
+            .Replace("schema: {type: integer, example: 7}}]",
+                "schema: {type: integer, example: 7}}, {name: fields, in: query, required: true, schema: {type: string, example: all}}]");
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl, spec: spec);
+        var order = scenarios.Single(s => s.HttpMethod == "GET" && s.Path == "/orders/{id}" && s.Type == ScenarioType.Latency).Id;
+        await SetParametersAsync(client, projectId, order, new { delayMs = 0 });
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        List<Received> Orders(int skip) => received.Skip(skip).Where(r => r.Path == "/v1/orders/7").ToList();
+
+        // Only the bearer token is stored: half a requirement is not sent at all.
+        var sent = received.Count;
+        await CreateRunAsync(client, projectId, [order]);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+        var partial = Orders(sent);
+        Assert.Equal(2, partial.Count);
+        Assert.All(partial, r => Assert.Equal(((string?)null, "?fields=all"), (r.Authorization, r.Query)));
+
+        // With both stored, both go out, and the key joins the operation's own query instead of replacing it.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync($"/api/projects/{projectId}/environment/credentials/appKey",
+            new { authType = "ApiKey", secret = "app-key-0123456789" })).StatusCode);
+        sent = received.Count;
+        await CreateRunAsync(client, projectId, [order]);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+        var full = Orders(sent);
+        Assert.Equal(2, full.Count);
+        Assert.All(full, r => Assert.Equal(($"Bearer {Token}", "?fields=all&app_key=app-key-0123456789"), (r.Authorization, r.Query)));
     }
 
     [Fact]
@@ -453,11 +499,12 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{scenarioId}", new { parameters })).StatusCode);
 
     // A project with the spec imported, the loopback target and a bearer credential, and generated scenarios.
-    private static async Task<(Guid, List<GetScenarios.Row>)> SetUpAsync(HttpClient client, string baseUrl, int requestTimeoutSeconds = 5)
+    private static async Task<(Guid, List<GetScenarios.Row>)> SetUpAsync(
+        HttpClient client, string baseUrl, int requestTimeoutSeconds = 5, string spec = Spec)
     {
         var created = await client.PostAsJsonAsync("/api/projects", new { name = "Orders" });
         var projectId = (await created.Content.ReadFromJsonAsync<ProjectResponse>())!.Id;
-        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Spec })).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = spec })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync($"/api/projects/{projectId}/environment",
             new { baseUrl, kind = "Staging", requestTimeoutSeconds, verifyTls = true, authorized = true })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync($"/api/projects/{projectId}/environment/credentials/bearerAuth",
@@ -475,7 +522,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
     }
 
     // A loopback target that records every request and echoes the path's last segment as {"id": n}. /stream promises
-    // 100 bytes, sends 5 and closes the connection.
+    // 100 bytes, sends 5 and closes the connection. Every response sets a session cookie.
     private static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl)
     {
         var probe = new TcpListener(IPAddress.Loopback, 0);
@@ -501,7 +548,9 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
                         using var reader = new StreamReader(request.InputStream);
                         var body = await reader.ReadToEndAsync();
                         received.Enqueue(new(request.HttpMethod, request.Url!.AbsolutePath, request.Headers["Authorization"],
-                            request.Headers[RunExecutor.IdempotencyHeader], request.ContentType, body));
+                            request.Headers[RunExecutor.IdempotencyHeader], request.ContentType, body,
+                            request.Headers["Cookie"], request.Url!.Query));
+                        context.Response.Headers.Add("Set-Cookie", "session=leaked; Path=/");
                         var last = request.Url.Segments[^1];
                         if (last == "stream")
                         {
