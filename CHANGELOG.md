@@ -316,6 +316,10 @@ released yet, so history is grouped by date.
   `Features/Projects` is the reference slice.
 - Rewrote `FeaturesFlow.md` to match `PROJECT.md`, tagging each process as Done,
   Partial, or Planned.
+- Retagged `FeaturesFlow.md` against the shipped code: project member management,
+  OpenAPI specification import, and endpoint discovery and selection are now Done;
+  viewing test results and test run history are now Partial, with notes on what is
+  not built yet.
 - Migration `AddScenariosAndTargetSettings` replaces the free-text
   `DeveloperInvariant` on `ChaosScenarios` and `ScenarioExecutions` with a JSONB
   `Invariants` array, adds `ChaosScenarios.Reason` and a unique

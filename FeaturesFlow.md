@@ -1,6 +1,6 @@
 # ChaosLab App Flow: Community / Self-Hosted Version
 
-**Status:** updated 8 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
+**Status:** updated 13 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
 
 Conventions used below:
 
@@ -133,9 +133,9 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 1. Retrieve the projects where the caller has an active membership, newest first.
 2. Display the list. Selecting a project shows its detail: latest score, recent runs, API summary.
 
-### 2.8 Project member management [Planned]
+### 2.8 Project member management [Done]
 
-The data model exists; the endpoints and screens do not.
+Built as the project's Team tab. Only Owners add, remove, or change the role of members, and a project always keeps at least one Owner.
 
 1. The user opens Project Members and sees current members and roles.
 2. To add: choose a user and a role (Owner, Editor, Viewer). Validate, check the user is not already a member, create the membership, refresh the list.
@@ -152,7 +152,7 @@ The data model exists; the endpoints and screens do not.
 5. Optional global headers and reusable test values can be saved here.
 6. Production targets are not supported. The user must confirm that they own or are authorized to test the target.
 
-### 2.10 OpenAPI specification import [Planned]
+### 2.10 OpenAPI specification import [Done]
 
 1. Open API spec configuration.
 2. Choose an import method: paste JSON or YAML, upload a file, or enter the URL of an OpenAPI document.
@@ -163,7 +163,7 @@ The data model exists; the endpoints and screens do not.
 7. Save the specification and its parsed endpoint information.
 8. Display the discovered endpoints for review, then continue to authentication configuration.
 
-### 2.11 Endpoint discovery and selection [Planned]
+### 2.11 Endpoint discovery and selection [Done]
 
 1. Read each path and each supported HTTP operation.
 2. Extract request requirements, parameters, request bodies, and expected response schemas and status codes.
@@ -252,7 +252,9 @@ Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and ba
 7. Calculate evidence coverage: scored findings versus all findings, including Inconclusive.
 8. Save category scores, the overall score, evidence coverage, and the scoring version to the run, then send them to the dashboard.
 
-### 2.20 Viewing test results [Planned]
+### 2.20 Viewing test results [Partial]
+
+Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces findings, scores, or recommendations yet (sections 2.18, 2.19, and 2.22), so real runs show these sections empty, and there is no drill-down into a single endpoint or scenario.
 
 1. The user opens a completed run.
 2. Retrieve run information, scenario executions, findings, scores, and recommendations.
@@ -273,7 +275,9 @@ Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and ba
 4. Attach each recommendation to the endpoint, scenario, pattern, and severity.
 5. Save, display in the results, and include in reports. ChaosLab does not change source code.
 
-### 2.23 Test run history [Planned]
+### 2.23 Test run history [Partial]
+
+Built: the paged history with filters, date, status, score and its change from the previous comparable run, evidence coverage, and scenarios executed; each run opens its results. Not built: an endpoints-tested column, comparing two runs, and rerunning failed or degraded scenarios (both buttons are shown disabled).
 
 1. The user opens Test History for a project.
 2. Show previous runs with date, status, score, evidence coverage, endpoints tested, and scenarios executed.
