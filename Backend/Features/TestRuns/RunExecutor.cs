@@ -35,7 +35,7 @@ public sealed class RunExecutor(
 
     private sealed record Execution(
         Guid Id, ScenarioType ScenarioType, JsonDocument Parameters, string HttpMethod, string Path,
-        JsonDocument EndpointParameters, JsonDocument? RequestBody);
+        JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security);
 
     // The endpoint's request, ready to be sent any number of times.
     private sealed record Prepared(
@@ -200,7 +200,8 @@ public sealed class RunExecutor(
             .Where(execution => execution.TestRunId == runId).OrderBy(execution => execution.SequenceNo)
             .Select(execution => new Execution(
                 execution.Id, execution.ScenarioType, execution.Parameters, execution.Endpoint.HttpMethod,
-                execution.Endpoint.Path, execution.Endpoint.Parameters, execution.Endpoint.RequestBodySchema))
+                execution.Endpoint.Path, execution.Endpoint.Parameters, execution.Endpoint.RequestBodySchema,
+                execution.Endpoint.SecurityRequirements))
             .ToListAsync(cancellationToken);
 
         foreach (var execution in executions)
@@ -389,23 +390,35 @@ public sealed class RunExecutor(
                 secrets.Add(value);
         }
 
-        // The first scheme of the operation with a stored credential; without one the request goes unauthenticated.
-        Action<HttpRequestMessage> authenticate = _ => { };
-        foreach (var scheme in context.Schemes.Where(scheme => scheme.Operations.Contains(operation)))
+        // OpenAPI security lists alternatives, and each alternative needs all of its schemes together. The first one whose
+        // schemes all have a stored credential is sent in full; without one the request goes unauthenticated.
+        (SchemeInfo, AuthProfile)? Credential(string name) =>
+            context.Schemes.FirstOrDefault(scheme => scheme.Name == name) is { } scheme
+            && context.Environment.AuthProfiles.FirstOrDefault(profile => profile.Name == name
+                && profile.AuthType != AuthType.None && profile.SecretCipherText is not null) is { } profile
+                ? (scheme, profile) : null;
+        var requirements = execution.Security?.RootElement
+            ?? (root.TryGetProperty("security", out var global) ? global : default);
+        var chosen = requirements.ValueKind == JsonValueKind.Array
+            ? requirements.EnumerateArray().Where(requirement => requirement.ValueKind == JsonValueKind.Object)
+                .Select(requirement => requirement.EnumerateObject().Select(scheme => scheme.Name).ToList())
+                .FirstOrDefault(names => names.Count > 0 && names.All(name => Credential(name) is not null))
+            : null;
+        var credentials = new List<(SchemeInfo Scheme, AuthType Type, string Secret, string? Username)>();
+        foreach (var (scheme, profile) in (chosen ?? []).Select(name => Credential(name)!.Value))
         {
-            var profile = context.Environment.AuthProfiles.FirstOrDefault(profile => profile.Name == scheme.Name
-                && profile.AuthType != AuthType.None && profile.SecretCipherText is not null);
-            if (profile is null)
-                continue;
             if (protector.TryUnprotect(profile.SecretCipherText!, profile.Id) is not { } secret)
                 return (null, $"The credential of {scheme.Name} could not be decrypted. Enter the secret again.");
-            var username = CredentialConfig.From(profile.PublicConfig).Username;
-            authenticate = request => TargetClient.Authenticate(request, profile.AuthType, secret, username, scheme);
+            credentials.Add((scheme, profile.AuthType, secret, CredentialConfig.From(profile.PublicConfig).Username));
             secrets.Add(secret);
-            break;
+        }
+        void Authenticate(HttpRequestMessage request)
+        {
+            foreach (var (scheme, type, secret, username) in credentials)
+                TargetClient.Authenticate(request, type, secret, username, scheme);
         }
 
-        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, secrets, authenticate), null);
+        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, secrets, Authenticate), null);
     }
 
     // Sends one request with the environment's timeout and records what came back.
@@ -435,6 +448,7 @@ public sealed class RunExecutor(
             .Distinct().ToList();
         string Redact(string text) => secrets.Aggregate(text, (kept, secret) => kept.Replace(secret, "[redacted]"));
         var started = time.GetTimestamp();
+        using var kept = new MemoryStream();
         try
         {
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
@@ -445,9 +459,7 @@ public sealed class RunExecutor(
             metadata["headers"] = response.Headers.Concat(response.Content.Headers)
                 .Where(header => !header.Key.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(header => header.Key, header => Redact(string.Join(", ", header.Value)));
-            var (body, bytes) = await ReadBodyAsync(response, timeout.Token);
-            metadata["body"] = Redact(body);
-            observation.ResponseBytes = bytes;
+            await ReadBodyAsync(response, kept, observation, timeout.Token);
         }
         catch (IOException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -474,27 +486,30 @@ public sealed class RunExecutor(
                     target.RequestTimeoutSeconds)
             };
         }
+        // Whatever part of the body arrived, also when the target cut it off or the timeout hit mid-body.
+        if (observation.ResponseBytes is not null)
+            // PostgreSQL jsonb rejects \u0000, which binary bodies contain.
+            metadata["body"] = Redact(Encoding.UTF8.GetString(kept.GetBuffer(), 0, (int)kept.Length).Replace('\0', '�'));
         observation.DurationMs = (long)time.GetElapsedTime(started).TotalMilliseconds;
         observation.RequestCompletedAt = time.GetUtcNow();
         observation.Metadata = JsonSerializer.SerializeToDocument(metadata, JsonSerializerOptions.Web);
         return observation;
     }
 
-    // The first 16 KB of the body as text, and the full size.
-    private static async Task<(string Body, long Bytes)> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    // Keeps the first 16 KB of the body in kept and counts every byte in ResponseBytes as it arrives, so a read that
+    // fails part way still leaves what came before it.
+    private static async Task ReadBodyAsync(
+        HttpResponseMessage response, MemoryStream kept, HttpObservation observation, CancellationToken cancellationToken)
     {
+        observation.ResponseBytes = 0;
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var kept = new MemoryStream();
         var buffer = new byte[8192];
-        long total = 0;
         int read;
         while ((read = await stream.ReadAsync(buffer, cancellationToken)) > 0)
         {
             kept.Write(buffer, 0, (int)Math.Min(read, MaxStoredBodyBytes - kept.Length));
-            total += read;
+            observation.ResponseBytes += read;
         }
-        // PostgreSQL jsonb rejects \u0000, which binary bodies contain.
-        return (Encoding.UTF8.GetString(kept.GetBuffer(), 0, (int)kept.Length).Replace('\0', '�'), total);
     }
 
     // An example from the spec: the object's own example, its first named example, or its schema's example, default or

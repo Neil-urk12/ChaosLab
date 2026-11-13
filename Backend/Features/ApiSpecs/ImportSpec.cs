@@ -139,6 +139,9 @@ public static class ImportSpec
     {
         // Through a proxy the callback would only see the proxy's address, so HTTP(S)_PROXY is ignored.
         UseProxy = false,
+        // The factory shares a handler across projects and runs, so a cookie jar would replay one target's session
+        // into another's requests. Cookies the caller sets on a request (an apiKey in a cookie) are still sent.
+        UseCookies = false,
         MaxAutomaticRedirections = 3,
         ConnectCallback = async (context, cancellationToken) =>
         {

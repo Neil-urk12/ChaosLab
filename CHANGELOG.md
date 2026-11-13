@@ -262,7 +262,11 @@ released yet, so history is grouped by date.
   and runs their scenarios one at a time against the run's snapshotted target. Each
   request is built from the spec (path, required query and header parameters, and the
   JSON body, all from the spec's examples, defaults or enum values) with the
-  environment's global headers and the stored credential. The body is sent as the
+  environment's global headers and the stored credentials. Of the operation's security
+  requirements, the first whose schemes all have a stored credential is sent in full,
+  so an operation that needs two schemes together (a token and an API key) gets both;
+  when none is complete the request goes unauthenticated. An API key in the query is
+  added after the operation's own query parameters. The body is sent as the
   spec's own JSON media type. It sends a baseline request when the run asks for one,
   then applies the fault directly: Latency delays the
   request, Timeout / Drop holds the request open until the timeout or drops the
@@ -271,8 +275,9 @@ released yet, so history is grouped by date.
   observation with status, timing and the first 16 KB of the response (cookies are not
   kept, and a credential of 8 or more characters that the target echoes back is
   replaced with `[redacted]`), so the live view fills in as the run goes. A response
-  the target cuts off mid-body, by closing or resetting the connection, is stored with
-  its status and an error. A target that accepts the connection and closes it without
+  the target cuts off mid-body, by closing or resetting the connection, or that the
+  timeout interrupts, is stored with its status, an error, and the part of the body and
+  byte count that arrived. A target that accepts the connection and closes it without
   a response is stored as the target's failure, with an error and no status. Requests
   without a body are sent with `Content-Length: 0`, so each one reaches the target
   exactly once. Global content headers such as `Content-Type` go on the request body.
@@ -290,6 +295,10 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- Requests to targets and spec URLs no longer keep or send back cookies. The backend
+  shares its HTTP connections across projects and runs, so a session cookie one target
+  set could otherwise ride along on another project's requests to the same host. An
+  API key configured as a cookie is still sent.
 - The shared 403 message now reads "You don't have permission to do this." instead of
   naming project settings, because every page shows it, the Team tab included.
 - Run history evidence coverage now counts Degraded findings as scored.
