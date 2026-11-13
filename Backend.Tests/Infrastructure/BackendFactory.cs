@@ -1,3 +1,4 @@
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -30,6 +31,9 @@ public sealed class BackendFactory(
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(database.ConnectionString));
+            // Tests seed Queued and Running runs; RunExecutorTests drive the runner through TickAsync instead.
+            foreach (var executor in services.Where(service => service.ImplementationType == typeof(RunExecutor)).ToList())
+                services.Remove(executor);
             if (timeProvider is not null)
             {
                 services.RemoveAll<TimeProvider>();

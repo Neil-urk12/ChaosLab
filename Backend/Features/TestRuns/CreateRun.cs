@@ -12,7 +12,7 @@ namespace Backend.Features.TestRuns;
 // Command: creates a Queued run from the selected scenarios of the active spec's included endpoints against the
 // default environment (FeaturesFlow 2.15). The run keeps a configuration snapshot and each execution a snapshot
 // of its scenario, so later edits don't change history. Scenarios that call POST/PUT/PATCH/DELETE or send
-// duplicate requests need explicit confirmation. Execution (2.16) is not built yet, so the run stays Queued.
+// duplicate requests need explicit confirmation. RunExecutor picks the Queued run up (2.16).
 public static class CreateRun
 {
     // The locked scoring version new runs are scored with.
@@ -80,7 +80,7 @@ public static class CreateRun
         if (stateChanging > 0 && request.ConfirmStateChanging != true)
             return TypedResults.ValidationProblem(new Dictionary<string, string[]>
             {
-                ["confirmStateChanging"] = [$"Confirm the {stateChanging} state-changing scenarios before starting the run."]
+                ["confirmStateChanging"] = ["Confirm the state-changing scenarios before starting the run."]
             });
 
         // Checked last, right before creating, so nothing runs against a target that is down.

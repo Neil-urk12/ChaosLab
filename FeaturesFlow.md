@@ -210,7 +210,9 @@ The data model exists; the endpoints and screens do not.
 8. Validate the configuration. If invalid, show the errors.
 9. Create the run with the scoring version and configuration snapshot, set status to Queued, and continue to execution.
 
-### 2.16 Resilience test execution [Planned]
+### 2.16 Resilience test execution [Partial]
+
+Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time. Not built: the injector and simulator faults (skipped with a reason), concurrency above one, and runner retries.
 
 1. The user clicks Execute Tests. Set status to Running.
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
@@ -221,7 +223,7 @@ The data model exists; the endpoints and screens do not.
 7. When no scenarios remain, set the run status to Completed, PartiallyCompleted, or Failed.
 8. Continue to evaluation.
 
-### 2.17 Cancelling a run [Planned]
+### 2.17 Cancelling a run [Done]
 
 1. The user selects Cancel on a queued or running test.
 2. The runner stops starting new scenarios and lets in-flight requests finish or time out. It marks the scenario executions that never started as Skipped.
