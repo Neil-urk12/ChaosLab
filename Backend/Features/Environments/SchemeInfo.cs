@@ -12,13 +12,16 @@ public sealed record SchemeInfo(
     public static async Task<List<SchemeInfo>> ForProjectAsync(ApplicationDbContext db, Guid projectId, CancellationToken cancellationToken)
     {
         // shortcut: loads the whole parsed document like GetSpec; project it in SQL if specs get large.
-        var document = await db.ApiSpecs.AsNoTracking().Where(spec => spec.ProjectId == projectId && spec.IsActive)
-            .Select(spec => spec.ParsedDocument).SingleOrDefaultAsync(cancellationToken);
-        if (document is null)
-            return [];
-        var root = document.RootElement;
+        var spec = await db.ApiSpecs.AsNoTracking().Where(spec => spec.ProjectId == projectId && spec.IsActive)
+            .Select(spec => new { spec.Id, spec.ParsedDocument }).SingleOrDefaultAsync(cancellationToken);
+        return spec is null ? [] : await ForSpecAsync(db, spec.Id, spec.ParsedDocument.RootElement, cancellationToken);
+    }
+
+    // The schemes of one spec, active or not; root is that spec's parsed document.
+    public static async Task<List<SchemeInfo>> ForSpecAsync(ApplicationDbContext db, Guid specId, JsonElement root, CancellationToken cancellationToken)
+    {
         var endpoints = await db.ApiEndpoints.AsNoTracking()
-            .Where(endpoint => endpoint.ApiSpec.ProjectId == projectId && endpoint.ApiSpec.IsActive)
+            .Where(endpoint => endpoint.ApiSpecId == specId)
             .OrderBy(endpoint => endpoint.Path).ThenBy(endpoint => endpoint.HttpMethod)
             .Select(endpoint => new { endpoint.HttpMethod, endpoint.Path, endpoint.SecurityRequirements })
             .ToListAsync(cancellationToken);

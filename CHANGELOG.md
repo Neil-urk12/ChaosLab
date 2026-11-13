@@ -242,8 +242,8 @@ released yet, so history is grouped by date.
   Running run Cancelled and keeps its evidence. Owners and editors can cancel; viewers
   get 403, another project's run 404, and a run that already finished 409. The status
   change is a single conditional update, so it never overwrites a run the runner
-  finishes at the same moment. There is no runner yet; when one is built it must
-  re-check the run status before starting each scenario.
+  finishes at the same moment. The runner re-checks the run status before starting
+  each scenario.
 - New test run page (`/projects/{id}/runs/new`), opened from the Run Test and New test
   run buttons, which only owners and editors now see. A preflight
   (`GET /api/projects/{id}/runs/preflight`) probes the default environment's base URL
@@ -257,8 +257,36 @@ released yet, so history is grouped by date.
   `POST /api/projects/{id}/runs` re-checks all of this, probes the target again, and
   creates a Queued run with scoring version 1.0, a configuration snapshot and one
   queued scenario execution per scenario with snapshots of its parameters and
-  invariants. Viewers get 403. Execution is not built yet, so new runs stay Queued
-  until cancelled.
+  invariants. Viewers get 403.
+- Run executor: a background service in the backend picks up Queued runs oldest first
+  and runs their scenarios one at a time against the run's snapshotted target. Each
+  request is built from the spec (path, required query and header parameters, and the
+  JSON body, all from the spec's examples, defaults or enum values) with the
+  environment's global headers and the stored credential. The body is sent as the
+  spec's own JSON media type. It sends a baseline request when the run asks for one,
+  then applies the fault directly: Latency delays the
+  request, Timeout / Drop holds the request open until the timeout or drops the
+  connection after sending it, and Duplicate Request sends the configured copies with
+  the same, different or no `Idempotency-Key`. Every request is stored as an
+  observation with status, timing and the first 16 KB of the response (cookies are not
+  kept, and a credential of 8 or more characters that the target echoes back is
+  replaced with `[redacted]`), so the live view fills in as the run goes. A response
+  the target cuts off mid-body, by closing or resetting the connection, is stored with
+  its status and an error. A target that accepts the connection and closes it without
+  a response is stored as the target's failure, with an error and no status. Requests
+  without a body are sent with `Content-Length: 0`, so each one reaches the target
+  exactly once. Global content headers such as `Content-Type` go on the request body.
+  Faults that need the fault injector are skipped with a reason, a scenario whose
+  requests can't connect to the target is skipped, and a request that can't be built
+  (no example for a required value) is a runner error.
+  Auth schemes come from the run's own spec, so a re-import while the run is queued
+  doesn't change them, and a run whose environment moved to another host before it
+  started fails without sending anything. The run re-checks for cancellation before
+  each scenario, marks scenarios that never started as Skipped, and finishes
+  Completed, PartiallyCompleted or Failed. Runs left Running by a backend restart or a
+  failed runner poll are marked Failed. Concurrency and runner retries
+  are not applied yet, and executions finish without an outcome until evaluation is
+  built.
 
 ### Changed
 

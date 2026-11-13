@@ -240,6 +240,15 @@ public sealed class EnvironmentEndpointTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public void Query_api_keys_are_appended_to_the_operations_own_query()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.test/items?page=2");
+        TargetClient.Authenticate(request, AuthType.ApiKey, "key 1234", null,
+            new SchemeInfo("apiKey", "apiKey", null, "query", "api_key", []));
+        Assert.Equal("https://api.test/items?page=2&api_key=key%201234", request.RequestUri!.AbsoluteUri);
+    }
+
+    [Fact]
     public void Header_api_keys_replace_a_global_header_of_the_same_name()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.test/me");

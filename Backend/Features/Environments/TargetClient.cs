@@ -37,7 +37,7 @@ public static class TargetClient
         IHttpClientFactory factory, HttpRequestMessage request, bool verifyTls, int timeoutSeconds,
         CancellationToken cancellationToken)
     {
-        using var client = factory.CreateClient(verifyTls ? Verified : Unverified);
+        using var client = CreateClient(factory, verifyTls);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         var watch = Stopwatch.StartNew();
@@ -49,18 +49,22 @@ public static class TargetClient
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested
             && exception is HttpRequestException or TaskCanceledException)
         {
-            // Messages are fixed text: exception details could echo internal addresses or certificate data.
-            var reason = exception switch
-            {
-                TaskCanceledException => $"No response within {timeoutSeconds} s.",
-                HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } =>
-                    "The TLS handshake failed. Turn off certificate verification only for self-signed test hosts.",
-                HttpRequestException { HttpRequestError: HttpRequestError.NameResolutionError } => "The host name could not be resolved.",
-                _ => "The target could not be reached, or its address is not allowed."
-            };
-            return new(null, reason, watch.ElapsedMilliseconds);
+            return new(null, Describe(exception, timeoutSeconds), watch.ElapsedMilliseconds);
         }
     }
+
+    public static HttpClient CreateClient(IHttpClientFactory factory, bool verifyTls) =>
+        factory.CreateClient(verifyTls ? Verified : Unverified);
+
+    // Messages are fixed text: exception details could echo internal addresses or certificate data.
+    public static string Describe(Exception exception, int timeoutSeconds) => exception switch
+    {
+        TaskCanceledException => $"No response within {timeoutSeconds} s.",
+        HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } =>
+            "The TLS handshake failed. Turn off certificate verification only for self-signed test hosts.",
+        HttpRequestException { HttpRequestError: HttpRequestError.NameResolutionError } => "The host name could not be resolved.",
+        _ => "The target could not be reached, or its address is not allowed."
+    };
 
     // Joins the base URL and an operation path: "https://h/v1" + "/payments" -> "https://h/v1/payments".
     // Null when the result would not be on the base URL's scheme, host, and port, so credentials stay with the target.
@@ -69,6 +73,11 @@ public static class TargetClient
         && Uri.TryCreate(baseUrl.TrimEnd('/') + path, UriKind.Absolute, out var url)
         && url.GetLeftPart(UriPartial.Authority) == root.GetLeftPart(UriPartial.Authority)
             ? url : null;
+
+    // Whether a saved base URL and another one share scheme, host and port: the boundary credentials are tied to.
+    public static bool SameOrigin(string saved, Uri next) =>
+        Uri.TryCreate(saved, UriKind.Absolute, out var old)
+        && old.GetLeftPart(UriPartial.Authority).Equals(next.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase);
 
     public static string? ValidateBaseUrl(string? value, out Uri? url)
     {
@@ -100,7 +109,9 @@ public static class TargetClient
                 if (scheme?.In is "query")
                 {
                     var builder = new UriBuilder(request.RequestUri!);
-                    builder.Query = $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(secret)}";
+                    var pair = $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(secret)}";
+                    // Appended, so the operation's own query parameters stay.
+                    builder.Query = builder.Query.Length > 1 ? $"{builder.Query[1..]}&{pair}" : pair;
                     request.RequestUri = builder.Uri;
                 }
                 else if (scheme?.In is "cookie")

@@ -53,7 +53,7 @@ public static class SaveTarget
         }
         // Secrets were entered for the old host. Moving the target elsewhere must not carry them along, or anyone
         // who can edit the target could point it at their own server and validate to receive them.
-        if (environment.BaseUrl.Length > 0 && !SameOrigin(environment.BaseUrl, url))
+        if (environment.BaseUrl.Length > 0 && !TargetClient.SameOrigin(environment.BaseUrl, url))
         {
             foreach (var profile in environment.AuthProfiles.Where(profile => profile.SecretCipherText is not null))
             {
@@ -88,8 +88,4 @@ public static class SaveTarget
         }
         return TypedResults.NoContent();
     }
-
-    private static bool SameOrigin(string saved, Uri next) =>
-        Uri.TryCreate(saved, UriKind.Absolute, out var old)
-        && old.GetLeftPart(UriPartial.Authority).Equals(next.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase);
 }
