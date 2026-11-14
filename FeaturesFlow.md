@@ -318,6 +318,16 @@ Mobile test result viewing
 2. Display status, score, evidence coverage, scenario results, failure timeline, findings, and recommendations.
 3. Selecting a scenario or finding shows detail. The user can return to the run summary or the project.
 
+### 2.27 Creating user accounts [Done]
+
+Built as the workspace Team page (`/team`). Only the SuperAdmin creates accounts; there is no public registration. Editing, disabling, or deleting accounts is not built.
+
+1. The SuperAdmin opens Team and enters first name, last name, username, email, and a temporary password.
+2. Validate the fields. A username or email already in use is rejected.
+3. Create the account with a pending password change and show a confirmation. The SuperAdmin shares the temporary password with the person.
+4. At first sign-in the user must change the password (section 2.3) before anything else.
+5. A project Owner can then add the account to a project (section 2.8).
+
 ---
 
 ## 3. What changed from the earlier version of this document

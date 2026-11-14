@@ -134,7 +134,7 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
-    public async Task Login_accepts_email_but_rejects_an_email_shared_by_two_accounts()
+    public async Task Login_accepts_the_email_case_insensitively_or_the_username()
     {
         await using var database = await postgres.CreateDatabaseAsync();
         var admin = TestAuth.ValidAdmin();
@@ -147,26 +147,6 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
                         new
                         {
                             identifier = "ADMIN@toma.test",
-                            password = admin.Password
-                        })).StatusCode);
-        await using (var scope = factory.Services.CreateAsyncScope())
-        {
-            var users = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-            var duplicate = new User
-            {
-                Id = Guid.NewGuid(),
-                UserName = "second-user",
-                Email = admin.Email,
-                Firstname = "Second",
-                Lastname = "User"
-            };
-            Assert.True((await users.CreateAsync(duplicate, admin.Password!)).Succeeded);
-        }
-
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/login",
-                        new
-                        {
-                            identifier = admin.Email,
                             password = admin.Password
                         })).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/login",

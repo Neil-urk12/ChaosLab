@@ -28,6 +28,18 @@ public sealed class ModelInvariantTests(PostgreSqlFixture postgres) : Persistenc
     }
 
     [Fact]
+    public async Task Accounts_reject_a_shared_email_but_allow_several_without_one()
+    {
+        // The seeded user has no email, so a second email-less account must save.
+        Db.Users.Add(new User { Id = Guid.NewGuid(), Firstname = "No", Lastname = "Email" });
+        Db.Users.Add(new User { Id = Guid.NewGuid(), Firstname = "A", Lastname = "One", NormalizedEmail = "SAME@EXAMPLE.TEST" });
+        await Db.SaveChangesAsync();
+
+        Db.Users.Add(new User { Id = Guid.NewGuid(), Firstname = "A", Lastname = "Two", NormalizedEmail = "SAME@EXAMPLE.TEST" });
+        await AssertViolationAsync(PostgresErrorCodes.UniqueViolation, "EmailIndex");
+    }
+
+    [Fact]
     public async Task Project_rejects_a_second_active_specification()
     {
         Db.ApiSpecs.Add(Data.NewSpec(Data.Project.Id));

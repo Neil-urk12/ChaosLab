@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using Backend.Domain.Entities;
 using Backend.Infrastructure.Data;
 using Backend.Infrastructure.Identity;
@@ -33,15 +32,8 @@ public static class Setup
         if (!token.IsValid(request.Token))
             return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
 
-        var errors = new Dictionary<string, string[]>();
-        ValidateField(request.Username, "username", 256);
-        ValidateField(request.Email, "email", 256);
-        ValidateField(request.FirstName, "firstName", 100);
-        ValidateField(request.LastName, "lastName", 100);
-        if (!string.IsNullOrWhiteSpace(request.Email) && !new EmailAddressAttribute().IsValid(request.Email.Trim()))
-            errors["email"] = ["A valid email address is required."];
-        if (string.IsNullOrWhiteSpace(request.Password))
-            errors["password"] = ["Password is required."];
+        var errors = AccountRules.Validate(
+            request.Username, request.Email, request.FirstName, request.LastName, request.Password);
         if (errors.Count > 0)
             return TypedResults.ValidationProblem(errors);
 
@@ -50,7 +42,7 @@ public static class Setup
             Id = Guid.NewGuid()
         });
         if (!roleResult.Succeeded)
-            return IdentityValidation(roleResult);
+            return AccountRules.IdentityValidation(roleResult);
 
         var user = new User
         {
@@ -64,29 +56,14 @@ public static class Setup
         };
         var userResult = await users.CreateAsync(user, request.Password!);
         if (!userResult.Succeeded)
-            return IdentityValidation(userResult);
+            return AccountRules.IdentityValidation(userResult);
         var assignmentResult = await users.AddToRoleAsync(user, AuthSetup.SuperAdminRole);
         if (!assignmentResult.Succeeded)
-            return IdentityValidation(assignmentResult);
+            return AccountRules.IdentityValidation(assignmentResult);
 
         await transaction.CommitAsync(cancellationToken);
         signIn.AuthenticationScheme = IdentityConstants.ApplicationScheme;
         await signIn.SignInAsync(user, isPersistent: false);
         return TypedResults.NoContent();
-
-        void ValidateField(string? value, string field, int maximumLength)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                errors[field] = ["This field is required."];
-            else if (value.Trim().Length > maximumLength)
-                errors[field] = [$"Must be at most {maximumLength} characters."];
-        }
     }
-
-    private static ValidationProblem IdentityValidation(IdentityResult result) =>
-        TypedResults.ValidationProblem(result.Errors
-            .GroupBy(error => error.Code.Contains("Password", StringComparison.Ordinal) ? "password"
-                : error.Code.Contains("UserName", StringComparison.Ordinal) ? "username"
-                : error.Code.Contains("Email", StringComparison.Ordinal) ? "email" : "user")
-            .ToDictionary(group => group.Key, group => group.Select(error => error.Description).ToArray()));
 }

@@ -28,6 +28,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     {
         base.OnModelCreating(builder);
 
+        // Identity indexes NormalizedEmail without uniqueness; one account per email keeps login by email unambiguous.
+        builder.Entity<User>().HasIndex(x => x.NormalizedEmail).IsUnique();
+
         // Catalog references restrict deletion so historical runs survive archiving or regeneration.
         // Only run-owned data cascades; links between those dependents use NO ACTION so a
         // single TestRun deletion can cascade through all of them without sibling delete conflicts.

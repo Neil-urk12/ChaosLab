@@ -298,9 +298,21 @@ released yet, so history is grouped by date.
   blockers for a missing or unreachable target, which runs can be cancelled, viewer
   permissions, and the live run view's execution feed and current execution against
   a real PostgreSQL.
+- SuperAdmin account creation. `POST /api/users` lets the SuperAdmin create an
+  account with a username, first and last name, email, and temporary password; other
+  signed-in users get `403` and a SuperAdmin with a pending password change is also
+  refused. A username or email already in use is a validation error. The new user must
+  change the temporary password at first sign-in, and can then be added to projects.
+  The workspace Team page (`/team`) shows the create-account form to the SuperAdmin
+  and points everyone else to each project's Team tab.
 
 ### Changed
 
+- Account emails are now unique, case-insensitively, enforced by a unique database
+  index. Two account creations racing on the same email or username now get a `400`
+  validation error instead of both succeeding or failing with a `500`. Login by email no
+  longer needs to guard against an email shared by two accounts. The migration fails on
+  a database that already holds two accounts with the same email; resolve those first.
 - Requests to targets and spec URLs no longer keep or send back cookies. The backend
   shares its HTTP connections across projects and runs, so a session cookie one target
   set could otherwise ride along on another project's requests to the same host. An

@@ -14,6 +14,7 @@ public static class AuthSetup
     public const string SuperAdminRole = "SuperAdmin";
     public const string MustChangePasswordClaim = "must_change_password";
     public const string AllowPendingPasswordChangePolicy = "AllowPendingPasswordChange";
+    public const string SuperAdminPolicy = "SuperAdmin";
     public const string CookieOrBearerScheme = "CookieOrBearer";
 
     public static IServiceCollection AddAppAuthentication(this IServiceCollection services)
@@ -49,7 +50,8 @@ public static class AuthSetup
         services.AddAuthorizationBuilder()
             .SetFallbackPolicy(passwordChanged)
             .SetDefaultPolicy(passwordChanged)
-            .AddPolicy(AllowPendingPasswordChangePolicy, policy => policy.RequireAuthenticatedUser());
+            .AddPolicy(AllowPendingPasswordChangePolicy, policy => policy.RequireAuthenticatedUser())
+            .AddPolicy(SuperAdminPolicy, policy => policy.Combine(passwordChanged).RequireRole(SuperAdminRole));
 
         return services;
     }

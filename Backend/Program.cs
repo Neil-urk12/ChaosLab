@@ -7,6 +7,7 @@ using Backend.Features.Projects;
 using Backend.Features.TestRuns;
 using Backend.Features.Findings;
 using Backend.Features.Members;
+using Backend.Features.Users;
 using Backend.Infrastructure.Data;
 using Backend.Domain.Entities;
 using Backend.Infrastructure.Identity;
@@ -99,6 +100,7 @@ api.MapEnvironmentEndpoints();
 api.MapTestRunEndpoints();
 api.MapFindingEndpoints();
 api.MapMemberEndpoints();
+api.MapUserEndpoints();
 
 app.Run();
 

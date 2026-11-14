@@ -900,6 +900,7 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.HasIndex("IsDeleted");
 
                     b.HasIndex("NormalizedEmail")
+                        .IsUnique()
                         .HasDatabaseName("EmailIndex");
 
                     b.HasIndex("NormalizedUserName")

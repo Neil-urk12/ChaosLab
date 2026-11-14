@@ -1,7 +1,6 @@
 using Backend.Domain.Entities;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.Auth;
 
@@ -44,13 +43,7 @@ public static class Login
 
     private static async Task<User?> FindAsync(UserManager<User> users, string identifier)
     {
-        var byName = await users.FindByNameAsync(identifier);
-        if (byName is not null)
-            return byName;
-
-        // Emails are not unique in this Identity setup, so an email shared by two accounts matches none.
-        var normalizedEmail = users.NormalizeEmail(identifier);
-        var byEmail = await users.Users.Where(user => user.NormalizedEmail == normalizedEmail).Take(2).ToListAsync();
-        return byEmail.Count == 1 ? byEmail[0] : null;
+        // Emails are unique (EmailIndex), so the email lookup returns at most one account.
+        return await users.FindByNameAsync(identifier) ?? await users.FindByEmailAsync(identifier);
     }
 }
