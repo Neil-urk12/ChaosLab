@@ -10,7 +10,8 @@ namespace Backend.Features.Members;
 // Command: changes an active member's project role. The last owner cannot be demoted.
 public static class ChangeMemberRole
 {
-    public sealed record Request(ProjectRole Role);
+    // Nullable so a missing role is rejected instead of binding to default(ProjectRole), which is Owner.
+    public sealed record Request(ProjectRole? Role);
 
     public static async Task<Results<NoContent, ValidationProblem, NotFound, ForbidHttpResult, Conflict<string>>> Handle(
         Guid id, Guid userId, Request request, ClaimsPrincipal principal, ApplicationDbContext db,
@@ -21,16 +22,16 @@ public static class ChangeMemberRole
             return TypedResults.NotFound();
         if (role != ProjectRole.Owner)
             return TypedResults.Forbid();
-        if (!Enum.IsDefined(request.Role))
+        if (request.Role is not { } newRole || !Enum.IsDefined(newRole))
             return MemberRules.Invalid("role", "Choose Owner, Editor or Viewer.");
 
         var member = await MemberRules.ActiveAsync(db, id, userId, cancellationToken);
         if (member is null)
             return TypedResults.NotFound();
-        if (request.Role != ProjectRole.Owner && await MemberRules.IsLastOwnerAsync(db, member, cancellationToken))
+        if (newRole != ProjectRole.Owner && await MemberRules.IsLastOwnerAsync(db, member, cancellationToken))
             return TypedResults.Conflict(MemberRules.LastOwnerMessage);
 
-        member.Role = request.Role;
+        member.Role = newRole;
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.NoContent();
     }

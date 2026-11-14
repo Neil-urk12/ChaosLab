@@ -331,6 +331,11 @@ released yet, so history is grouped by date.
   `(EndpointId, ScenarioType)` index, adds the environment label, timeout budget, and
   authorization confirmation to `ApiEnvironments`, and adds the `EnvironmentHeaders`
   table.
+- The development pod in `backend-pod.yaml` now publishes PostgreSQL (5432) and the
+  backend (8080) on `127.0.0.1` only. They were previously reachable from any host on
+  the same network, which exposed the database with the example password.
+- Adding a project member or changing a member's role now requires `role` and returns
+  `400` when it is missing. Previously a missing role silently bound to Owner.
 
 ### Removed
 

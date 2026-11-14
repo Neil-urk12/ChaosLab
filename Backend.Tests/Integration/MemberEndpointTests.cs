@@ -85,4 +85,29 @@ public sealed class MemberEndpointTests(PostgreSqlFixture postgres)
         Assert.Equal(HttpStatusCode.Forbidden, (await client.DeleteAsync($"{members}/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/projects/{Guid.NewGuid()}/members")).StatusCode);
     }
+
+    [Fact]
+    public async Task Missing_role_is_rejected_instead_of_granting_owner()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        var admin = TestAuth.ValidAdmin();
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
+        var project = await (await client.PostAsJsonAsync("/api/projects", new { name = "Payments" }))
+            .Content.ReadFromJsonAsync<ProjectResponse>();
+        var members = $"/api/projects/{project!.Id}/members";
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var priya = new User { Id = Guid.NewGuid(), UserName = "priya", Email = "priya.nair@chaoslab.test", Firstname = "Priya", Lastname = "Nair", DisplayName = "Priya Nair" };
+        db.Users.Add(priya);
+        await db.SaveChangesAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync(members, new { userId = priya.Id })).StatusCode);
+        Assert.False(await db.ProjectMembers.AnyAsync(m => m.UserId == priya.Id));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(members, new { userId = priya.Id, role = "Viewer" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync($"{members}/{priya.Id}", new { })).StatusCode);
+        Assert.Equal(ProjectRole.Viewer, (await db.ProjectMembers.AsNoTracking().SingleAsync(m => m.UserId == priya.Id)).Role);
+    }
 }

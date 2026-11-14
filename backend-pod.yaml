@@ -37,6 +37,8 @@ spec:
       ports:
         - containerPort: 5432
           hostPort: 5432
+          # Loopback only, so the dev database and API are not reachable from the LAN.
+          hostIP: 127.0.0.1
 
     - name: backend
       image: ${IMAGE_NAME}
@@ -60,6 +62,7 @@ spec:
       ports:
         - containerPort: 8080
           hostPort: 8080
+          hostIP: 127.0.0.1
 
   volumes:
     - name: postgres-storage
