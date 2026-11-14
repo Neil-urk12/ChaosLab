@@ -53,7 +53,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
               responses: {"200": {description: ok}}
         """;
 
-    private sealed record Received(
+    internal sealed record Received(
         string Method, string Path, string? Authorization, string? IdempotencyKey, string? ContentType, string Body,
         string? Cookie, string Query);
 
@@ -499,7 +499,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{scenarioId}", new { parameters })).StatusCode);
 
     // A project with the spec imported, the loopback target and a bearer credential, and generated scenarios.
-    private static async Task<(Guid, List<GetScenarios.Row>)> SetUpAsync(
+    internal static async Task<(Guid, List<GetScenarios.Row>)> SetUpAsync(
         HttpClient client, string baseUrl, int requestTimeoutSeconds = 5, string spec = Spec)
     {
         var created = await client.PostAsJsonAsync("/api/projects", new { name = "Orders" });
@@ -514,7 +514,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         return (projectId, scenarios!.Scenarios);
     }
 
-    private static async Task<Guid> CreateRunAsync(HttpClient client, Guid projectId, List<Guid> scenarioIds)
+    internal static async Task<Guid> CreateRunAsync(HttpClient client, Guid projectId, List<Guid> scenarioIds)
     {
         var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/runs", new { scenarioIds, confirmStateChanging = true });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -523,7 +523,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
 
     // A loopback target that records every request and echoes the path's last segment as {"id": n}. /stream promises
     // 100 bytes, sends 5 and closes the connection. Every response sets a session cookie.
-    private static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl)
+    internal static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl)
     {
         var probe = new TcpListener(IPAddress.Loopback, 0);
         probe.Start();

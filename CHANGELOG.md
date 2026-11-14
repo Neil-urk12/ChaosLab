@@ -292,6 +292,11 @@ released yet, so history is grouped by date.
   failed runner poll are marked Failed. Concurrency and runner retries
   are not applied yet, and executions finish without an outcome until evaluation is
   built.
+- Integration tests for the test-run API in `Backend.Tests`. They cover request
+  validation and the stored configuration snapshot when a run is created, preflight
+  blockers for a missing or unreachable target, which runs can be cancelled, viewer
+  permissions, and the live run view's execution feed and current execution against
+  a real PostgreSQL.
 
 ### Changed
 
