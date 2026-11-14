@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
@@ -49,17 +48,11 @@ public static class ValidateCredential
         if (TargetClient.Combine(environment.BaseUrl, path) is not { } url)
             return TypedResults.UnprocessableEntity($"GET {path} does not stay on the target host, so it was not called.");
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        foreach (var header in environment.Headers)
-        {
-            var appliesTo = header.AppliesTo.Deserialize<List<string>>() ?? [];
-            if (appliesTo.Count > 0 && !appliesTo.Contains($"GET {path}"))
-                continue;
-            var value = header.SecretCipherText is null ? header.Value : protector.TryUnprotect(header.SecretCipherText, header.Id);
-            if (value is null)
-                return TypedResults.UnprocessableEntity(
-                    $"The secret value of header {header.Name} could not be decrypted, likely because Credentials:Key changed. Remove the header and add it again.");
-            request.Headers.TryAddWithoutValidation(header.Name, value);
-        }
+        var (headers, headerError) = TargetClient.GlobalHeaders(environment.Headers, $"GET {path}", protector);
+        if (headerError is not null)
+            return TypedResults.UnprocessableEntity(headerError);
+        foreach (var header in headers)
+            request.Headers.TryAddWithoutValidation(header.Name, header.Value);
         if (protector.TryUnprotect(profile.SecretCipherText, profile.Id) is not { } secret)
         {
             // Record it, so an earlier successful validation is not still shown as valid.

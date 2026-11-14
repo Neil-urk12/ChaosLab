@@ -133,9 +133,8 @@
 	}
 
 	// ---- Options, confirmation and start ----
-	let concurrency = $state(1);
+	// shortcut: concurrency and runner-retry options are hidden until RunExecutor honours them; the API defaults them to 1 and 0.
 	let baseline = $state(true);
-	let retries = $state(2);
 	let confirmed = $state(false);
 	let starting = $state(false);
 	let startError = $state('');
@@ -169,9 +168,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					scenarioIds: selected.map((s) => s.id),
-					concurrency,
 					baselineRequests: baseline,
-					runnerRetries: retries,
 					confirmStateChanging: confirmed
 				})
 			});
@@ -358,15 +355,6 @@
 					<p class="mt-1 text-xs text-slate-500">Saved with this run's configuration snapshot.</p>
 				</div>
 				<div class="divide-y divide-line-faint px-5">
-					<div class="py-5">
-						<p id="concurrency-label" class="text-xs text-slate-300">Concurrent experiments</p>
-						<div class="mt-3 inline-flex rounded-md border border-line-strong p-0.5 text-xs" role="radiogroup" aria-labelledby="concurrency-label">
-							{#each [1, 2, 3, 4, 5] as n (n)}
-								<button type="button" role="radio" aria-checked={concurrency === n} onclick={() => (concurrency = n)} class="w-10 rounded py-1.5 {concurrency === n ? 'bg-line-strong text-slate-100' : 'text-slate-400 hover:text-slate-100'}">{n}</button>
-							{/each}
-						</div>
-						<p class="mt-2 text-[11px] text-slate-500">One at a time keeps timing measurements clean. You can raise it to five.</p>
-					</div>
 					<div class="flex items-start justify-between gap-4 py-5">
 						<div>
 							<p class="text-[13px]">Baseline requests</p>
@@ -374,13 +362,6 @@
 						</div>
 						<Toggle checked={baseline} label="Baseline requests" onchange={(on) => (baseline = on)} />
 					</div>
-					<label class="block py-5 text-xs text-slate-300">
-						Automatic retries for runner errors
-						<select bind:value={retries} class="auth-input mt-3 w-32">
-							{#each [0, 1, 2, 3] as n (n)}<option value={n}>{n}</option>{/each}
-						</select>
-						<span class="mt-2 block text-[11px] text-slate-500">Only ChaosLab's own runner or injector errors are retried. Target failures are results and are never retried.</span>
-					</label>
 				</div>
 			</section>
 
@@ -424,7 +405,6 @@
 							<dt class="text-slate-400">State-changing</dt>
 							<dd class={toConfirm ? 'text-amber-300' : ''}>{toConfirm ? `${toConfirm} ${confirmed ? 'confirmed' : 'to confirm'}` : 'None'}</dd>
 						</div>
-						<div class="flex justify-between"><dt class="text-slate-400">Concurrency</dt><dd>{concurrency}</dd></div>
 						<div class="flex justify-between"><dt class="text-slate-400">Scoring version</dt><dd>{preflight?.scoringVersion ?? '—'}</dd></div>
 					</dl>
 					<button

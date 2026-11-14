@@ -34,7 +34,7 @@ public static class CreateRun
     {
         var ids = request.ScenarioIds?.Distinct().ToList() ?? [];
         var concurrency = request.Concurrency ?? 1;
-        var retries = request.RunnerRetries ?? 2;
+        var retries = request.RunnerRetries ?? 0; // RunExecutor never retries yet, so the snapshot says so.
         var errors = new Dictionary<string, string[]>();
         if (ids.Count == 0) errors["scenarioIds"] = ["Select at least one scenario."];
         else if (ids.Count > MaxScenarios) errors["scenarioIds"] = [$"A run can have at most {MaxScenarios} scenarios."];

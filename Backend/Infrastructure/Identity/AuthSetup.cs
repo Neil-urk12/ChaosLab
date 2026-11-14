@@ -39,6 +39,8 @@ public static class AuthSetup
             options.Events.OnRedirectToLogin = context => WriteStatus(context, StatusCodes.Status401Unauthorized);
             options.Events.OnRedirectToAccessDenied = context => WriteStatus(context, StatusCodes.Status403Forbidden);
         });
+        // A password change rotates the security stamp; recheck it every minute (default 30) so other sessions end quickly.
+        services.Configure<SecurityStampValidatorOptions>(options => options.ValidationInterval = TimeSpan.FromMinutes(1));
 
         var passwordChanged = new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()

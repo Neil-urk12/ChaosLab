@@ -59,7 +59,7 @@ public sealed class TestRunEndpointTests(PostgreSqlFixture postgres)
         var run = await db.TestRuns.AsNoTracking().Include(r => r.ScenarioExecutions).SingleAsync(r => r.Id == runId);
         Assert.Equal((TestRunStatus.Queued, CreateRun.ScoringVersion, gets.Count), (run.Status, run.ScoringVersion, run.TotalScenarios));
         var config = run.RunConfig.RootElement;
-        Assert.Equal((2, false, 2, 0), (config.GetProperty("concurrency").GetInt32(), config.GetProperty("baselineRequests").GetBoolean(),
+        Assert.Equal((2, false, 0, 0), (config.GetProperty("concurrency").GetInt32(), config.GetProperty("baselineRequests").GetBoolean(),
             config.GetProperty("runnerRetries").GetInt32(), config.GetProperty("stateChangingScenarios").GetInt32()));
         Assert.Equal(baseUrl, config.GetProperty("target").GetProperty("baseUrl").GetString());
         Assert.Equal(gets.Order(), config.GetProperty("scenarioIds").EnumerateArray().Select(id => id.GetGuid()).Order());

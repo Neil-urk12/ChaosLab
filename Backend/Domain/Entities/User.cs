@@ -27,7 +27,4 @@ public class User : IdentityUser<Guid>
     // Navigation properties
     public ICollection<Project> CreatedProjects { get; set; } = [];
     public ICollection<ProjectMember> ProjectMemberships { get; set; } = [];
-
-    // Methods
-    public static string CreatePendingUsn() => $"PENDING-{Guid.NewGuid():N}";
 }

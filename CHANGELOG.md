@@ -351,9 +351,24 @@ released yet, so history is grouped by date.
 - The README's Podman steps now include applying the database migrations, which a
   fresh database needs before the backend can start, and document `Backend/.env.local`
   (the file the backend and `make migrate` actually read) instead of `Backend/.env`.
+- Web sessions in other browsers now end within a minute of a password change. The
+  security stamp behind the login cookie was rechecked only every 30 minutes, so a
+  stolen cookie kept working for up to half an hour after the password was changed.
+- The New Run page no longer offers "Concurrent experiments" or "Automatic retries for
+  runner errors", because the runner always runs one experiment at a time and never
+  retries. The run API now defaults `runnerRetries` to 0 instead of 2, so a run's saved
+  configuration matches what the runner does.
+- A run and credential validation now apply an environment's global headers through
+  one shared helper, so the two can no longer drift apart. A run that cannot decrypt a
+  secret header now also names the likely cause, a changed `Credentials:Key`.
 
 ### Removed
 
+- The SvelteKit template leftovers: the public `/demo` and `/demo/playwright` pages and
+  their end-to-end test, the `src/lib/vitest-examples` sample, and the empty
+  `src/lib/index.ts`.
+- The unused `Backend/compose.yaml` (the dev stack runs from `backend-pod.yaml`) and its
+  entry in `Backend.sln`, and the unused `User.CreatePendingUsn()` helper.
 - The startup `InitialAdminBootstrapper` and its `BootstrapAdmin:*` configuration;
   initial administration now comes from the one-time setup link, and obsolete
   `BootstrapAdmin__*` secrets can be removed from deployments.

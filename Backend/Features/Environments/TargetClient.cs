@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.ApiSpecs;
+using Backend.Infrastructure.Security;
 
 namespace Backend.Features.Environments;
 
@@ -90,6 +92,25 @@ public static class TargetClient
             return "The base URL must be at most 2048 characters.";
         url = parsed;
         return null;
+    }
+
+    // The environment's global headers that apply to an operation ("GET /path"), with secret values decrypted.
+    // Error names the first secret header that cannot be decrypted (Credentials:Key changed); then Headers is empty.
+    public static (List<(string Name, string Value, bool Secret)> Headers, string? Error) GlobalHeaders(
+        IEnumerable<EnvironmentHeader> headers, string operation, CredentialProtector protector)
+    {
+        var applied = new List<(string Name, string Value, bool Secret)>();
+        foreach (var header in headers)
+        {
+            var appliesTo = header.AppliesTo.Deserialize<List<string>>() ?? [];
+            if (appliesTo.Count > 0 && !appliesTo.Contains(operation))
+                continue;
+            var value = header.SecretCipherText is null ? header.Value : protector.TryUnprotect(header.SecretCipherText, header.Id);
+            if (value is null)
+                return ([], $"The secret value of header {header.Name} could not be decrypted, likely because Credentials:Key changed. Remove the header and add it again.");
+            applied.Add((header.Name, value, header.SecretCipherText is not null));
+        }
+        return (applied, null);
     }
 
     // Applies a credential the way its spec scheme describes: an apiKey goes in the query, a cookie, or a header.

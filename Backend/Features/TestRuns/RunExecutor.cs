@@ -381,19 +381,11 @@ public sealed class RunExecutor(
         if (TargetClient.Combine(context.Config.Target.BaseUrl, suffix) is not { } url)
             return (null, $"{operation} does not stay on the target host, so it was not called.");
 
-        var secrets = new List<string>();
-        foreach (var header in context.Environment.Headers)
-        {
-            var appliesTo = header.AppliesTo.Deserialize<List<string>>() ?? [];
-            if (appliesTo.Count > 0 && !appliesTo.Contains(operation))
-                continue;
-            var value = header.SecretCipherText is null ? header.Value : protector.TryUnprotect(header.SecretCipherText, header.Id);
-            if (value is null)
-                return (null, $"The secret value of header {header.Name} could not be decrypted. Remove the header and add it again.");
-            headers.Add(new(header.Name, value));
-            if (header.SecretCipherText is not null)
-                secrets.Add(value);
-        }
+        var (environmentHeaders, headerError) = TargetClient.GlobalHeaders(context.Environment.Headers, operation, protector);
+        if (headerError is not null)
+            return (null, headerError);
+        headers.AddRange(environmentHeaders.Select(header => new KeyValuePair<string, string>(header.Name, header.Value)));
+        var secrets = environmentHeaders.Where(header => header.Secret).Select(header => header.Value).ToList();
 
         // OpenAPI security lists alternatives, and each alternative needs all of its schemes together. The first one whose
         // schemes all have a stored credential is sent in full; without one the request goes unauthenticated.

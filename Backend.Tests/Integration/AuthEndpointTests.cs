@@ -178,6 +178,31 @@ public sealed class AuthEndpointTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task Five_wrong_passwords_lock_the_account_so_the_right_one_is_rejected()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        var admin = TestAuth.ValidAdmin();
+        await using var factory = new BackendFactory(database);
+        await TestAuth.InitializeAsync(factory, admin);
+        using var client = TestAuth.CreateClient(factory);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+            Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/login",
+                            new
+                            {
+                                identifier = admin.Username,
+                                password = "Wrong1!password"
+                            })).StatusCode);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/auth/login",
+                        new
+                        {
+                            identifier = admin.Username,
+                            password = admin.Password
+                        })).StatusCode);
+    }
+
+    [Fact]
 
     public async Task Bearer_logout_revokes_refresh_tokens_but_web_logout_does_not()
     {

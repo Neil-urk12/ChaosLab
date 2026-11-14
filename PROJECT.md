@@ -470,7 +470,7 @@ Controls:
 | Database | PostgreSQL, Entity Framework Core (Npgsql) | In use |
 | Identity | ASP.NET Core Identity with GUID keys (cookie for web, bearer for mobile) | In use |
 | Backend tests | Integration tests with a PostgreSQL fixture | In use |
-| Containers and deployment | Podman pod (`backend-pod.yaml`), `Makefile`, `compose.yaml` | In use |
+| Containers and deployment | Podman pod (`backend-pod.yaml`), `Makefile` | In use |
 | OpenAPI parsing | Microsoft.OpenApi (OpenAPI.NET) | Planned |
 | HTTP fault injection | YARP plus custom middleware and connection handling | Planned; needs proof of concept |
 | PDF reports | QuestPDF | Planned |
@@ -558,7 +558,7 @@ chaos/
 │   ├── Domain/              # Entities, Enums
 │   ├── Features/            # Vertical slices: Auth, Projects
 │   ├── Infrastructure/      # Data (DbContext, migrations), Identity
-│   ├── Dockerfile, compose.yaml, .env.*.example
+│   ├── Dockerfile, .env.*.example
 ├── Backend.Tests/           # Integration tests (PostgreSQL fixture)
 ├── Frontend/                # SvelteKit app
 │   └── src/routes/          # (auth): install, login, setup; (app): overview, projects
