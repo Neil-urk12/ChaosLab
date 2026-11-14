@@ -8,8 +8,9 @@ released yet, so history is grouped by date.
 
 ### Added
 
-- Environment variable templates for Development, Testing, Staging, and Production,
-  with database connection placeholders and instructions for loading a local `.env`.
+- An environment variable template, `Backend/.env.example`, for the local
+  `Backend/.env.local` file, with placeholders for the pod database's connection
+  string and the credentials key.
 - `ConnectionStrings:DefaultConnection` placeholders for Development, Testing,
   Staging, and Production, with README instructions for supplying connection strings
   through environment variables or deployment secrets.
@@ -336,6 +337,20 @@ released yet, so history is grouped by date.
   the same network, which exposed the database with the example password.
 - Adding a project member or changing a member's role now requires `role` and returns
   `400` when it is missing. Previously a missing role silently bound to Owner.
+- The run preflight's reachability probe, also repeated when a run is created, now
+  waits at most 30 seconds, like the Settings connection check. It used the
+  environment's request timeout, up to 300 seconds, so a target that never answered
+  left the New Run page waiting for minutes.
+- The run executor now sends a new `Idempotency-Key` value on every request instead of
+  the spec's example value. With the fixed example, the baseline and fault requests of
+  every run shared one key, so a target that honors the header replayed its stored
+  answer and the fault was never really executed.
+- The development pod now keeps the backend's ASP.NET Data Protection keys in the
+  `chaoslab-backend-keys` volume. They lived inside the container, so every
+  `make restart` invalidated all login cookies and mobile refresh tokens.
+- The README's Podman steps now include applying the database migrations, which a
+  fresh database needs before the backend can start, and document `Backend/.env.local`
+  (the file the backend and `make migrate` actually read) instead of `Backend/.env`.
 
 ### Removed
 

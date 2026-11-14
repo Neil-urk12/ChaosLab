@@ -36,7 +36,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
               responses: {"200": {description: ok, content: {application/json: {schema: {type: object}}}}}
           /orders:
             post:
-              parameters: [{name: Idempotency-Key, in: header, schema: {type: string}}]
+              parameters: [{name: Idempotency-Key, in: header, required: true, schema: {type: string, example: spec-key}}]
               requestBody:
                 required: true
                 content: {application/vnd.orders+json: {example: {item: book}}}
@@ -129,6 +129,29 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Contains(received, r => r.Method == "GET" && r.Path == "/v1/orders/7");
         // The target sets a session cookie on every response; no later request sends it back.
         Assert.All(received, r => Assert.Null(r.Cookie));
+    }
+
+    [Fact]
+    public async Task Sends_a_fresh_idempotency_key_instead_of_the_spec_example_on_every_request()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        var latency = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.Latency).Id;
+        await SetParametersAsync(client, projectId, latency, new { delayMs = 0 });
+        await CreateRunAsync(client, projectId, [latency]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        // Baseline and fault each carry their own key, so the target can't answer the fault from its replay store.
+        var keys = received.Where(r => r.Method == "POST").Select(r => r.IdempotencyKey).ToList();
+        Assert.Equal(2, keys.Count);
+        Assert.All(keys, key => Assert.True(Guid.TryParse(key, out _)));
+        Assert.NotEqual(keys[0], keys[1]);
     }
 
     [Fact]

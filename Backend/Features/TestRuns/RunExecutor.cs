@@ -50,13 +50,18 @@ public sealed class RunExecutor(
             if (Body is not null)
                 // The spec's own media type, so application/vnd.api+json is not sent as application/json.
                 request.Content!.Headers.TryAddWithoutValidation("Content-Type", ContentType);
-            foreach (var (name, value) in Headers)
+            foreach (var (name, configured) in Headers)
+            {
+                // A fresh key per request: with the spec's fixed example, a correct target replays its stored answer
+                // and the request never really runs. The duplicate scenario replaces it with its own key afterwards.
+                var value = name.Equals(IdempotencyHeader, StringComparison.OrdinalIgnoreCase) ? Guid.NewGuid().ToString() : configured;
                 // Content headers (a global Content-Type) only fit on the body; a request without one has nothing to describe.
                 if (!request.Headers.TryAddWithoutValidation(name, value) && (content is not null || Body is not null))
                 {
                     request.Content!.Headers.Remove(name);
                     request.Content.Headers.TryAddWithoutValidation(name, value);
                 }
+            }
             Authenticate(request);
             return request;
         }

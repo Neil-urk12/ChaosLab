@@ -10,6 +10,17 @@ spec:
       storage: 1Gi
 ---
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chaoslab-backend-keys
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: chaoslab-stack
@@ -59,6 +70,11 @@ spec:
               name: chaoslab-secret
               key: credentials-key
               optional: true
+      # Data Protection keys sign login cookies and refresh tokens; without a volume every pod recreation
+      # (make restart) loses them and signs everyone out.
+      volumeMounts:
+        - name: backend-keys
+          mountPath: /home/app/.aspnet/DataProtection-Keys
       ports:
         - containerPort: 8080
           hostPort: 8080
@@ -68,3 +84,6 @@ spec:
     - name: postgres-storage
       persistentVolumeClaim:
         claimName: chaoslab-postgres-data
+    - name: backend-keys
+      persistentVolumeClaim:
+        claimName: chaoslab-backend-keys

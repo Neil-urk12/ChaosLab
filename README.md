@@ -201,7 +201,8 @@ Ensure you have the following installed on your machine:
 - **`envsubst`** (typically available via `gettext` package)
 - **Make**
 - **Node.js** (v20+) & **[pnpm](https://pnpm.io/)** (for frontend development)
-- **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)** (optional, for local backend compilation)
+- **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)** and **`dotnet-ef`** (for database migrations and local backend runs):
+  `dotnet tool install --global dotnet-ef --version 10.0.12`
 
 ---
 
@@ -229,18 +230,13 @@ and `Production`. Leave these values `null`; supply each environment's connectio
 string through `ConnectionStrings__DefaultConnection` using local environment
 variables or deployment secrets. Never commit real credentials.
 
-Environment variable templates are in `Backend/.env.{Environment}.example`.
-For local use, copy the desired template to `Backend/.env` (gitignored), replace
-the placeholders, and load it explicitly; ASP.NET Core does not load `.env` files:
+For local use, copy the template to `Backend/.env.local` (gitignored) and replace
+the placeholders. The backend loads that file at startup, and `make migrate` uses
+it too; exported variables and the pod secret take precedence over it:
 
 ```bash
-cd Backend
-cp .env.Development.example .env
-# Edit .env with your database settings before continuing.
-set -a
-. ./.env
-set +a
-dotnet run --no-launch-profile
+cp Backend/.env.example Backend/.env.local
+# Set the database password and credentials key from secret.yaml.
 ```
 
 Select the environment with `ASPNETCORE_ENVIRONMENT` (for example, `Staging`).
@@ -290,27 +286,34 @@ an operator responsibility, not public registration.
    ```bash
    make up
    ```
-3. **Check Running Containers**:
+3. **Apply the Database Migrations** (first start, and after pulling new migrations).
+   The backend exits at startup until the schema exists, so restart it afterwards.
+   This needs `Backend/.env.local` (see Environment Configuration) and `dotnet-ef`:
+   ```bash
+   make migrate
+   make restart
+   ```
+4. **Check Running Containers**:
    ```bash
    make ps
    ```
-4. **Follow Logs**:
+5. **Follow Logs**:
    ```bash
    make logs          # All containers
    make logs-backend  # Backend only
    make logs-db       # Postgres only
    ```
-5. **Run the Frontend in Development Mode**:
+6. **Run the Frontend in Development Mode**:
    ```bash
    make dev-fe
    ```
    Open [http://localhost:5173](http://localhost:5173) in your browser. The backend API is reachable at [http://localhost:8080](http://localhost:8080).
 
-6. **Tear Down the Stack**:
+7. **Tear Down the Stack**:
    ```bash
    make down
    ```
-   *Note: Database volume data is preserved across `make down`. To wipe database volumes, run `make clean-data`.*
+   *Note: Database data and the backend's login keys are kept in volumes across `make down`, so sign-ins survive `make restart`. To wipe the database volume, run `make clean-data`.*
 
 ---
 

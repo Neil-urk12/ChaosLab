@@ -90,6 +90,7 @@ public static class GetPreflight
     }
 
     // One GET to the base URL, like CheckConnection. Any HTTP response counts as reachable.
+    // Capped at 30 s like CheckConnection: the target's own timeout (up to 300 s) would leave the page waiting.
     public static async Task<Reachability> ProbeAsync(
         ApiEnvironment environment, IHttpClientFactory httpClientFactory, CancellationToken cancellationToken)
     {
@@ -97,7 +98,7 @@ public static class GetPreflight
             return new Reachability(false, null, error, 0);
         using var message = new HttpRequestMessage(HttpMethod.Get, url);
         var probe = await TargetClient.SendAsync(httpClientFactory, message, environment.VerifyTls,
-            environment.RequestTimeoutSeconds, cancellationToken);
+            Math.Min(environment.RequestTimeoutSeconds, 30), cancellationToken);
         return new Reachability(probe.Status is not null, probe.Status, probe.Error, probe.ElapsedMs);
     }
 }

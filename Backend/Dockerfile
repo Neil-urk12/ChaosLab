@@ -1,5 +1,8 @@
 ﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER $APP_UID
+# ASP.NET's default Data Protection key folder (login cookies, refresh tokens). backend-pod.yaml mounts a volume here;
+# creating it as the app user lets a new, empty volume take this owner.
+RUN mkdir -p /home/app/.aspnet/DataProtection-Keys
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
