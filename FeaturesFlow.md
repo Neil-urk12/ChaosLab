@@ -250,7 +250,7 @@ Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each comp
 - **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
 - A violated invariant makes the finding Fail. Fail is High severity, Degraded is Medium, everything else is Info.
 
-Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's faults (2.16) complete without a finding; Not Applicable findings; sending findings to scoring (2.19).
+Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's faults (2.16) complete without a finding; Not Applicable findings; a scoring category stored on the finding itself (scoring takes it from the scenario's fault, 2.19).
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.
@@ -261,20 +261,22 @@ Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, auth
 7. Tag each finding with one scoring category, link it to the run, endpoint, and scenario execution, and attach evidence.
 8. Send the findings to scoring.
 
-### 2.19 Resilience Score calculation [Planned]
+### 2.19 Resilience Score calculation [Done]
+
+Built: when a run ends with every scenario run (status Completed), the runner scores its findings and saves the overall score, evidence coverage, and category scores on the run, plus one endpoint score per endpoint that has scored findings. Partially completed, failed, and cancelled runs are not scored. Only the Timeout and Idempotency categories can be scored until the evaluator has rules for the injector's faults (2.18); the weight of the other categories is shared out between them. Runs that finished before scoring existed are not backfilled. The run results page still works out its category and endpoint breakdown in the browser from the findings, with the same method.
 
 1. Retrieve the scored findings. Exclude Not Applicable and Inconclusive.
-2. Convert outcomes to points. **[Proposed]** Pass 100, Degraded 50, Fail 0.
+2. Convert outcomes to points: Pass 100, Degraded 50, Fail 0 (locked with scoring version 1.0).
 3. A category score is the mean of its findings, so many easy scenarios in one category cannot dominate.
 4. Apply the locked weights (scoring version 1.0): Timeout 20, Retry 15, Graceful Degradation 15, Rate-Limit 10, Idempotency 10, Authentication Failure 10, Response Validation 10, Dependency Failure 10.
 5. Omit any category with no scored findings and redistribute its weight proportionally.
 6. The overall score is the weighted mean of the remaining categories, from 0 to 100. Endpoint scores use the same method per endpoint.
-7. Calculate evidence coverage: scored findings versus all findings, including Inconclusive.
+7. Calculate evidence coverage: scored findings versus scored plus Inconclusive findings. Not Applicable findings are left out.
 8. Save category scores, the overall score, evidence coverage, and the scoring version to the run, then send them to the dashboard.
 
 ### 2.20 Viewing test results [Partial]
 
-Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces stored scores or recommendations yet (sections 2.19 and 2.22), so real runs show findings (2.18) but no saved score or recommendations, and there is no drill-down into a single endpoint or scenario.
+Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces recommendations yet (section 2.22), so real runs show findings (2.18) and a score (2.19) but no recommendations, and there is no drill-down into a single endpoint or scenario.
 
 1. The user opens a completed run.
 2. Retrieve run information, scenario executions, findings, scores, and recommendations.

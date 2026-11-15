@@ -41,9 +41,10 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Equal(seeded.LatestRunId, detail.Latest!.RunId);
         Assert.Equal(78m, detail.Latest.Score);
         Assert.Equal(70m, detail.Latest.PreviousScore);
-        Assert.Equal(70m, detail.Latest.Breakdown!.Retry);
-        Assert.Equal(90m, detail.Latest.Breakdown.Timeout);
-        Assert.Null(detail.Latest.Breakdown.Fallback);
+        decimal? Category(ScoringCategory category) => detail.Latest.Breakdown!.Single(score => score.Category == category).Score;
+        Assert.Equal(75m, Category(ScoringCategory.Retry));
+        Assert.Equal(100m, Category(ScoringCategory.Timeout));
+        Assert.Null(Category(ScoringCategory.GracefulDegradation));
         Assert.Equal("3.0.3", detail.Spec!.OpenApiVersion);
         Assert.Equal(ProjectRole.Owner, Assert.Single(detail.Members).Role);
         Assert.All(detail.Findings, finding => Assert.Equal(seeded.LatestRunId, seeded.FindingRuns[finding.Id]));
@@ -384,7 +385,11 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Finding(latest, endpoints[0], ResilienceFindingOutcome.Failed);
         Finding(latest, endpoints[1], ResilienceFindingOutcome.Failed);
         Finding(latest, endpoints[2], ResilienceFindingOutcome.Passed);
-        db.AddRange(Result(latest, endpoints[0], 80, 90), Result(latest, endpoints[1], 60, null));
+        latest.CategoryScores = JsonSerializer.SerializeToDocument(Scorer.Score(
+        [
+            (ScoringCategory.Retry, ResilienceFindingOutcome.Passed), (ScoringCategory.Retry, ResilienceFindingOutcome.Degraded),
+            (ScoringCategory.Timeout, ResilienceFindingOutcome.Passed)
+        ]).Categories, JsonSerializerOptions.Web);
 
         var other = new Project { Id = Guid.NewGuid(), Name = "Not a member", CreatedById = userId };
         var otherSpec = Spec(other.Id, userId, active: true);
@@ -432,11 +437,5 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         RequestedById = userId, RunConfig = JsonDocument.Parse("{}"), CreatedAt = at, StartedAt = at,
         Status = TestRunStatus.Completed, CompletedAt = score is null ? null : at.AddMinutes(5),
         ResilienceScore = score, TotalScenarios = 2, CompletedScenarios = score is null ? 1 : 2
-    };
-
-    private static EndpointResult Result(TestRun run, ApiEndpoint endpoint, decimal retry, decimal? timeout) => new()
-    {
-        Id = Guid.NewGuid(), TestRunId = run.Id, EndpointId = endpoint.Id, RetryScore = retry, TimeoutScore = timeout,
-        OverallScore = retry, Evidence = JsonDocument.Parse("{}")
     };
 }

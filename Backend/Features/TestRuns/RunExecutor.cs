@@ -180,12 +180,55 @@ public sealed class RunExecutor(
             : completed > 0 ? TestRunStatus.PartiallyCompleted : TestRunStatus.Failed;
         failure ??= result == TestRunStatus.Failed ? "No scenario could be executed. Each scenario shows why." : null;
         var completedAt = time.GetUtcNow();
-        // Conditional, so a cancelled run stays Cancelled.
-        await db.TestRuns.Where(run => run.Id == runId && run.Status == TestRunStatus.Running)
+
+        // Only a run whose every scenario ran is scored (FeaturesFlow 2.19): the dashboards read any run that has a score.
+        Scorer.Result? score = null;
+        List<EndpointResult> endpointResults = [];
+        if (result == TestRunStatus.Completed)
+        {
+            var findings = (await db.ResilienceFindings.Where(finding => finding.TestRunId == runId)
+                    .Select(finding => new
+                    {
+                        finding.EndpointId, finding.Pattern, finding.Outcome,
+                        Type = (ScenarioType?)finding.ScenarioExecution!.ScenarioType
+                    })
+                    .ToListAsync(cancellationToken))
+                .Select(finding => (finding.EndpointId, Scored: (Scorer.CategoryOf(finding.Type, finding.Pattern), finding.Outcome)))
+                .ToList();
+            score = Scorer.Score(findings.Select(finding => finding.Scored).ToList());
+            // The same method per endpoint; an endpoint with no scored findings gets no row.
+            endpointResults = findings.GroupBy(finding => finding.EndpointId)
+                .Select(group => (EndpointId: group.Key, Score: Scorer.Score(group.Select(finding => finding.Scored).ToList())))
+                .Where(endpoint => endpoint.Score.Overall is not null)
+                .Select(endpoint => new EndpointResult
+                {
+                    TestRunId = runId, EndpointId = endpoint.EndpointId, OverallScore = endpoint.Score.Overall!.Value,
+                    Evidence = JsonSerializer.SerializeToDocument(endpoint.Score.Categories, JsonSerializerOptions.Web),
+                    CreatedAt = completedAt
+                })
+                .ToList();
+        }
+        var overall = score?.Overall;
+        var coverage = score?.Coverage;
+        var categoryScores = score is null ? null : JsonSerializer.SerializeToDocument(score.Categories, JsonSerializerOptions.Web);
+
+        // One transaction: a run never has a score without its endpoint scores.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Conditional, so a cancelled run stays Cancelled and unscored.
+        var finished = await db.TestRuns.Where(run => run.Id == runId && run.Status == TestRunStatus.Running)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(run => run.Status, result)
                 .SetProperty(run => run.FailureMessage, failure)
+                .SetProperty(run => run.ResilienceScore, overall)
+                .SetProperty(run => run.EvidenceCoverage, coverage)
+                .SetProperty(run => run.CategoryScores, categoryScores)
                 .SetProperty(run => run.CompletedAt, completedAt), cancellationToken);
+        if (finished == 1 && endpointResults.Count > 0)
+        {
+            db.EndpointResults.AddRange(endpointResults);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 

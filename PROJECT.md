@@ -370,13 +370,14 @@ The weights are fixed and recorded before evaluation as scoring version `1.0` (s
 ## 14.3 How the score is computed
 
 1. Each **finding** is tagged with one category. A scenario can produce several findings (for example a 5xx Storm can yield a Retry finding and a Graceful Degradation finding).
-2. Findings are scored by outcome. **[Proposed]** Pass = 100, Degraded = 50, Fail = 0.
+2. Findings are scored by outcome: Pass = 100, Degraded = 50, Fail = 0. These points are locked with the weights as part of scoring version `1.0`.
 3. A **category score** is the mean of its scored findings, so many easy scenarios in one category cannot dominate the overall score. Category weights, not scenario counts, set influence.
 4. **Not Applicable** and **Inconclusive** findings are excluded from scoring.
 5. A category with no scored findings is omitted and its weight is redistributed proportionally across the remaining categories.
 6. The **overall score** is the weighted mean of the scored categories.
 7. Every report shows **evidence coverage** (scored findings versus total, including Inconclusive) so a high score from thin evidence is visible.
 8. Endpoint scores use the same method restricted to one endpoint.
+9. Only a run whose every scenario ran (status Completed) gets a stored score. Partially completed, failed, and cancelled runs are not scored, so they do not enter the score trend. Not Applicable findings count toward neither the score nor evidence coverage.
 
 How baselines affect evaluation, and whether severity caps the score (for example a Critical failure limiting the maximum), are **[Open]**.
 

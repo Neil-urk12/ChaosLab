@@ -18,6 +18,10 @@ public class TestRun
     public int TotalScenarios { get; set; }
     public int CompletedScenarios { get; set; }
     public decimal? ResilienceScore { get; set; }
+    // Scored findings out of scored plus Inconclusive, 0 to 100; null until the run is scored.
+    public decimal? EvidenceCoverage { get; set; }
+    // The category scores behind ResilienceScore, as Scorer wrote them; null until the run is scored.
+    public JsonDocument? CategoryScores { get; set; }
     public string ScoringVersion { get; set; } = "1.0";
     public string? FailureMessage { get; set; }
 

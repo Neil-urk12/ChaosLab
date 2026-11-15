@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Backend.Domain.Enums;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -27,11 +29,9 @@ public static class GetProject
     public sealed record EnvironmentInfo(string Name, string BaseUrl);
 
     public sealed record LatestScore(
-        Guid RunId, DateTimeOffset CompletedAt, decimal Score, decimal? PreviousScore, Breakdown? Breakdown);
-
-    // Averages of the latest run's per-endpoint pattern scores; null when no endpoint was scored for it.
-    public sealed record Breakdown(
-        decimal? Retry, decimal? Timeout, decimal? CircuitBreaker, decimal? Fallback, decimal? Idempotency);
+        Guid RunId, DateTimeOffset CompletedAt, decimal Score, decimal? PreviousScore,
+        // The latest run's stored category scores; null for a run scored before they were stored.
+        List<Scorer.CategoryScore>? Breakdown);
 
     public sealed record SpecInfo(string? Title, string OpenApiVersion, DateTimeOffset ImportedAt);
 
@@ -62,7 +62,7 @@ public static class GetProject
         var runs = db.TestRuns.AsNoTracking().Where(run => run.ProjectId == id);
         var scored = await runs.Where(run => run.CompletedAt != null && run.ResilienceScore != null)
             .OrderByDescending(run => run.CompletedAt).Take(2)
-            .Select(run => new { run.Id, CompletedAt = run.CompletedAt!.Value, Score = run.ResilienceScore!.Value })
+            .Select(run => new { run.Id, CompletedAt = run.CompletedAt!.Value, Score = run.ResilienceScore!.Value, run.CategoryScores })
             .ToListAsync(cancellationToken);
         var latestRunId = scored.FirstOrDefault()?.Id;
         var findings = db.ResilienceFindings.AsNoTracking()
@@ -70,22 +70,9 @@ public static class GetProject
         var activeEndpoints = db.ApiEndpoints.AsNoTracking()
             .Where(endpoint => endpoint.ApiSpec.ProjectId == id && endpoint.ApiSpec.IsActive);
 
-        LatestScore? latest = null;
-        if (scored.Count > 0)
-        {
-            var breakdown = await db.EndpointResults.AsNoTracking()
-                .Where(result => result.TestRunId == scored[0].Id)
-                .GroupBy(_ => 1)
-                .Select(results => new Breakdown(
-                    results.Average(result => result.RetryScore),
-                    results.Average(result => result.TimeoutScore),
-                    results.Average(result => result.CircuitBreakerScore),
-                    results.Average(result => result.FallbackScore),
-                    results.Average(result => result.IdempotencyScore)))
-                .FirstOrDefaultAsync(cancellationToken);
-            latest = new LatestScore(scored[0].Id, scored[0].CompletedAt, scored[0].Score,
-                scored.Count > 1 ? scored[1].Score : null, breakdown);
-        }
+        var latest = scored.Count == 0 ? null : new LatestScore(scored[0].Id, scored[0].CompletedAt, scored[0].Score,
+            scored.Count > 1 ? scored[1].Score : null,
+            scored[0].CategoryScores?.Deserialize<List<Scorer.CategoryScore>>(JsonSerializerOptions.Web));
 
         return TypedResults.Ok(new Response(
             id,

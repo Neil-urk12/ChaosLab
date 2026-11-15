@@ -124,6 +124,10 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Equal((ResiliencePattern.Idempotency, ResilienceFindingOutcome.Inconclusive),
             (findings[executions[duplicate].Id].Pattern, findings[executions[duplicate].Id].Outcome));
         Assert.Null(executions[dependency].Outcome);
+        // Some scenarios never ran, so the run is not scored.
+        var stored = await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId);
+        Assert.Equal((null, null, null), (stored.ResilienceScore, stored.EvidenceCoverage, stored.CategoryScores));
+        Assert.Empty(await db.EndpointResults.AsNoTracking().Where(r => r.TestRunId == runId).ToListAsync());
 
         // Two copies, no baseline, sharing one idempotency key.
         var copies = executions[duplicate].Observations.OrderBy(o => o.AttemptNo).ToList();
@@ -292,6 +296,49 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Equal(2, keys.Count);
         Assert.All(keys, key => Assert.True(Guid.TryParse(key, out _)));
         Assert.NotEqual(keys[0], keys[1]);
+    }
+
+    [Fact]
+    public async Task A_run_whose_every_scenario_ran_is_scored()
+    {
+        using var listener = StartTarget(new ConcurrentQueue<Received>(), out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        Guid Pick(string method, string path, ScenarioType type) =>
+            scenarios.Single(s => s.HttpMethod == method && s.Path == path && s.Type == type).Id;
+        var latency = Pick("GET", "/orders/{id}", ScenarioType.Latency);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{latency}",
+            new { parameters = new { delayMs = 10 } })).StatusCode);
+        var runId = await CreateRunAsync(client, projectId,
+            [latency, Pick("GET", "/orders/{id}", ScenarioType.TimeoutDrop), Pick("POST", "/orders", ScenarioType.DuplicateRequest)]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var run = await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId);
+        // Two Timeout findings passed; the duplicate request was Inconclusive, so Idempotency is left out of the score
+        // and shows up as missing evidence instead.
+        Assert.Equal((TestRunStatus.Completed, 100m, 66.67m, "1.0"), (run.Status, run.ResilienceScore, run.EvidenceCoverage, run.ScoringVersion));
+        var categories = run.CategoryScores!.Deserialize<List<Scorer.CategoryScore>>(JsonSerializerOptions.Web)!;
+        Assert.Equal(8, categories.Count);
+        Assert.Equal(new Scorer.CategoryScore(ScoringCategory.Timeout, 20, 100m, 2, 0), categories.Single(c => c.Category == ScoringCategory.Timeout));
+        Assert.Equal(new Scorer.CategoryScore(ScoringCategory.Idempotency, 10, null, 1, 1), categories.Single(c => c.Category == ScoringCategory.Idempotency));
+        // Categories are stored by name.
+        Assert.Equal("Timeout", run.CategoryScores.RootElement[0].GetProperty("category").GetString());
+
+        // Only the endpoint with scored findings gets an endpoint score.
+        var endpoint = await db.EndpointResults.AsNoTracking().Include(r => r.Endpoint).SingleAsync(r => r.TestRunId == runId);
+        Assert.Equal(("/orders/{id}", 100m), (endpoint.Endpoint.Path, endpoint.OverallScore));
+        Assert.Equal(8, endpoint.Evidence.RootElement.GetArrayLength());
+
+        // The project page shows the score and its breakdown.
+        var project = await client.GetFromJsonAsync<Backend.Features.Projects.GetProject.Response>($"/api/projects/{projectId}", Json);
+        Assert.Equal((runId, 100m), (project!.Latest!.RunId, project.Latest.Score));
+        Assert.Equal(100m, project.Latest.Breakdown!.Single(c => c.Category == ScoringCategory.Timeout).Score);
     }
 
     [Fact]

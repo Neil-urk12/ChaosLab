@@ -8,6 +8,17 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Resilience Score calculation: when every scenario of a run ran, the runner scored
+  the run's findings and saved the overall score, evidence coverage, and the eight
+  category scores on the run, plus a score for each endpoint with scored findings.
+  Pass counted 100 points, Degraded 50, and Fail 0; a category score was the mean of
+  its findings, and a category with no scored findings was left out with its weight
+  shared among the rest. Partially completed, failed, and cancelled runs were not
+  scored, and runs that finished earlier were not backfilled. Until the evaluator has
+  rules for the injector's faults, only the Timeout and Idempotency categories can be
+  scored. The points were locked as part of scoring version 1.0 in `PROJECT.md`
+  section 14.3.
+
 - A fault injector in the runner's request path, running inside the backend. 5xx
   Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip, and Authentication
   Expiry scenarios ran instead of being skipped. The target was still called for
@@ -334,6 +345,10 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- The project page's resilience breakdown showed the eight locked scoring categories
+  from the latest scored run's stored category scores. It previously listed six
+  older labels, including Availability, Circuit breaker, and Fallback behavior, that
+  nothing filled in.
 - Account emails are now unique, case-insensitively, enforced by a unique database
   index. Two account creations racing on the same email or username now get a `400`
   validation error instead of both succeeding or failing with a `500`. Login by email no

@@ -748,6 +748,9 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<Guid?>("AuthProfileId")
                         .HasColumnType("uuid");
 
+                    b.Property<JsonDocument>("CategoryScores")
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -759,6 +762,10 @@ namespace Backend.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("EnvironmentId")
                         .HasColumnType("uuid");
+
+                    b.Property<decimal?>("EvidenceCoverage")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
 
                     b.Property<string>("FailureMessage")
                         .HasColumnType("text");
@@ -807,6 +814,8 @@ namespace Backend.Infrastructure.Data.Migrations
 
                     b.ToTable("TestRuns", t =>
                         {
+                            t.HasCheckConstraint("CK_TestRuns_EvidenceCoverage", "\"EvidenceCoverage\" BETWEEN 0 AND 100");
+
                             t.HasCheckConstraint("CK_TestRuns_ResilienceScore", "\"ResilienceScore\" BETWEEN 0 AND 100");
 
                             t.HasCheckConstraint("CK_TestRuns_ScenarioCounts", "\"TotalScenarios\" >= 0 AND \"CompletedScenarios\" >= 0 AND \"CompletedScenarios\" <= \"TotalScenarios\"");

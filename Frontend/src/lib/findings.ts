@@ -42,15 +42,16 @@ export function findingsCsv(findings: RunFinding[]): string {
 }
 
 // Scoring categories and their locked weights, scoring version 1.0 (PROJECT.md §14.2).
+// The third entry is the category's name in the scores the backend stores (ScoringCategory in Scorer.cs).
 export const SCORING_CATEGORIES = [
-	['Timeout handling', 20],
-	['Retry behavior', 15],
-	['Graceful degradation', 15],
-	['Rate-limit handling', 10],
-	['Idempotency', 10],
-	['Authentication failure handling', 10],
-	['Response validation', 10],
-	['Dependency-failure handling', 10]
+	['Timeout handling', 20, 'Timeout'],
+	['Retry behavior', 15, 'Retry'],
+	['Graceful degradation', 15, 'GracefulDegradation'],
+	['Rate-limit handling', 10, 'RateLimit'],
+	['Idempotency', 10, 'Idempotency'],
+	['Authentication failure handling', 10, 'AuthenticationFailure'],
+	['Response validation', 10, 'ResponseValidation'],
+	['Dependency-failure handling', 10, 'DependencyFailure']
 ] as const;
 
 // findingCategory → scoring category. Circuit breaker and fallback feed graceful degradation; Baseline isn't scored.

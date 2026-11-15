@@ -81,7 +81,8 @@ export type ProjectDetail = {
 		completedAt: string;
 		score: number;
 		previousScore: number | null;
-		breakdown: Record<'retry' | 'timeout' | 'circuitBreaker' | 'fallback' | 'idempotency', number | null> | null;
+		// The run's stored category scores; null for a run scored before they were stored.
+		breakdown: { category: string; weight: number; score: number | null; findings: number; inconclusive: number }[] | null;
 	} | null;
 	spec: { title: string | null; openApiVersion: string; importedAt: string } | null;
 	members: { userId: string; displayName: string; role: ProjectRole }[];

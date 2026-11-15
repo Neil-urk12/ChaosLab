@@ -1,6 +1,7 @@
 <script lang="ts">
 	import ScoreRing from '$lib/components/ScoreRing.svelte';
 	import type { ResiliencePattern, TestRunRow } from '$lib/api';
+	import { SCORING_CATEGORIES } from '$lib/findings';
 	import { dateTime, duration, initials, PLACEHOLDER, score } from '$lib/format';
 
 	let { data } = $props();
@@ -11,15 +12,13 @@
 	);
 	const trendLabel = $derived(change == null ? 'First result' : change > 0 ? 'Improving' : change < 0 ? 'Declining' : 'Stable');
 
-	// Availability has no score in the model yet, so it stays a placeholder.
-	const breakdown = $derived([
-		{ label: 'Availability', value: null },
-		{ label: 'Timeout handling', value: latest?.breakdown?.timeout ?? null },
-		{ label: 'Retry strategy', value: latest?.breakdown?.retry ?? null },
-		{ label: 'Circuit breaker', value: latest?.breakdown?.circuitBreaker ?? null },
-		{ label: 'Fallback behavior', value: latest?.breakdown?.fallback ?? null },
-		{ label: 'Idempotency', value: latest?.breakdown?.idempotency ?? null }
-	]);
+	// A category with no scored findings in the latest run stays a placeholder.
+	const breakdown = $derived(
+		SCORING_CATEGORIES.map(([label, , key]) => ({
+			label,
+			value: latest?.breakdown?.find((c) => c.category === key)?.score ?? null
+		}))
+	);
 
 	const patternLabels: Record<ResiliencePattern, string> = {
 		Retry: 'Retry',

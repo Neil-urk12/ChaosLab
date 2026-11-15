@@ -22,6 +22,16 @@ public sealed class CheckConstraintTests(PostgreSqlFixture postgres) : Persisten
     [Theory]
     [InlineData(-1)]
     [InlineData(101)]
+    public async Task TestRun_evidence_coverage_outside_zero_to_one_hundred_is_rejected(int coverage)
+    {
+        var run = await Db.TestRuns.SingleAsync(x => x.Id == Data.Run.Id);
+        run.EvidenceCoverage = coverage;
+        await AssertViolationAsync(PostgresErrorCodes.CheckViolation, "CK_TestRuns_EvidenceCoverage");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
     public async Task ScenarioExecution_score_outside_zero_to_one_hundred_is_rejected(int score)
     {
         var execution = await Db.ScenarioExecutions.SingleAsync(x => x.Id == Data.Execution.Id);

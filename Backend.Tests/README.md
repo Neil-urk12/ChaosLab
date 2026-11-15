@@ -47,6 +47,7 @@ container infrastructure fails the suite instead of silently skipping tests.
 | `Infrastructure/BackendFactory.cs` | ASP.NET Core test host; replaces EF registrations with the disposable database and uses the Testing environment. |
 | `Integration/ModelInvariantTests.cs` | Membership uniqueness, active/default partial indexes, environment names, composite foreign keys, historical inactive specifications, and jsonb round-trip/operator behavior. |
 | `Integration/CheckConstraintTests.cs` | Every score column, inclusive score boundaries and nullable scores, scenario counts, execution sequence, observation attempt, and report version. |
+| `Integration/ScorerTests.cs` | Resilience Score calculation without a database: category means, locked weights and their redistribution, evidence coverage, empty scores, the fault-to-category table, and agreement with the frontend's numbers. |
 | `Integration/BackendHostTests.cs` | Existing HTTP endpoint smoke test and confirmation that the host's EF context uses the migrated disposable database. |
 
 The fixture derives all connections from its own container. It never reads

@@ -153,9 +153,12 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(x => x.RunConfig).HasColumnType("jsonb");
             entity.Property(x => x.ScoringVersion).HasMaxLength(32);
             entity.Property(x => x.ResilienceScore).HasPrecision(5, 2);
+            entity.Property(x => x.EvidenceCoverage).HasPrecision(5, 2);
+            entity.Property(x => x.CategoryScores).HasColumnType("jsonb");
             entity.ToTable(table =>
             {
                 table.HasCheckConstraint("CK_TestRuns_ResilienceScore", "\"ResilienceScore\" BETWEEN 0 AND 100");
+                table.HasCheckConstraint("CK_TestRuns_EvidenceCoverage", "\"EvidenceCoverage\" BETWEEN 0 AND 100");
                 table.HasCheckConstraint("CK_TestRuns_ScenarioCounts",
                     "\"TotalScenarios\" >= 0 AND \"CompletedScenarios\" >= 0 AND \"CompletedScenarios\" <= \"TotalScenarios\"");
             });
