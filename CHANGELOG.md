@@ -8,6 +8,21 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Resilience evaluation: the runner turned each completed scenario into one finding
+  with an outcome (Pass, Degraded, Fail, or Inconclusive), a severity, and evidence
+  that separates what was observed, what it suggests, and what is not proven. Latency
+  and Timeout / Drop scenarios were judged against the baseline request, and Duplicate
+  Request scenarios by how many copies the target accepted. Faults that need the
+  injector have no rules yet. The thresholds are proposed and documented in
+  `FeaturesFlow.md` section 2.18.
+- Developer invariants were checked during evaluation, and a violated invariant made
+  the finding Fail. The runner sent each invariant's read-back request after the
+  scenario, filling `{{request.body.<field>}}` templates from the request body. On a
+  Timeout / Drop scenario an invariant without a read-back was reported as not
+  evaluated, because the runner ends the faulted request itself. The finding and the
+  scenario's outcome were saved in one transaction.
+- A recovery request after every Timeout / Drop fault, so the finding rests on whether
+  the target still answered after an abandoned request.
 - An environment variable template, `Backend/.env.example`, for the local
   `Backend/.env.local` file, with placeholders for the pod database's connection
   string and the credentials key.

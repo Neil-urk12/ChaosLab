@@ -283,7 +283,7 @@ export type RunTimeline = {
 	httpMethod: string;
 	path: string;
 	scenarioType: ScenarioType;
-	outcome: 'Passed' | 'Failed' | 'Inconclusive' | null;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | null;
 	failureReason: string | null;
 	completedAt: string | null;
 	events: TimelineEvent[];
@@ -318,7 +318,7 @@ export type FeedRow = {
 	path: string;
 	scenarioType: ScenarioType;
 	status: ScenarioExecutionStatus;
-	outcome: 'Passed' | 'Failed' | 'Inconclusive' | null;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | null;
 	failureReason: string | null;
 	startedAt: string | null;
 	completedAt: string | null;

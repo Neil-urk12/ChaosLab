@@ -191,7 +191,9 @@ Built as the project's Team tab. Only Owners add, remove, or change the role of 
 7. The design target is 100+ applicable scenarios for sufficiently large APIs; small APIs are never padded.
 8. Continue to invariants and test-run configuration.
 
-### 2.14 Developer invariants [Partial]
+### 2.14 Developer invariants [Done]
+
+Built: invariants are saved on a scenario, snapshotted per execution, and checked by the evaluator (2.18). A read-back is a GET sent right after the scenario's requests; its path may use `{{request.body.<field>}}` templates filled from the request body that was sent. An invariant with a read-back is checked on the read-back's response, any other on every faulted request. The exception is Timeout / Drop: the runner ends the faulted request itself, so an invariant without a read-back has no response to check and is reported as not evaluated. The record count is the length of a top-level JSON array, or of the only array in a top-level object. An invariant that cannot be checked (no response, body not JSON, field missing) is reported as not evaluated and does not change the outcome.
 
 1. On a scenario, the user chooses Add invariant.
 2. Pick an assertion type and fill in its parameters. Examples: status code in a set, record count after duplicate requests at most N, a field never below a value, maximum duration, required header present. The final list of types is **[Open]**.
@@ -212,7 +214,7 @@ Built as the project's Team tab. Only Owners add, remove, or change the role of 
 
 ### 2.16 Resilience test execution [Partial]
 
-Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time. Not built: the injector and simulator faults (skipped with a reason), concurrency above one, and runner retries.
+Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; and the invariants' read-back requests. Not built: the injector and simulator faults (skipped with a reason), concurrency above one, and runner retries.
 
 1. The user clicks Execute Tests. Set status to Running.
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
@@ -230,7 +232,15 @@ Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and ba
 3. Set the run status to Cancelled and keep the evidence collected so far.
 4. Partial runs are not scored as complete. **[Open]**: how a cancelled run is shown in history.
 
-### 2.18 Resilience pattern evaluation [Planned]
+### 2.18 Resilience pattern evaluation [Partial]
+
+Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each completed scenario into one finding, linked to the run, endpoint, and scenario execution, with evidence (expected, observed, per-request facts, interpretation, invariant results). Skipped and runner-failed scenarios get no finding. Rules exist for the faults the runner can produce, with **[Proposed]** thresholds:
+
+- **Latency** and **Timeout / Drop** (Timeout): the delayed request, or the recovery request after a dropped or held one, is compared with the baseline. Answered normally is Pass; a body cut short, or slower than three times the baseline and by more than one second, is Degraded; a 5xx, no response, or a 4xx after a successful baseline is Fail; a failed baseline, or a 4xx with no baseline, is Inconclusive.
+- **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
+- A violated invariant makes the finding Fail. Fail is High severity, Degraded is Medium, everything else is Info.
+
+Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, which need the injector's faults (2.16); Not Applicable findings; sending findings to scoring (2.19).
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.
@@ -254,7 +264,7 @@ Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and ba
 
 ### 2.20 Viewing test results [Partial]
 
-Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces findings, scores, or recommendations yet (sections 2.18, 2.19, and 2.22), so real runs show these sections empty, and there is no drill-down into a single endpoint or scenario.
+Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces stored scores or recommendations yet (sections 2.19 and 2.22), so real runs show findings (2.18) but no saved score or recommendations, and there is no drill-down into a single endpoint or scenario.
 
 1. The user opens a completed run.
 2. Retrieve run information, scenario executions, findings, scores, and recommendations.

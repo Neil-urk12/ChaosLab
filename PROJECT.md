@@ -539,7 +539,7 @@ Notable decisions already in the code:
 
 ## 20.2 Planned schema changes (to match the decisions in this document)
 
-1. **Outcomes:** add **Degraded** to `ScenarioOutcome` and `ResilienceFindingOutcome`; add **NotApplicable** to `ScenarioOutcome`.
+1. **Outcomes:** add **NotApplicable** to `ScenarioOutcome`. (**Degraded** is already in `ScenarioOutcome` and `ResilienceFindingOutcome`.)
 2. **Category scores:** add a child table (for example `EndpointCategoryScores`: endpoint result, category, score, weight, finding count). Replace the five fixed score columns on `EndpointResult`. Add a run-level category breakdown the same way, plus an evidence-coverage value on `TestRun`.
 3. **Categories and patterns:** extend the pattern/category set to the eight scoring categories; keep CircuitBreaker and Fallback as evidence signals.
 4. **Invariants:** replace the free-text `DeveloperInvariant` string with a structured assertion (JSONB `type` plus `params`) on `ChaosScenario` and its snapshot on `ScenarioExecution`; store per-run results as findings or finding evidence.

@@ -109,8 +109,21 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Equal("{\"id\":7}", latencyObservations[1].Metadata.RootElement.GetProperty("body").GetString());
 
         var dropObservations = executions[drop].Observations.OrderBy(o => o.AttemptNo).ToList();
-        Assert.Equal([ObservationOutcomeType.Forwarded, ObservationOutcomeType.Dropped], dropObservations.Select(o => o.OutcomeType));
+        // Baseline, the dropped request, then the recovery request that shows the target still answers.
+        Assert.Equal([ObservationOutcomeType.Forwarded, ObservationOutcomeType.Dropped, ObservationOutcomeType.Forwarded],
+            dropObservations.Select(o => o.OutcomeType));
         Assert.Null(dropObservations[1].UpstreamStatusCode);
+
+        // Each scenario that ran was evaluated into one finding; the skipped and the failed one were not.
+        var findings = await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToDictionaryAsync(f => f.ScenarioExecutionId!.Value);
+        Assert.Equal(3, findings.Count);
+        Assert.Equal((ResiliencePattern.Timeout, ResilienceFindingOutcome.Passed, ScenarioOutcome.Passed),
+            (findings[executions[latency].Id].Pattern, findings[executions[latency].Id].Outcome, executions[latency].Outcome));
+        Assert.Equal(ResilienceFindingOutcome.Passed, findings[executions[drop].Id].Outcome);
+        // Both copies were accepted and nothing read the records back, so the responses alone decide nothing.
+        Assert.Equal((ResiliencePattern.Idempotency, ResilienceFindingOutcome.Inconclusive),
+            (findings[executions[duplicate].Id].Pattern, findings[executions[duplicate].Id].Outcome));
+        Assert.Null(executions[malformed].Outcome);
 
         // Two copies, no baseline, sharing one idempotency key.
         var copies = executions[duplicate].Observations.OrderBy(o => o.AttemptNo).ToList();
@@ -210,8 +223,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             .Where(e => e.TestRunId == first).ToDictionaryAsync(e => e.ScenarioId);
         Assert.All(executions.Values, e => Assert.Equal(ScenarioExecutionStatus.Completed, e.Status));
 
-        // Baseline, then the request held open past the 1 s timeout.
-        Assert.Equal([ObservationOutcomeType.Forwarded, ObservationOutcomeType.Timeout],
+        // Baseline, then the request held open past the 1 s timeout, then the recovery request.
+        Assert.Equal([ObservationOutcomeType.Forwarded, ObservationOutcomeType.Timeout, ObservationOutcomeType.Forwarded],
             executions[hold].Observations.OrderBy(o => o.AttemptNo).Select(o => o.OutcomeType));
 
         // A body the target cuts off is the target's behaviour, recorded with its status, not a runner error.
@@ -517,6 +530,50 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.All(observations, o => Assert.Equal("{\"id\":7}", o.Metadata.RootElement.GetProperty("body").GetString()));
     }
 
+    [Fact]
+    public async Task A_violated_invariant_read_back_from_the_target_makes_the_finding_fail()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        var duplicate = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.DuplicateRequest).Id;
+        // The target's /list always returns two records; the invariant allows one.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{duplicate}", new
+        {
+            invariants = new object[]
+            {
+                new { type = "MaxRecordsAfterDuplicates", @params = new { max = 1 }, readBack = new { method = "GET", path = "/list?item={{request.body.item}}" } },
+                new { type = "StatusCodeIn", @params = new { codes = new[] { 200 } } }
+            }
+        })).StatusCode);
+        var runId = await CreateRunAsync(client, projectId, [duplicate]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        // The read-back went out after the copies, authenticated, with the template filled from the request body.
+        var readBack = Assert.Single(received, r => r.Path == "/v1/list");
+        Assert.Equal(("GET", "?item=book", $"Bearer {Token}"), (readBack.Method, readBack.Query, readBack.Authorization));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var finding = await db.ResilienceFindings.AsNoTracking().Include(f => f.ScenarioExecution).SingleAsync(f => f.TestRunId == runId);
+        Assert.Equal((ResilienceFindingOutcome.Failed, RecommendationSeverity.High, ScenarioOutcome.Failed),
+            (finding.Outcome, finding.Severity, finding.ScenarioExecution!.Outcome));
+        Assert.Contains("2 records", finding.Summary);
+        var evidence = finding.Evidence.RootElement;
+        Assert.True(evidence.GetProperty("invariantViolated").GetBoolean());
+        Assert.Equal(["Violated", "Held"], evidence.GetProperty("invariants").EnumerateArray().Select(i => i.GetProperty("result").GetString()));
+        // Two copies and the read-back, each with its attempt number.
+        Assert.Equal([1, 2, 3], evidence.GetProperty("observations").EnumerateArray().Select(o => o.GetProperty("attemptNo").GetInt32()));
+        // The results page lists the finding.
+        var listed = await client.GetFromJsonAsync<Backend.Features.Findings.ListFindings.Response>($"/api/projects/{projectId}/findings?run={runId}", Json);
+        Assert.Equal(ResilienceFindingOutcome.Failed, Assert.Single(listed!.Findings).Outcome);
+    }
+
     private static async Task SetParametersAsync(HttpClient client, Guid projectId, Guid scenarioId, object parameters) =>
         Assert.Equal(HttpStatusCode.NoContent,
             (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{scenarioId}", new { parameters })).StatusCode);
@@ -544,7 +601,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         return (await response.Content.ReadFromJsonAsync<CreateRun.Response>(Json))!.Id;
     }
 
-    // A loopback target that records every request and echoes the path's last segment as {"id": n}. /stream promises
+    // A loopback target that records every request and echoes the path's last segment as {"id": n}. /list returns two
+    // records. /stream promises
     // 100 bytes, sends 5 and closes the connection. Every response sets a session cookie.
     internal static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl)
     {
@@ -585,7 +643,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
                         var echo = last == "echo" ? request.Headers["Authorization"] : null;
                         if (echo is not null)
                             context.Response.Headers["X-Echo"] = echo;
-                        var payload = Encoding.UTF8.GetBytes(int.TryParse(last, out var id) ? $"{{\"id\":{id}}}"
+                        var payload = Encoding.UTF8.GetBytes(last == "list" ? "{\"items\":[{},{}]}"
+                            : int.TryParse(last, out var id) ? $"{{\"id\":{id}}}"
                             : echo is not null ? $"{{\"authorization\":\"{echo}\"}}" : "{}");
                         context.Response.ContentType = "application/json";
                         await context.Response.OutputStream.WriteAsync(payload);

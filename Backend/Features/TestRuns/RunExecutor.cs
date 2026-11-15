@@ -5,6 +5,7 @@ using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.ApiSpecs;
 using Backend.Features.Environments;
+using Backend.Features.Scenarios;
 using Backend.Infrastructure.Data;
 using Backend.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -14,8 +15,8 @@ namespace Backend.Features.TestRuns;
 // Background runner (FeaturesFlow 2.16, 2.17). Takes Queued runs oldest first and works through each run's scenario
 // executions one at a time with direct requests: an optional baseline request, then the fault (Latency, Timeout / Drop,
 // Duplicate Request). Faults that need the injector proxy or the dependency simulator (PROJECT.md 10) are skipped with
-// a reason. Every request is stored as an HttpObservation. Evaluation and scoring (2.18, 2.19) are not built yet, so
-// executions finish without an outcome.
+// a reason. Every request is stored as an HttpObservation, and each completed scenario is evaluated into a finding
+// (2.18, Evaluator). Scoring (2.19) is not built yet.
 // shortcut: ignores the run's concurrency and runner-retry settings (always 1 and 0); honour them when experiments get slow.
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
 public sealed class RunExecutor(
@@ -31,10 +32,11 @@ public sealed class RunExecutor(
 
     private sealed record TargetConfig(string BaseUrl, bool VerifyTls, int RequestTimeoutSeconds);
 
-    private sealed record Context(RunConfig Config, ApiEnvironment Environment, List<SchemeInfo> Schemes, JsonElement Document);
+    private sealed record Context(Guid RunId, RunConfig Config, ApiEnvironment Environment, List<SchemeInfo> Schemes, JsonElement Document);
 
     private sealed record Execution(
-        Guid Id, ScenarioType ScenarioType, JsonDocument Parameters, string HttpMethod, string Path,
+        Guid Id, Guid EndpointId, ScenarioType ScenarioType, JsonDocument Parameters, JsonDocument Invariants, string HttpMethod,
+        string Path,
         JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security);
 
     // The endpoint's request, ready to be sent any number of times.
@@ -199,12 +201,13 @@ public sealed class RunExecutor(
             return "The environment moved to another host after this run was created, so nothing was sent. Start a new run.";
         // The run's own spec, not the active one: a re-import while the run is queued must not change its auth schemes.
         var document = run.ParsedDocument.RootElement;
-        var context = new Context(config, environment, await SchemeInfo.ForSpecAsync(db, run.ApiSpecId, document, cancellationToken),
+        var context = new Context(runId, config, environment, await SchemeInfo.ForSpecAsync(db, run.ApiSpecId, document, cancellationToken),
             document);
         var executions = await db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId).OrderBy(execution => execution.SequenceNo)
             .Select(execution => new Execution(
-                execution.Id, execution.ScenarioType, execution.Parameters, execution.Endpoint.HttpMethod,
+                execution.Id, execution.EndpointId, execution.ScenarioType, execution.Parameters, execution.Invariants,
+                execution.Endpoint.HttpMethod,
                 execution.Endpoint.Path, execution.Endpoint.Parameters, execution.Endpoint.RequestBodySchema,
                 execution.Endpoint.SecurityRequirements))
             .ToListAsync(cancellationToken);
@@ -262,10 +265,12 @@ public sealed class RunExecutor(
 
         var parameters = execution.Parameters.RootElement;
         var attempt = 0;
+        var observations = new List<HttpObservation>();
         // Saved one by one, so the live view shows each request as it finishes.
         async Task<HttpObservation> RecordAsync(Task<HttpObservation> sending)
         {
             var observation = await sending;
+            observations.Add(observation);
             db.HttpObservations.Add(observation);
             await db.SaveChangesAsync(cancellationToken);
             return observation;
@@ -299,6 +304,10 @@ public sealed class RunExecutor(
                 faults = [await RecordAsync(SendAsync(context, execution, prepared,
                     prepared.Create(new StalledContent(prepared.Body ?? [], hold: mode == "hold")), ++attempt, null,
                     new() { ["phase"] = "fault", ["mode"] = mode }, cancellationToken))];
+                // The runner ended that request itself, so it shows nothing about the target. A normal request
+                // afterwards is the evidence: did the target get over the abandoned one?
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
                 break;
             case ScenarioType.DuplicateRequest:
                 var copies = parameters.GetProperty("copies").GetInt32();
@@ -318,6 +327,8 @@ public sealed class RunExecutor(
                     return await SendAsync(context, execution, prepared, request, first + copy, idempotencyKey,
                         new() { ["phase"] = "fault", ["copy"] = copy, ["key"] = key }, cancellationToken);
                 }));
+                attempt += copies;
+                observations.AddRange(faults);
                 db.HttpObservations.AddRange(faults);
                 await db.SaveChangesAsync(cancellationToken);
                 break;
@@ -325,6 +336,47 @@ public sealed class RunExecutor(
         // The baseline's rule, for scenarios without one: no request reached the target, so the experiment never ran.
         if (faults.Length > 0 && faults.All(fault => fault.OutcomeType == ObservationOutcomeType.ConnectionError))
             return (ScenarioExecutionStatus.Skipped, $"The target was unreachable: {faults[0].ErrorType}");
+
+        // Read-back requests of the invariants (2.14): a GET after the fault that shows the state it left behind.
+        // shortcut: sent right after the last response, so a target that writes asynchronously may not show the record
+        // yet; add a wait setting to the read-back when that happens.
+        // shortcut: the GET also carries the endpoint's own required header parameters (a fresh idempotency key
+        // included); keep them apart from the environment's headers when a target objects.
+        var invariants = execution.Invariants.Deserialize<List<Invariant>>(ScenarioRules.Json) ?? [];
+        for (var index = 0; index < invariants.Count; index++)
+        {
+            // A path that can't be filled in or leaves the target host is not sent; the evaluator reports the invariant as not evaluated.
+            if (invariants[index].ReadBack?.Path is not { } template
+                || Evaluator.ResolveReadBack(template, prepared.Body) is not { } path
+                || TargetClient.Combine(context.Config.Target.BaseUrl, path) is not { } url)
+                continue;
+            var readBack = prepared with { Method = HttpMethod.Get, Url = url, Body = null };
+            await RecordAsync(SendAsync(context, execution with { HttpMethod = "GET", Path = path }, readBack, readBack.Create(),
+                ++attempt, null, new() { ["phase"] = "readBack", ["invariant"] = index }, cancellationToken));
+        }
+
+        if (Evaluator.Evaluate(execution.ScenarioType, parameters, invariants, observations) is { } finding)
+        {
+            // One transaction: a finding never exists without its scenario's outcome.
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            db.ResilienceFindings.Add(new ResilienceFinding
+            {
+                TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
+                Pattern = finding.Pattern, Outcome = finding.Outcome, Severity = finding.Severity, Summary = finding.Summary,
+                Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
+            });
+            await db.SaveChangesAsync(cancellationToken);
+            var outcome = finding.Outcome switch
+            {
+                ResilienceFindingOutcome.Passed => ScenarioOutcome.Passed,
+                ResilienceFindingOutcome.Failed => ScenarioOutcome.Failed,
+                ResilienceFindingOutcome.Degraded => ScenarioOutcome.Degraded,
+                _ => ScenarioOutcome.Inconclusive
+            };
+            await db.ScenarioExecutions.Where(row => row.Id == execution.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Outcome, outcome), cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
         return (ScenarioExecutionStatus.Completed, null);
     }
 

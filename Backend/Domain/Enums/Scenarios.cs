@@ -29,5 +29,7 @@ public enum ScenarioOutcome
 {
     Passed,
     Failed,
-    Inconclusive
+    Inconclusive,
+    // Appended last so the stored integer values of the other outcomes don't change.
+    Degraded
 }

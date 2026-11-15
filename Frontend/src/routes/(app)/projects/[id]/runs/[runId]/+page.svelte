@@ -523,7 +523,7 @@
 					</li>
 				{/each}
 				<li class="min-w-40 flex-1">
-					<span class="block size-3 rounded-full {timeline.outcome === 'Passed' ? 'bg-emerald-400' : 'bg-rose-400'}" aria-hidden="true"></span>
+					<span class="block size-3 rounded-full {timeline.outcome === 'Passed' ? 'bg-emerald-400' : timeline.outcome === 'Degraded' ? 'bg-amber-400' : 'bg-rose-400'}" aria-hidden="true"></span>
 					<p class="mt-3 font-mono text-[11px] text-slate-500">{timeline.completedAt ? clock(timeline.completedAt) : PLACEHOLDER}</p>
 					<p class="mt-1 text-[13px] font-semibold">Scenario complete</p>
 					<p class="mt-1 text-[11px] text-slate-400">{timeline.failureReason ?? timeline.outcome ?? 'No outcome'}</p>
