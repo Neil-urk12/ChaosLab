@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Backend.Domain.Enums;
+using Backend.Features.Environments;
 using Backend.Features.Projects;
 using Backend.Features.Scenarios;
 using Backend.Features.TestRuns;
@@ -82,7 +83,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.True(await executor.TickAsync(CancellationToken.None));
 
         var run = await client.GetFromJsonAsync<GetRun.Response>($"/api/projects/{projectId}/runs/{runId}", Json);
-        // A dependency failure needs the simulator and /items/{sku} has no example, so only some scenarios ran.
+        // A dependency failure needs a dependency URL and /items/{sku} has no example, so only some scenarios ran.
         Assert.Equal((TestRunStatus.PartiallyCompleted, 5, 5, 1), (run!.Status, run.CompletedScenarios, run.TotalScenarios, run.SkippedScenarios));
         Assert.NotNull(run.StartedAt);
         Assert.NotNull(run.CompletedAt);
@@ -93,7 +94,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var executions = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations)
             .Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
 
-        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.SimulatorNeeded),
+        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.NoDependency),
             (executions[dependency].Status, executions[dependency].FailureReason));
         Assert.Empty(executions[dependency].Observations);
         Assert.Equal(ScenarioExecutionStatus.Failed, executions[noExample].Status);
@@ -237,6 +238,106 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Equal("/v1/orders/7", Assert.Single(received, r => r.Authorization == $"Bearer {FaultInjector.InvalidCredential}").Path);
         var echoes = received.Where(r => r.Path == "/v1/echo").Select(r => r.Authorization).ToList();
         Assert.Equal([$"Bearer {Token}", null, $"Bearer {Token}"], echoes);
+    }
+
+    [Fact]
+    public async Task Dependency_failure_cuts_the_targets_calls_through_the_simulator_and_logs_them()
+    {
+        var received = new ConcurrentQueue<Received>();
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        // On every POST /orders the target calls its dependency through the simulator, gives up after 300 ms, and
+        // answers 503 when the call fails. The dependency is the target's own GET /7.
+        using var outbound = factory.CreateClient();
+        string? simulatorUrl = null;
+        var callsDependency = true;
+        using var listener = StartTarget(received, out var baseUrl, async () =>
+        {
+            if (!callsDependency)
+                return 200;
+            using var patience = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+            try
+            {
+                using var response = await outbound.GetAsync($"{simulatorUrl}/7?source=target", patience.Token);
+                return (int)response.StatusCode;
+            }
+            catch (Exception) { return 503; }
+        });
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        var environmentUrl = $"/api/projects/{projectId}/environment";
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(environmentUrl, new
+            { baseUrl, kind = "Staging", requestTimeoutSeconds = 5, verifyTls = true, authorized = true, dependencyUrl = baseUrl })).StatusCode);
+        var target = (await client.GetFromJsonAsync<GetEnvironment.Response>(environmentUrl, Json))!.Target!;
+        simulatorUrl = $"/api/simulator/{target.SimulatorToken}";
+        // The route needs no sign-in, and a token it does not know forwards nowhere. The environment id is not a key:
+        // it does not match the route, so it is an ordinary API path that needs sign-in.
+        Assert.Equal(HttpStatusCode.NotFound, (await outbound.GetAsync($"/api/simulator/{DependencySimulator.NewToken()}/7")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await outbound.GetAsync($"/api/simulator/{target.Id}/7")).StatusCode);
+        // A signed-in browser that follows a link here: its session cookie stays with ChaosLab, and the dependency's
+        // answer can neither run script nor set cookies on ChaosLab's origin.
+        using (var browsed = await client.GetAsync($"{simulatorUrl}/7?source=browser"))
+        {
+            Assert.Equal(HttpStatusCode.OK, browsed.StatusCode);
+            Assert.False(browsed.Headers.Contains("Set-Cookie"));
+            Assert.Equal("sandbox", Assert.Single(browsed.Headers.GetValues("Content-Security-Policy")));
+            Assert.Equal("nosniff", Assert.Single(browsed.Headers.GetValues("X-Content-Type-Options")));
+        }
+        Assert.Null(received.Single(r => r.Query == "?source=browser").Cookie);
+
+        var scenario = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.DnsFailure).Id;
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        async Task<Backend.Domain.Entities.ScenarioExecution> RunAsync(string dependency)
+        {
+            await SetParametersAsync(client, projectId, scenario, new { dependency });
+            var runId = await CreateRunAsync(client, projectId, [scenario]);
+            Assert.True(await executor.TickAsync(CancellationToken.None));
+            await using var scope = factory.Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScenarioExecutions.AsNoTracking()
+                .Include(e => e.Observations).Include(e => e.TestRun).SingleAsync(e => e.TestRunId == runId);
+        }
+        static List<(string?, int)> Seen(Backend.Domain.Entities.ScenarioExecution execution) => execution.Observations
+            .OrderBy(o => o.AttemptNo).Select(o => (o.Metadata.RootElement.GetProperty("phase").GetString(), o.UpstreamStatusCode ?? 0)).ToList();
+        static List<JsonElement> Calls(Backend.Domain.Entities.ScenarioExecution execution)
+        {
+            var log = execution.Observations.Single(o => o.AttemptNo == 2).Metadata.RootElement.GetProperty("dependencyCalls");
+            var calls = log.GetProperty("calls").EnumerateArray().ToList();
+            Assert.Equal(calls.Count, log.GetProperty("total").GetInt32());
+            return calls;
+        }
+
+        // Unresolvable: the call is cut at once. Before and after the fault it is forwarded, query included.
+        var unresolvable = await RunAsync("unresolvable");
+        Assert.Equal((ScenarioExecutionStatus.Completed, TestRunStatus.Completed), (unresolvable.Status, unresolvable.TestRun.Status));
+        Assert.Equal([("baseline", 200), ("fault", 503), ("recovery", 200)], Seen(unresolvable));
+        var call = Assert.Single(Calls(unresolvable));
+        Assert.Equal(("GET", "/7"), (call.GetProperty("method").GetString(), call.GetProperty("path").GetString()));
+        Assert.Equal(2, received.Count(r => r.Method == "GET" && r.Path == "/v1/7" && r.Query == "?source=target"));
+        // No rule judges this evidence yet, so the scenario has no outcome.
+        Assert.Null(unresolvable.Outcome);
+
+        // Unreachable: silence instead, so the target waited out its own 300 ms before answering.
+        var unreachable = await RunAsync("unreachable");
+        Assert.Equal([("baseline", 200), ("fault", 503), ("recovery", 200)], Seen(unreachable));
+        Assert.Single(Calls(unreachable));
+        Assert.InRange(unreachable.Observations.Single(o => o.AttemptNo == 2).DurationMs!.Value, 250, 4000);
+
+        // A target that answers without calling its dependency never met the fault; what was sent stays as evidence.
+        callsDependency = false;
+        var missed = await RunAsync("unresolvable");
+        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.SimulatorNotInPath), (missed.Status, missed.FailureReason));
+        Assert.Equal([("baseline", 200), ("fault", 200)], Seen(missed));
+    }
+
+    [Fact]
+    public void Dependency_call_log_keeps_the_first_calls_with_short_paths_and_counts_every_one()
+    {
+        var log = new DependencySimulator.CallLog();
+        Parallel.For(0, DependencySimulator.CallLog.MaxCalls + 50, i => log.Add(i, "GET", "/" + new string('a', 10_000)));
+
+        Assert.Equal(DependencySimulator.CallLog.MaxCalls + 50, log.Total);
+        Assert.Equal(DependencySimulator.CallLog.MaxCalls, log.Calls.Count());
+        Assert.All(log.Calls, call => Assert.Equal(DependencySimulator.CallLog.MaxPathLength, call.Path.Length));
     }
 
     [Fact]
@@ -778,7 +879,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
     // A loopback target that records every request and echoes the path's last segment as {"id": n}. /list returns two
     // records. /stream promises
     // 100 bytes, sends 5 and closes the connection. Every response sets a session cookie.
-    internal static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl)
+    // With `dependency`, /orders answers with the status it returns: a target that calls a dependency of its own.
+    internal static HttpListener StartTarget(ConcurrentQueue<Received> received, out string baseUrl, Func<Task<int>>? dependency = null)
     {
         var probe = new TcpListener(IPAddress.Loopback, 0);
         probe.Start();
@@ -814,6 +916,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
                             context.Response.Abort();
                             return;
                         }
+                        if (last == "orders" && dependency is not null)
+                            context.Response.StatusCode = await dependency();
                         var echo = last == "echo" ? request.Headers["Authorization"] : null;
                         if (echo is not null)
                             context.Response.Headers["X-Echo"] = echo;

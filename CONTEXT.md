@@ -13,3 +13,7 @@ ChaosLab evaluates API resilience in a self-hosted installation.
 **Resilience finding**: Evidence about an endpoint's Retry, Timeout, CircuitBreaker, Fallback, or Idempotency behavior in a TestRun. Its outcome can be Passed, Degraded, Failed, Inconclusive, or NotApplicable, and it carries a severity (Info, Low, Medium, High, Critical).
 
 **DuplicateRequest**: An idempotency test scenario, separate from the nine chaos primitives.
+
+**Dependency**: A service the target API calls. An environment names one by its dependency URL.
+
+**Dependency simulator**: The ChaosLab route that stands in for the dependency. The target is configured to call it instead; it forwards those calls to the dependency, and cuts them while a dependency-failure scenario's fault is armed.

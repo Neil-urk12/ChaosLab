@@ -58,6 +58,10 @@ public static class TargetClient
     public static HttpClient CreateClient(IHttpClientFactory factory, bool verifyTls) =>
         factory.CreateClient(verifyTls ? Verified : Unverified);
 
+    // The same guarded handlers without HttpClient on top, which would buffer every response the simulator forwards.
+    public static HttpMessageInvoker CreateInvoker(IHttpMessageHandlerFactory factory, bool verifyTls) =>
+        new(factory.CreateHandler(verifyTls ? Verified : Unverified), disposeHandler: false);
+
     // Messages are fixed text: exception details could echo internal addresses or certificate data.
     public static string Describe(Exception exception, int timeoutSeconds) => exception switch
     {

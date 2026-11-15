@@ -75,6 +75,69 @@ public sealed class EnvironmentEndpointTests(PostgreSqlFixture postgres)
         Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, new
             { baseUrl = "https://api.test/v1", kind = "ProductionMirror", requestTimeoutSeconds = 30, verifyTls = true, authorized = true })).StatusCode);
         Assert.Equal("Production mirror", (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!.Name);
+
+        // The dependency URL is optional, validated like the base URL, and cleared by a save that leaves it out.
+        object WithDependency(string dependencyUrl) => new
+            { baseUrl = "https://api.test/v1", kind = "Staging", requestTimeoutSeconds = 30, verifyTls = true, authorized = true, dependencyUrl };
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync(url, WithDependency("ftp://ledger.test"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, WithDependency("https://ledger.test/api/"))).StatusCode);
+        var withDependency = (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!;
+        Assert.Equal("https://ledger.test/api", withDependency.DependencyUrl);
+        Assert.Matches("^[0-9a-f]{64}$", withDependency.SimulatorToken);
+        // The simulator token stays across saves of the same dependency and is replaced when it changes.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, WithDependency("https://ledger.test/api"))).StatusCode);
+        Assert.Equal(withDependency.SimulatorToken, (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!.SimulatorToken);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, WithDependency("https://ledger2.test"))).StatusCode);
+        var moved = (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!.SimulatorToken;
+        Assert.NotNull(moved);
+        Assert.NotEqual(withDependency.SimulatorToken, moved);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, Target("https://api.test/v1"))).StatusCode);
+        var cleared = (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!;
+        Assert.Equal((null, null), (cleared.DependencyUrl, cleared.SimulatorToken));
+    }
+
+    [Fact]
+    public async Task Simulator_token_is_hidden_from_viewers_and_replaced_when_someone_who_saw_it_loses_access()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        var admin = TestAuth.ValidAdmin();
+        using var client = await TestAuth.SignedInAdminAsync(factory, admin);
+        var projectId = await CreateProjectAsync(client);
+        var url = $"/api/projects/{projectId}/environment";
+        var members = $"/api/projects/{projectId}/members";
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(url, new
+            { baseUrl = "https://api.test/v1", kind = "Staging", requestTimeoutSeconds = 30, verifyTls = true, authorized = true, dependencyUrl = "https://ledger.test" })).StatusCode);
+        async Task<string?> TokenAsync() => (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!.SimulatorToken;
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var priya = new Backend.Domain.Entities.User { Id = Guid.NewGuid(), UserName = "priya", Email = "priya.nair@chaoslab.test", Firstname = "Priya", Lastname = "Nair", DisplayName = "Priya Nair" };
+        db.Users.Add(priya);
+        await db.SaveChangesAsync();
+
+        // A viewer leaving never saw the token, so it stays.
+        var token = await TokenAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(members, new { userId = priya.Id, role = "Viewer" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{members}/{priya.Id}")).StatusCode);
+        Assert.Equal(token, await TokenAsync());
+
+        // An editor demoted to viewer, then an editor removed: each replaces it.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsJsonAsync(members, new { userId = priya.Id, role = "Editor" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync($"{members}/{priya.Id}", new { role = "Viewer" })).StatusCode);
+        var demoted = await TokenAsync();
+        Assert.NotEqual(token, demoted);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync($"{members}/{priya.Id}", new { role = "Editor" })).StatusCode);
+        Assert.Equal(demoted, await TokenAsync());
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{members}/{priya.Id}")).StatusCode);
+        Assert.NotEqual(demoted, await TokenAsync());
+
+        // A viewer sees the dependency but not the token.
+        var adminId = (await db.Users.AsNoTracking().SingleAsync(user => user.UserName == admin.Username)).Id;
+        await db.ProjectMembers.Where(m => m.ProjectId == projectId && m.UserId == adminId)
+            .ExecuteUpdateAsync(set => set.SetProperty(m => m.Role, ProjectRole.Viewer));
+        var viewed = (await client.GetFromJsonAsync<GetEnvironment.Response>(url, Json))!.Target!;
+        Assert.Equal(("https://ledger.test", null), (viewed.DependencyUrl, viewed.SimulatorToken));
     }
 
     [Fact]

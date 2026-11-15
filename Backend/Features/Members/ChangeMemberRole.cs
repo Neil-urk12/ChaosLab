@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -31,6 +32,8 @@ public static class ChangeMemberRole
         if (newRole != ProjectRole.Owner && await MemberRules.IsLastOwnerAsync(db, member, cancellationToken))
             return TypedResults.Conflict(MemberRules.LastOwnerMessage);
 
+        if (DependencySimulator.SawToken(member.Role) && !DependencySimulator.SawToken(newRole))
+            await DependencySimulator.RotateTokensAsync(db, id, cancellationToken);
         member.Role = newRole;
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.NoContent();

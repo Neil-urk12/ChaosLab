@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +14,10 @@ namespace Backend.Features.Environments;
 // test it, and that it is not production; the confirmation is recorded again whenever the base URL changes.
 public static class SaveTarget
 {
-    public sealed record Request(string? BaseUrl, EnvironmentKind? Kind, int? RequestTimeoutSeconds, bool? VerifyTls, bool Authorized);
+    // DependencyUrl is optional; leaving it out or empty clears it.
+    public sealed record Request(
+        string? BaseUrl, EnvironmentKind? Kind, int? RequestTimeoutSeconds, bool? VerifyTls, bool Authorized,
+        string? DependencyUrl = null);
 
     public static async Task<Results<NoContent, ValidationProblem, NotFound, ForbidHttpResult, Conflict<string>>> Handle(
         Guid id, Request request, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time,
@@ -34,6 +38,10 @@ public static class SaveTarget
             errors["requestTimeoutSeconds"] = ["The timeout budget must be from 1 to 300 seconds."];
         if (!request.Authorized)
             errors["authorized"] = ["Confirm that you own this API or may test it, and that it is not production."];
+        Uri? dependencyUrl = null;
+        if (!string.IsNullOrWhiteSpace(request.DependencyUrl)
+            && TargetClient.ValidateBaseUrl(request.DependencyUrl, out dependencyUrl) is { } dependencyError)
+            errors["dependencyUrl"] = [dependencyError];
         if (errors.Count > 0)
             return TypedResults.ValidationProblem(errors);
 
@@ -75,6 +83,11 @@ public static class SaveTarget
         environment.Name = environment.Kind == EnvironmentKind.ProductionMirror ? "Production mirror" : environment.Kind.ToString();
         environment.RequestTimeoutSeconds = request.RequestTimeoutSeconds!.Value;
         environment.VerifyTls = request.VerifyTls ?? true;
+        var dependency = dependencyUrl?.OriginalString.TrimEnd('/');
+        // A new dependency gets a new simulator token, so a link to the old one cannot reach the new service.
+        if (dependency != environment.DependencyUrl)
+            environment.SimulatorToken = dependency is null ? null : DependencySimulator.NewToken();
+        environment.DependencyUrl = dependency;
         environment.UpdatedAt = now;
 
         try

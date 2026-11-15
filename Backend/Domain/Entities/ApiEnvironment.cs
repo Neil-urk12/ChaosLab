@@ -16,6 +16,11 @@ public class ApiEnvironment
     public EnvironmentKind Kind { get; set; } = EnvironmentKind.Test;
     // Upper bound per scenario request, so a hung target cannot stall a run.
     public int RequestTimeoutSeconds { get; set; } = 30;
+    // The service the target calls. The dependency simulator forwards the target's calls here between faults.
+    public string? DependencyUrl { get; set; }
+    // The simulator route's key: random, set with the dependency URL and replaced whenever it changes or an owner or
+    // editor leaves, so a link someone once saw stops working. Null without a dependency URL.
+    public string? SimulatorToken { get; set; }
     // Who confirmed they own or may test this target (and that it is not production), and when.
     public Guid? AuthorizationConfirmedById { get; set; }
     public DateTimeOffset? AuthorizationConfirmedAt { get; set; }

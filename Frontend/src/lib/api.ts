@@ -187,6 +187,9 @@ export type TargetSettings = {
 	verifyTls: boolean;
 	authorizedBy: string | null;
 	authorizedAt: string | null;
+	dependencyUrl: string | null;
+	// Owners and editors only: the key in the simulator route's path.
+	simulatorToken: string | null;
 };
 
 export type Credential = {

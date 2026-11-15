@@ -269,6 +269,14 @@ Rules that follow from the table:
 - YARP is the proposed starting point for HTTP-level injection. It should not be assumed to implement connection drops, resets, partial delivery, slow-drip, or DNS failure on its own; custom connection handling or a Toxiproxy-like mechanism may be required.
 - **Built:** the injector in the runner's request path runs in process, without YARP or a listening port. It calls the target for real and changes what the runner receives (5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip) or what the target is sent (Authentication Expiry). A listening proxy is only needed once something other than the runner has to reach it, which is the dependency simulator.
 - Slow Drip in the runner's path reads the target's body slowly. A body that fits the socket buffers has already left the target, so only larger bodies show whether it enforces a complete-operation deadline.
+- **Built:** the dependency simulator is a route on the ChaosLab backend, `/api/simulator/{token}/…`. The target's dependency URL is pointed at it. It forwards each call to the environment's dependency URL until the runner arms a fault, then cuts and logs the target's calls. Only Dependency Failure uses it so far; 5xx Storm and 429 Throttle in the dependency path are not built. Decisions taken on 2026-11-15:
+  - **A backend route, not its own listener.** Nothing new is deployed, and the runner arms a fault with a memory write because both share a process. Given up: a refused TCP connection, which only a separate listener could produce.
+  - **The two settings behave differently.** `unresolvable` closes the connection at once with no HTTP answer; `unreachable` stays silent until the target hangs up or the fault is disarmed. A fast failure and silence are things a target can handle differently, where closing at once for both would leave the setting a label. Given up: a real DNS failure. The target sees a closed connection either way.
+  - **YARP's `IHttpForwarder` does the forwarding**, for its handling of hop-by-hop headers and streaming, instead of hand-written `HttpClient` code that would have needed no package.
+  - **The route is on ChaosLab's origin, so it is fenced off from browsers.** A signed-in user who follows a link to it would otherwise send their session cookie to whoever set the dependency URL, and the dependency's answer would run as ChaosLab. The simulator drops the `Cookie` request header and the `Set-Cookie` response header, and serves every answer with `Content-Security-Policy: sandbox` and `X-Content-Type-Options: nosniff`.
+  - **The key is a revocable token, not the environment id.** The address guard lets private and loopback hosts through (test targets are internal), so whoever holds the key can reach an internal service through ChaosLab with any method, path, and body. The key is therefore a random 64-character token (`ApiEnvironment.SimulatorToken`), shown only to owners and editors, and replaced when the dependency URL changes or when an owner or editor is removed or made a viewer. Replacing it breaks the target's configuration until someone copies the new URL; that is the point.
+  - **The call log is capped.** A target retrying in a tight loop, or anyone with the token, could otherwise grow the stored observation and the backend's memory for the whole request timeout. `dependencyCalls` keeps `total` (every call) and `calls` (the first 100, paths cut to 256 characters).
+  - **Accepted limits:** one HTTP dependency per environment; one backend instance, since the armed fault is in memory; every call through the route is cut while a fault is armed, whoever caused it; the target's dependency traffic passes through ChaosLab between runs too; the route has no sign-in, so the token in its path is the only key, and there is no button to replace it by hand (changing the dependency URL does).
 
 ## 10.3 Three kinds of failure
 
@@ -476,7 +484,7 @@ Controls:
 | Containers and deployment | Podman pod (`backend-pod.yaml`), `Makefile` | In use |
 | OpenAPI parsing | Microsoft.OpenApi (OpenAPI.NET) | Planned |
 | HTTP fault injection | In-process injector in the runner's request path | In use |
-| Dependency simulation | YARP plus custom middleware and connection handling | Planned; needs proof of concept |
+| Dependency simulation | A backend route that forwards with YARP's `IHttpForwarder` | In use |
 | PDF reports | QuestPDF | Planned |
 | Charts | ECharts proposed; the current UI has a custom score ring | **[Open]** |
 | CI | GitHub Actions | Planned |

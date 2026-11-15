@@ -46,6 +46,7 @@
 	let kind = $derived<EnvironmentKind>(target?.kind ?? 'Test');
 	let timeout = $derived(target?.requestTimeoutSeconds ?? 30);
 	let verifyTls = $derived(target?.verifyTls ?? true);
+	let dependencyUrl = $derived(target?.dependencyUrl ?? '');
 	// A new or changed base URL needs a fresh confirmation, so editing the URL clears the box.
 	let authorized = $derived(!!target?.authorizedAt && baseUrl.trim().replace(/\/+$/, '') === target.baseUrl);
 	let targetBusy = $state(false);
@@ -58,7 +59,7 @@
 		targetBusy = true;
 		targetSaved = false;
 		targetError =
-			(await send(api, 'PUT', { baseUrl, kind, requestTimeoutSeconds: Number(timeout), verifyTls, authorized })) ?? '';
+			(await send(api, 'PUT', { baseUrl, kind, requestTimeoutSeconds: Number(timeout), verifyTls, authorized, dependencyUrl })) ?? '';
 		if (!targetError) {
 			await invalidateAll();
 			targetSaved = true;
@@ -202,6 +203,20 @@
 					</div>
 					<Toggle checked={verifyTls} disabled={!canEdit} label="Verify TLS certificates" onchange={(on) => (verifyTls = on)} />
 				</div>
+
+				<label class="block text-xs text-slate-400">Dependency URL (optional)
+					<input type="url" bind:value={dependencyUrl} disabled={!canEdit} placeholder="https://payments.example.test" class="auth-input mt-2" />
+					<span class="mt-2 block text-[11px] text-slate-500">
+						A service your API calls. Dependency-failure scenarios are skipped without it.
+						{#if target?.simulatorToken}
+							Point your API's setting for this service at
+							<code class="rounded bg-line-faint px-1 break-all text-slate-300 select-all">/api/simulator/{target.simulatorToken}</code>
+							on the ChaosLab backend's address. ChaosLab forwards those calls to the URL above and cuts them during a
+							dependency-failure scenario. Anyone with this address can reach the service through ChaosLab, so treat it
+							as a secret. It changes when the dependency URL changes, or when an owner or editor leaves the project or becomes a viewer.
+						{/if}
+					</span>
+				</label>
 
 				<label class="flex gap-3 rounded-md border border-line p-4">
 					<input type="checkbox" bind:checked={authorized} disabled={!canEdit} class="mt-0.5 rounded border-line-strong bg-field text-accent focus:ring-accent" />

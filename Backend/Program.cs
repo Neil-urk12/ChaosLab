@@ -44,6 +44,8 @@ builder.Services.AddHttpClient(ImportSpec.FetchClient, client =>
 }).ConfigurePrimaryHttpMessageHandler(ImportSpec.CreateFetchHandler);
 builder.Services.AddTargetClients();
 builder.Services.AddSingleton<CredentialProtector>();
+builder.Services.AddHttpForwarder();
+builder.Services.AddSingleton<DependencySimulator>();
 builder.Services.AddHostedService<RunExecutor>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));

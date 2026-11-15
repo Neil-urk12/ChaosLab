@@ -8,6 +8,25 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- A dependency simulator, so Dependency failure scenarios ran instead of being
+  skipped. A target environment gained an optional dependency URL, and the settings
+  page showed owners and editors the simulator URL (`/api/simulator/{token}`) to put
+  in the target's own configuration. The token was random, hidden from viewers, and
+  replaced when the dependency URL changed or when an owner or editor was removed or
+  made a viewer, so a link someone once saw stopped working. The simulator forwarded
+  the target's calls to the dependency, and during the faulted request it cut them and
+  logged them on the observation: the total number of calls, plus the first 100 with
+  paths cut to 256 characters, so a target retrying in a tight loop could not grow
+  the observation without bound. `unresolvable` closed the connection at once and `unreachable` stayed
+  silent until the target gave up. The scenario was skipped with a reason when no
+  dependency URL was set or when the target made no call through the simulator, and
+  it completed without a finding because the evaluator has no rules for it yet. Because
+  the route needs no sign-in, it dropped the `Cookie` header before forwarding, so a
+  browser's ChaosLab session never reached the dependency, and it served the
+  dependency's answers without `Set-Cookie` and with `Content-Security-Policy: sandbox`
+  and `X-Content-Type-Options: nosniff`, so they could not run script or set cookies on
+  ChaosLab's origin. The design decisions were recorded in `PROJECT.md` section 10.2.
+
 - Resilience Score calculation: when every scenario of a run ran, the runner scored
   the run's findings and saved the overall score, evidence coverage, and the eight
   category scores on the run, plus a score for each endpoint with scored findings.

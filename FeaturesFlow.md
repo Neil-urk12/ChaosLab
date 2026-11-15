@@ -151,6 +151,7 @@ Built as the project's Team tab. Only Owners add, remove, or change the role of 
 4. If reachable, show success and save the configuration.
 5. Optional global headers and reusable test values can be saved here.
 6. Production targets are not supported. The user must confirm that they own or are authorized to test the target.
+7. Optionally enter a dependency URL: a service the target calls. Once saved, the page shows the simulator URL to put in the target's own configuration in its place (2.16).
 
 ### 2.10 OpenAPI specification import [Done]
 
@@ -214,7 +215,7 @@ Built: invariants are saved on a scenario, snapshotted per execution, and checke
 
 ### 2.16 Resilience test execution [Partial]
 
-Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; the invariants' read-back requests; and the fault injector (`Backend/Features/TestRuns/FaultInjector.cs`), which runs in process in the runner's request path. Not built: the dependency simulator (Dependency failure is skipped with a reason), concurrency above one, and runner retries.
+Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; the invariants' read-back requests; and the fault injector (`Backend/Features/TestRuns/FaultInjector.cs`), which runs in process in the runner's request path; and the dependency simulator (`Backend/Features/TestRuns/DependencySimulator.cs`), a backend route in the target's outbound path. Not built: concurrency above one, runner retries, and the other faults in the dependency path.
 
 The injector calls the target for real and changes what the runner receives. Each observation keeps the target's own status and body next to the injected ones (outcome `ModifiedResponse`):
 
@@ -225,6 +226,8 @@ The injector calls the target for real and changes what the runner receives. Eac
 - **Authentication Expiry**: a request-side fault. The stored credential is left out (`missing`) or replaced with an invalid one (`invalid`, and `expired`, which cannot be minted from outside), then a request with the valid credential. `forbidden` is skipped with a reason, as is an operation with no stored credential.
 
 In the runner's path, Malformed JSON, Empty Response, and 429 Throttle change only the runner's view (PROJECT.md 10.2); they show that the fault is reproduced, not how the target behaves.
+
+**Dependency failure** uses the simulator instead. The target's dependency URL is pointed at `/api/simulator/{token}` on the ChaosLab backend, which forwards every call to the environment's dependency URL. The token is random, shown only to owners and editors, and replaced when the dependency URL changes or an owner or editor is removed or made a viewer. For the faulted request the runner arms the simulator, which then cuts the target's calls and logs them on the observation as `dependencyCalls`: `total`, and `calls` with the first 100 (time, method, path cut to 256 characters); a recovery request follows once it is disarmed. `unresolvable` closes the connection at once; `unreachable` stays silent until the target hangs up or the fault is disarmed. Neither is a real DNS failure or a refused connection: the target sees a closed connection. The scenario is skipped with a reason when the environment has no dependency URL, or when the target made no call through the simulator during the faulted request.
 
 1. The user clicks Execute Tests. Set status to Running.
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
@@ -250,7 +253,7 @@ Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each comp
 - **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
 - A violated invariant makes the finding Fail. Fail is High severity, Degraded is Medium, everything else is Info.
 
-Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's faults (2.16) complete without a finding; Not Applicable findings; a scoring category stored on the finding itself (scoring takes it from the scenario's fault, 2.19).
+Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's and the simulator's faults (2.16) complete without a finding; Not Applicable findings; a scoring category stored on the finding itself (scoring takes it from the scenario's fault, 2.19).
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.

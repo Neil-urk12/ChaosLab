@@ -87,6 +87,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.HasAlternateKey(x => new { x.Id, x.ProjectId });
             entity.Property(x => x.Name).HasMaxLength(200);
             entity.Property(x => x.BaseUrl).HasMaxLength(2048);
+            entity.Property(x => x.DependencyUrl).HasMaxLength(2048);
+            entity.Property(x => x.SimulatorToken).HasMaxLength(64);
+            entity.HasIndex(x => x.SimulatorToken).IsUnique();
             entity.HasOne(x => x.Project).WithMany(x => x.Environments)
                 .HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(x => x.CreatedBy).WithMany()

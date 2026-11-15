@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -24,6 +25,8 @@ public static class RemoveMember
         if (await MemberRules.IsLastOwnerAsync(db, member, cancellationToken))
             return TypedResults.Conflict(MemberRules.LastOwnerMessage);
 
+        if (DependencySimulator.SawToken(member.Role))
+            await DependencySimulator.RotateTokensAsync(db, id, cancellationToken);
         member.RemovedAt = DateTimeOffset.UtcNow;
         member.RemovedById = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
         await db.SaveChangesAsync(cancellationToken);

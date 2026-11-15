@@ -15,17 +15,18 @@ namespace Backend.Features.TestRuns;
 // Background runner (FeaturesFlow 2.16, 2.17). Takes Queued runs oldest first and works through each run's scenario
 // executions one at a time: an optional baseline request, then the fault. Latency, Timeout / Drop and Duplicate
 // Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
-// through the FaultInjector (PROJECT.md 10). Dependency failure needs the simulator and is skipped with a reason.
+// through the FaultInjector (PROJECT.md 10). Dependency failure arms the DependencySimulator in the target's outbound path.
 // Every request is stored as an HttpObservation, and each completed scenario is evaluated into a finding
 // (2.18, Evaluator); the injector's faults have no rules yet, so they complete without one. Scoring (2.19) is not built yet.
 // shortcut: ignores the run's concurrency and runner-retry settings (always 1 and 0); honour them when experiments get slow.
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
 public sealed class RunExecutor(
     IServiceScopeFactory scopes, IHttpClientFactory httpClientFactory, CredentialProtector protector, TimeProvider time,
-    ILogger<RunExecutor> logger) : BackgroundService
+    DependencySimulator simulator, ILogger<RunExecutor> logger) : BackgroundService
 {
     public const string IdempotencyHeader = "Idempotency-Key";
-    public const string SimulatorNeeded = "This fault needs the dependency simulator, which is not built yet.";
+    public const string NoDependency = "No dependency URL is set for this target, so the simulator has nothing to stand in for. Add one in Settings.";
+    public const string SimulatorNotInPath = "The target made no call through the dependency simulator during the faulted request, so the fault never reached it.";
     public const string ForbiddenNeedsAccount = "A forbidden credential needs a second account without access, which ChaosLab cannot supply yet.";
     public const string NoCredential = "No credential is stored for this operation, so there is none to take away.";
     private const int MaxStoredBodyBytes = 16 * 1024;
@@ -303,8 +304,9 @@ public sealed class RunExecutor(
     private async Task<(ScenarioExecutionStatus, string?)> ExecuteScenarioAsync(
         ApplicationDbContext db, Context context, Execution execution, CancellationToken cancellationToken)
     {
-        if (execution.ScenarioType == ScenarioType.DnsFailure)
-            return (ScenarioExecutionStatus.Skipped, SimulatorNeeded);
+        // Checked before Prepare, like the forbidden credential below: it is a settings gap, not a spec problem.
+        if (execution.ScenarioType == ScenarioType.DnsFailure && context.Environment.DependencyUrl is null)
+            return (ScenarioExecutionStatus.Skipped, NoDependency);
         var parameters = execution.Parameters.RootElement;
         // Checked before Prepare: no fix to the spec makes it runnable, so its reason must not be a spec problem.
         if (execution.ScenarioType == ScenarioType.AuthExpiry && parameters.GetProperty("credential").GetString() == "forbidden")
@@ -451,6 +453,23 @@ public sealed class RunExecutor(
                 };
                 faults = [await RecordAsync(SendAsync(context, execution, altered, altered.Create(), ++attempt, null,
                     new() { ["phase"] = "fault", ["credential"] = credential, ["sent"] = sent }, cancellationToken))];
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
+            case ScenarioType.DnsFailure:
+                // The fault is in the target's outbound path (PROJECT.md 10.2): the runner's own request is sent as
+                // usual, and the calls the target makes to its dependency meanwhile are cut by the simulator.
+                var dependency = parameters.GetProperty("dependency").GetString()!;
+                using (var armed = simulator.Arm(context.Environment.Id, dependency))
+                {
+                    // The live call log ({total, calls}): it is written into the observation when the request ends.
+                    faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                        new() { ["phase"] = "fault", ["dependency"] = dependency, ["dependencyCalls"] = armed.Log },
+                        cancellationToken))];
+                    // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
+                    if (faults[0].OutcomeType != ObservationOutcomeType.ConnectionError && armed.Log.Total == 0)
+                        return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
+                }
                 await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
                     new() { ["phase"] = "recovery" }, cancellationToken));
                 break;

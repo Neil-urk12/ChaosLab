@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +29,7 @@ public static class GetEnvironment
 
     public sealed record Target(
         Guid Id, string Name, string BaseUrl, EnvironmentKind Kind, int RequestTimeoutSeconds, bool VerifyTls,
-        string? AuthorizedBy, DateTimeOffset? AuthorizedAt);
+        string? AuthorizedBy, DateTimeOffset? AuthorizedAt, string? DependencyUrl, string? SimulatorToken);
 
     // Type and the fields after it come from the spec; InSpec is false for a credential whose scheme was removed.
     public sealed record Scheme(
@@ -44,8 +45,10 @@ public static class GetEnvironment
     public static async Task<Results<Ok<Response>, NotFound>> Handle(
         Guid id, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
     {
-        if (await ProjectAccess.RoleAsync(db, id, principal, cancellationToken) is null)
+        if (await ProjectAccess.RoleAsync(db, id, principal, cancellationToken) is not { } role)
             return TypedResults.NotFound();
+        // The simulator token opens a route without sign-in, so only the members who can change the target see it.
+        var seesToken = DependencySimulator.SawToken(role);
 
         var environment = await db.ApiEnvironments.AsNoTracking()
             .Where(environment => environment.ProjectId == id && environment.IsDefault)
@@ -53,7 +56,8 @@ public static class GetEnvironment
             {
                 Target = new Target(environment.Id, environment.Name, environment.BaseUrl, environment.Kind,
                     environment.RequestTimeoutSeconds, environment.VerifyTls,
-                    environment.AuthorizationConfirmedBy!.DisplayName, environment.AuthorizationConfirmedAt),
+                    environment.AuthorizationConfirmedBy!.DisplayName, environment.AuthorizationConfirmedAt,
+                    environment.DependencyUrl, seesToken ? environment.SimulatorToken : null),
                 Profiles = environment.AuthProfiles.Select(profile => new { profile.Name, profile.AuthType, profile.PublicConfig }).ToList(),
                 Headers = environment.Headers.OrderBy(header => header.CreatedAt)
                     .Select(header => new { header.Id, header.Name, header.Value, Secret = header.SecretCipherText != null, header.Hint, header.AppliesTo })

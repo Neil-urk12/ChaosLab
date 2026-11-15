@@ -8,8 +8,8 @@ namespace Backend.Features.TestRuns;
 // the injector decides what the runner is made to see instead of the target's answer. Pure: no database, no requests.
 // The runner applies the faults that are about the request or the timing itself (Auth Expiry's credential, Slow Drip's
 // read pace), since those happen on the connection.
-// shortcut: no listener, so only the runner can be put behind it. The dependency simulator needs one the target can
-// reach; reuse Apply there.
+// shortcut: no listener, so only the runner can be put behind it. The DependencySimulator is the route the target can
+// reach; reuse Apply there when these faults are wanted in the dependency path.
 public static class FaultInjector
 {
     // Sent in place of the stored secret by Auth Expiry.

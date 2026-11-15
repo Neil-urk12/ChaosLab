@@ -104,6 +104,10 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<Guid>("CreatedById")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("DependencyUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
@@ -121,6 +125,10 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.Property<int>("RequestTimeoutSeconds")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SimulatorToken")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -136,6 +144,9 @@ namespace Backend.Infrastructure.Data.Migrations
                     b.HasIndex("ProjectId")
                         .IsUnique()
                         .HasFilter("\"IsDefault\" = TRUE");
+
+                    b.HasIndex("SimulatorToken")
+                        .IsUnique();
 
                     b.HasIndex("ProjectId", "Name")
                         .IsUnique();
