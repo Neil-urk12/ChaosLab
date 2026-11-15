@@ -71,18 +71,18 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             scenarios.Single(s => s.HttpMethod == method && s.Path == path && s.Type == type).Id;
         var latency = Pick("GET", "/orders/{id}", ScenarioType.Latency);
         var drop = Pick("GET", "/orders/{id}", ScenarioType.TimeoutDrop);
-        var malformed = Pick("GET", "/orders/{id}", ScenarioType.MalformedJson);
+        var dependency = Pick("POST", "/orders", ScenarioType.DnsFailure);
         var duplicate = Pick("POST", "/orders", ScenarioType.DuplicateRequest);
         var noExample = Pick("GET", "/items/{sku}", ScenarioType.Latency);
         Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{latency}",
             new { parameters = new { delayMs = 10 } })).StatusCode);
-        var runId = await CreateRunAsync(client, projectId, [latency, drop, malformed, duplicate, noExample]);
+        var runId = await CreateRunAsync(client, projectId, [latency, drop, dependency, duplicate, noExample]);
 
         var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
         Assert.True(await executor.TickAsync(CancellationToken.None));
 
         var run = await client.GetFromJsonAsync<GetRun.Response>($"/api/projects/{projectId}/runs/{runId}", Json);
-        // MalformedJson needs the injector and /items/{sku} has no example, so only some scenarios ran.
+        // A dependency failure needs the simulator and /items/{sku} has no example, so only some scenarios ran.
         Assert.Equal((TestRunStatus.PartiallyCompleted, 5, 5, 1), (run!.Status, run.CompletedScenarios, run.TotalScenarios, run.SkippedScenarios));
         Assert.NotNull(run.StartedAt);
         Assert.NotNull(run.CompletedAt);
@@ -93,9 +93,9 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var executions = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations)
             .Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
 
-        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.InjectorNeeded),
-            (executions[malformed].Status, executions[malformed].FailureReason));
-        Assert.Empty(executions[malformed].Observations);
+        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.SimulatorNeeded),
+            (executions[dependency].Status, executions[dependency].FailureReason));
+        Assert.Empty(executions[dependency].Observations);
         Assert.Equal(ScenarioExecutionStatus.Failed, executions[noExample].Status);
         Assert.Contains("\"sku\"", executions[noExample].FailureReason);
 
@@ -123,7 +123,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         // Both copies were accepted and nothing read the records back, so the responses alone decide nothing.
         Assert.Equal((ResiliencePattern.Idempotency, ResilienceFindingOutcome.Inconclusive),
             (findings[executions[duplicate].Id].Pattern, findings[executions[duplicate].Id].Outcome));
-        Assert.Null(executions[malformed].Outcome);
+        Assert.Null(executions[dependency].Outcome);
 
         // Two copies, no baseline, sharing one idempotency key.
         var copies = executions[duplicate].Observations.OrderBy(o => o.AttemptNo).ToList();
@@ -142,6 +142,133 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Contains(received, r => r.Method == "GET" && r.Path == "/v1/orders/7");
         // The target sets a session cookie on every response; no later request sends it back.
         Assert.All(received, r => Assert.Null(r.Cookie));
+    }
+
+    [Fact]
+    public async Task Injector_faults_keep_the_targets_answer_beside_what_the_runner_was_made_to_see()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+
+        Guid Pick(string method, string path, ScenarioType type) =>
+            scenarios.Single(s => s.HttpMethod == method && s.Path == path && s.Type == type).Id;
+        var storm = Pick("POST", "/orders", ScenarioType.ServerErrorStorm);
+        var throttle = Pick("GET", "/orders/{id}", ScenarioType.Throttle429);
+        var malformed = Pick("GET", "/orders/{id}", ScenarioType.MalformedJson);
+        var empty = Pick("GET", "/orders/{id}", ScenarioType.EmptyResponse);
+        var drip = Pick("GET", "/orders/{id}", ScenarioType.SlowDrip);
+        var expired = Pick("GET", "/orders/{id}", ScenarioType.AuthExpiry);
+        var missing = Pick("GET", "/echo", ScenarioType.AuthExpiry);
+        // /items/{sku} has no example, so a forbidden scenario there could be mistaken for a spec problem.
+        var forbidden = Pick("GET", "/items/{sku}", ScenarioType.AuthExpiry);
+        await SetParametersAsync(client, projectId, storm, new { status = 503, count = 2, probability = 1 });
+        await SetParametersAsync(client, projectId, throttle, new { retryAfterSeconds = 0 });
+        await SetParametersAsync(client, projectId, drip, new { bytes = 2, intervalMs = 5 });
+        await SetParametersAsync(client, projectId, missing, new { credential = "missing" });
+        await SetParametersAsync(client, projectId, forbidden, new { credential = "forbidden" });
+        var runId = await CreateRunAsync(client, projectId, [storm, throttle, malformed, empty, drip, expired, missing, forbidden]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var executions = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations)
+            .Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
+        List<Backend.Domain.Entities.HttpObservation> Of(Guid scenario) => executions[scenario].Observations.OrderBy(o => o.AttemptNo).ToList();
+        static string? Text(Backend.Domain.Entities.HttpObservation o, string key) =>
+            o.Metadata.RootElement.TryGetProperty(key, out var value) ? value.GetString() : null;
+        static (ObservationOutcomeType, int, int) Seen(Backend.Domain.Entities.HttpObservation o) =>
+            (o.OutcomeType, o.UpstreamStatusCode ?? 0, o.ClientStatusCode ?? 0);
+
+        // A forbidden credential can't be produced; everything else ran, with no rules yet to judge it.
+        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.ForbiddenNeedsAccount),
+            (executions[forbidden].Status, executions[forbidden].FailureReason));
+        Assert.All(new[] { storm, throttle, malformed, empty, drip, expired, missing },
+            id => Assert.Equal((ScenarioExecutionStatus.Completed, (ScenarioOutcome?)null), (executions[id].Status, executions[id].Outcome)));
+        Assert.Empty(await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToListAsync());
+
+        // 5xx Storm: the target answered every attempt; the runner saw 503 twice, then the answer got through.
+        var stormRows = Of(storm);
+        Assert.Equal([
+            (ObservationOutcomeType.Forwarded, 200, 200), (ObservationOutcomeType.ModifiedResponse, 200, 503),
+            (ObservationOutcomeType.ModifiedResponse, 200, 503), (ObservationOutcomeType.Forwarded, 200, 200)
+        ], stormRows.Select(Seen));
+        Assert.Equal(["baseline", "fault", "fault", "recovery"], stormRows.Select(o => Text(o, "phase")));
+        // The retries are one logical operation: one idempotency key, not the baseline's.
+        var retryKey = Assert.Single(stormRows.Skip(1).Select(o => o.CorrelationId).Distinct());
+        Assert.NotNull(retryKey);
+        var keys = received.Where(r => r.Method == "POST").Select(r => r.IdempotencyKey).ToList();
+        Assert.Equal((4, 3), (keys.Count, keys.Count(key => key == retryKey.ToString())));
+
+        // 429 Throttle: 429 with Retry-After, then the request after the wait.
+        var throttleRows = Of(throttle);
+        Assert.Equal((ObservationOutcomeType.ModifiedResponse, 200, 429), Seen(throttleRows[1]));
+        Assert.Equal("0", throttleRows[1].Metadata.RootElement.GetProperty("clientHeaders").GetProperty("Retry-After").GetString());
+        Assert.Equal("recovery", Text(throttleRows[2], "phase"));
+
+        // Malformed JSON and Empty Response: the target's body is kept, the runner's copy is cut in half or gone.
+        var malformedRow = Of(malformed)[1];
+        Assert.Equal((ObservationOutcomeType.ModifiedResponse, 200, 200), Seen(malformedRow));
+        Assert.Equal(("{\"id\":7}", "{\"id"), (Text(malformedRow, "body"), Text(malformedRow, "clientBody")));
+        var emptyRow = Of(empty)[1];
+        Assert.Equal((ObservationOutcomeType.ModifiedResponse, "{\"id\":7}", ""), (emptyRow.OutcomeType, Text(emptyRow, "body"), Text(emptyRow, "clientBody")));
+
+        // Slow Drip: the whole body arrived, two bytes at a time with a pause after each read.
+        var dripRows = Of(drip);
+        Assert.Equal((ObservationOutcomeType.ModifiedResponse, 200, 200), Seen(dripRows[1]));
+        Assert.Equal((8L, "{\"id\":7}", (string?)null), (dripRows[1].ResponseBytes, Text(dripRows[1], "body"), Text(dripRows[1], "clientBody")));
+        Assert.True(dripRows[1].DurationMs >= 15, $"The drip took {dripRows[1].DurationMs} ms.");
+        Assert.Equal("recovery", Text(dripRows[2], "phase"));
+
+        // Auth Expiry: the target got the altered credential and its real answer was recorded as it came.
+        var expiredRows = Of(expired);
+        Assert.Equal(["baseline", "fault", "recovery"], expiredRows.Select(o => Text(o, "phase")));
+        Assert.Equal(("expired", "invalid", ObservationOutcomeType.Forwarded),
+            (Text(expiredRows[1], "credential"), Text(expiredRows[1], "sent"), expiredRows[1].OutcomeType));
+        Assert.Equal("/v1/orders/7", Assert.Single(received, r => r.Authorization == $"Bearer {FaultInjector.InvalidCredential}").Path);
+        var echoes = received.Where(r => r.Path == "/v1/echo").Select(r => r.Authorization).ToList();
+        Assert.Equal([$"Bearer {Token}", null, $"Bearer {Token}"], echoes);
+    }
+
+    [Fact]
+    public async Task Auth_expiry_is_skipped_when_no_credential_is_stored()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.DeleteAsync($"/api/projects/{projectId}/environment/credentials/bearerAuth")).StatusCode);
+        var expiry = scenarios.Single(s => s.Path == "/echo" && s.Type == ScenarioType.AuthExpiry).Id;
+        var runId = await CreateRunAsync(client, projectId, [expiry]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var execution = await db.ScenarioExecutions.AsNoTracking().SingleAsync(e => e.TestRunId == runId);
+        Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.NoCredential), (execution.Status, execution.FailureReason));
+        Assert.DoesNotContain(received, r => r.Path == "/v1/echo");
+    }
+
+    [Fact]
+    public void Corrupted_bodies_are_broken_the_way_each_variant_says()
+    {
+        const string body = """{"id":7,"name":"book","tags":[true,null]}""";
+        Assert.ThrowsAny<JsonException>(() => JsonDocument.Parse(FaultInjector.Corrupt("truncated", body)));
+        Assert.ThrowsAny<JsonException>(() => JsonDocument.Parse(FaultInjector.Corrupt("invalidSyntax", body)));
+        // Still JSON with the same shape, but no scalar keeps its type.
+        Assert.Equal("""{"id":"7","name":0,"tags":["true","null"]}""", FaultInjector.Corrupt("wrongTypes", body));
+        // A body that is not JSON can only be cut.
+        Assert.Equal("<ht", FaultInjector.Corrupt("wrongTypes", "<html>"));
     }
 
     [Fact]

@@ -9,9 +9,9 @@ namespace Backend.Features.TestRuns;
 // Turns the observations of one scenario execution into a finding (FeaturesFlow 2.18). Pure: no database, no requests.
 // Every finding says what was observed, what it suggests and what is not proven (PROJECT.md 11.2), and a violated
 // developer invariant makes it Fail (PROJECT.md 13).
-// shortcut: only the faults the runner can produce with direct requests have rules (Latency, Timeout / Drop,
-// Duplicate Request). Retry, backoff, rate-limit, circuit-breaker, fallback, auth-failure, response-validation and
-// dependency-failure evidence needs the injector's faults; add their rules with it.
+// shortcut: only the direct-request faults have rules (Latency, Timeout / Drop, Duplicate Request). The injector's
+// faults complete without a finding; add rules for retry, backoff, rate-limit, circuit-breaker, fallback,
+// auth-failure, response-validation and dependency-failure evidence.
 public static class Evaluator
 {
     // [Proposed] threshold (PROJECT.md 12.3): slower than three times the baseline and by more than a second is Degraded.

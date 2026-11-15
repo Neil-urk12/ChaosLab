@@ -8,6 +8,17 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- A fault injector in the runner's request path, running inside the backend. 5xx
+  Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip, and Authentication
+  Expiry scenarios ran instead of being skipped. The target was still called for
+  real, and each observation kept the target's own status and body next to what the
+  runner was made to see. Authentication Expiry left the stored credential out or
+  replaced it with an invalid one; `expired` ran as an invalid credential, and
+  `forbidden` and operations with no stored credential were skipped with a reason.
+  These scenarios completed without a finding because the evaluator has no rules for
+  them yet. Dependency failure stayed skipped until the dependency simulator exists.
+- The run timeline showed the target's own status beside an injected one, and an
+  injected error status no longer coloured the request as a target failure.
 - Resilience evaluation: the runner turned each completed scenario into one finding
   with an outcome (Pass, Degraded, Fail, or Inconclusive), a severity, and evidence
   that separates what was observed, what it suggests, and what is not proven. Latency

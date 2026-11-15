@@ -267,6 +267,8 @@ Rules that follow from the table:
 - Testing the target's resilience to a failing **downstream dependency** requires the simulator to sit in the target's outbound path. That requires target configuration (for example pointing its dependency URL at the simulator).
 - Retry, backoff, circuit-breaker, and fallback behavior may live inside the application. Without suitable placement, logs, traces, or hooks the result is **Inconclusive**, never guessed.
 - YARP is the proposed starting point for HTTP-level injection. It should not be assumed to implement connection drops, resets, partial delivery, slow-drip, or DNS failure on its own; custom connection handling or a Toxiproxy-like mechanism may be required.
+- **Built:** the injector in the runner's request path runs in process, without YARP or a listening port. It calls the target for real and changes what the runner receives (5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip) or what the target is sent (Authentication Expiry). A listening proxy is only needed once something other than the runner has to reach it, which is the dependency simulator.
+- Slow Drip in the runner's path reads the target's body slowly. A body that fits the socket buffers has already left the target, so only larger bodies show whether it enforces a complete-operation deadline.
 
 ## 10.3 Three kinds of failure
 
@@ -472,7 +474,8 @@ Controls:
 | Backend tests | Integration tests with a PostgreSQL fixture | In use |
 | Containers and deployment | Podman pod (`backend-pod.yaml`), `Makefile` | In use |
 | OpenAPI parsing | Microsoft.OpenApi (OpenAPI.NET) | Planned |
-| HTTP fault injection | YARP plus custom middleware and connection handling | Planned; needs proof of concept |
+| HTTP fault injection | In-process injector in the runner's request path | In use |
+| Dependency simulation | YARP plus custom middleware and connection handling | Planned; needs proof of concept |
 | PDF reports | QuestPDF | Planned |
 | Charts | ECharts proposed; the current UI has a custom score ring | **[Open]** |
 | CI | GitHub Actions | Planned |

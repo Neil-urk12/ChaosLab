@@ -214,7 +214,17 @@ Built: invariants are saved on a scenario, snapshotted per execution, and checke
 
 ### 2.16 Resilience test execution [Partial]
 
-Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; and the invariants' read-back requests. Not built: the injector and simulator faults (skipped with a reason), concurrency above one, and runner retries.
+Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; the invariants' read-back requests; and the fault injector (`Backend/Features/TestRuns/FaultInjector.cs`), which runs in process in the runner's request path. Not built: the dependency simulator (Dependency failure is skipped with a reason), concurrency above one, and runner retries.
+
+The injector calls the target for real and changes what the runner receives. Each observation keeps the target's own status and body next to the injected ones (outcome `ModifiedResponse`):
+
+- **5xx Storm**: `count` attempts in a row, each answered with the configured status at the configured probability, all sharing one idempotency key, then a request that gets through.
+- **429 Throttle**: one request answered with 429 and `Retry-After`, a wait of that long (capped at the request timeout), then a normal request.
+- **Malformed JSON** and **Empty Response**: one request whose body reaches the runner corrupted (truncated, invalid syntax, or wrong types) or empty.
+- **Slow Drip**: one request whose body is read a few bytes per interval, then a normal request. The target only faces a slow reader when the body is larger than the socket buffers.
+- **Authentication Expiry**: a request-side fault. The stored credential is left out (`missing`) or replaced with an invalid one (`invalid`, and `expired`, which cannot be minted from outside), then a request with the valid credential. `forbidden` is skipped with a reason, as is an operation with no stored credential.
+
+In the runner's path, Malformed JSON, Empty Response, and 429 Throttle change only the runner's view (PROJECT.md 10.2); they show that the fault is reproduced, not how the target behaves.
 
 1. The user clicks Execute Tests. Set status to Running.
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
@@ -240,7 +250,7 @@ Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each comp
 - **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
 - A violated invariant makes the finding Fail. Fail is High severity, Degraded is Medium, everything else is Info.
 
-Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, which need the injector's faults (2.16); Not Applicable findings; sending findings to scoring (2.19).
+Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's faults (2.16) complete without a finding; Not Applicable findings; sending findings to scoring (2.19).
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.

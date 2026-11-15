@@ -13,10 +13,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Features.TestRuns;
 
 // Background runner (FeaturesFlow 2.16, 2.17). Takes Queued runs oldest first and works through each run's scenario
-// executions one at a time with direct requests: an optional baseline request, then the fault (Latency, Timeout / Drop,
-// Duplicate Request). Faults that need the injector proxy or the dependency simulator (PROJECT.md 10) are skipped with
-// a reason. Every request is stored as an HttpObservation, and each completed scenario is evaluated into a finding
-// (2.18, Evaluator). Scoring (2.19) is not built yet.
+// executions one at a time: an optional baseline request, then the fault. Latency, Timeout / Drop and Duplicate
+// Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
+// through the FaultInjector (PROJECT.md 10). Dependency failure needs the simulator and is skipped with a reason.
+// Every request is stored as an HttpObservation, and each completed scenario is evaluated into a finding
+// (2.18, Evaluator); the injector's faults have no rules yet, so they complete without one. Scoring (2.19) is not built yet.
 // shortcut: ignores the run's concurrency and runner-retry settings (always 1 and 0); honour them when experiments get slow.
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
 public sealed class RunExecutor(
@@ -24,7 +25,9 @@ public sealed class RunExecutor(
     ILogger<RunExecutor> logger) : BackgroundService
 {
     public const string IdempotencyHeader = "Idempotency-Key";
-    public const string InjectorNeeded = "This fault needs the fault injector, which is not built yet.";
+    public const string SimulatorNeeded = "This fault needs the dependency simulator, which is not built yet.";
+    public const string ForbiddenNeedsAccount = "A forbidden credential needs a second account without access, which ChaosLab cannot supply yet.";
+    public const string NoCredential = "No credential is stored for this operation, so there is none to take away.";
     private const int MaxStoredBodyBytes = 16 * 1024;
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
@@ -39,10 +42,11 @@ public sealed class RunExecutor(
         string Path,
         JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security);
 
-    // The endpoint's request, ready to be sent any number of times.
+    // The endpoint's request, ready to be sent any number of times. Authenticate applies the stored credentials, or
+    // the given secret in their place.
     private sealed record Prepared(
         HttpMethod Method, Uri Url, byte[]? Body, string? ContentType, List<KeyValuePair<string, string>> Headers,
-        List<string> Secrets, Action<HttpRequestMessage> Authenticate)
+        List<string> Secrets, Action<HttpRequestMessage, string?> Authenticate, bool HasCredential)
     {
         public HttpRequestMessage Create(HttpContent? content = null)
         {
@@ -64,7 +68,7 @@ public sealed class RunExecutor(
                     request.Content.Headers.TryAddWithoutValidation(name, value);
                 }
             }
-            Authenticate(request);
+            Authenticate(request, null);
             return request;
         }
     }
@@ -256,14 +260,19 @@ public sealed class RunExecutor(
     private async Task<(ScenarioExecutionStatus, string?)> ExecuteScenarioAsync(
         ApplicationDbContext db, Context context, Execution execution, CancellationToken cancellationToken)
     {
-        if (execution.ScenarioType is not (ScenarioType.Baseline or ScenarioType.Latency or ScenarioType.TimeoutDrop
-            or ScenarioType.DuplicateRequest))
-            return (ScenarioExecutionStatus.Skipped, InjectorNeeded);
+        if (execution.ScenarioType == ScenarioType.DnsFailure)
+            return (ScenarioExecutionStatus.Skipped, SimulatorNeeded);
+        var parameters = execution.Parameters.RootElement;
+        // Checked before Prepare: no fix to the spec makes it runnable, so its reason must not be a spec problem.
+        if (execution.ScenarioType == ScenarioType.AuthExpiry && parameters.GetProperty("credential").GetString() == "forbidden")
+            return (ScenarioExecutionStatus.Skipped, ForbiddenNeedsAccount);
         var (prepared, error) = Prepare(context, execution);
         if (prepared is null)
             return (ScenarioExecutionStatus.Failed, error);
 
-        var parameters = execution.Parameters.RootElement;
+        // Without a stored credential the faulted request would be the baseline again.
+        if (execution.ScenarioType == ScenarioType.AuthExpiry && !prepared.HasCredential)
+            return (ScenarioExecutionStatus.Skipped, NoCredential);
         var attempt = 0;
         var observations = new List<HttpObservation>();
         // Saved one by one, so the live view shows each request as it finishes.
@@ -331,6 +340,76 @@ public sealed class RunExecutor(
                 observations.AddRange(faults);
                 db.HttpObservations.AddRange(faults);
                 await db.SaveChangesAsync(cancellationToken);
+                break;
+            case ScenarioType.ServerErrorStorm:
+                var count = parameters.GetProperty("count").GetInt32();
+                var probability = parameters.GetProperty("probability").GetDouble();
+                // One logical operation retried: every attempt, the one that gets through included, carries the same key.
+                var retryKey = Guid.NewGuid();
+                var keyed = prepared.Headers.Any(header => header.Key.Equals(IdempotencyHeader, StringComparison.OrdinalIgnoreCase));
+                HttpRequestMessage Retry()
+                {
+                    var request = prepared.Create();
+                    if (keyed)
+                    {
+                        request.Headers.Remove(IdempotencyHeader);
+                        request.Headers.TryAddWithoutValidation(IdempotencyHeader, retryKey.ToString());
+                    }
+                    return request;
+                }
+                // shortcut: the retries follow each other at once, like a client without backoff; add a gap setting
+                // when backoff evidence is wanted.
+                // Below probability 1 some "fault" rows are plain Forwarded answers; a Storm rule must not assume all were injected.
+                var storm = new List<HttpObservation>();
+                for (var index = 0; index < count; index++)
+                    storm.Add(await RecordAsync(SendAsync(context, execution, prepared, Retry(), ++attempt, keyed ? retryKey : null,
+                        new() { ["phase"] = "fault" }, cancellationToken, inject: Random.Shared.NextDouble() < probability)));
+                faults = [.. storm];
+                await RecordAsync(SendAsync(context, execution, prepared, Retry(), ++attempt, keyed ? retryKey : null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
+            case ScenarioType.Throttle429:
+                var retryAfter = parameters.GetProperty("retryAfterSeconds").GetInt32();
+                faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "fault" }, cancellationToken, inject: true))];
+                // What a client that respects Retry-After does next. No 429 reached the runner when the target itself
+                // failed, so there is nothing to wait for.
+                // shortcut: waits no longer than the request timeout (Retry-After may be an hour); raise the cap when
+                // long waits are part of the evidence.
+                if (faults[0].OutcomeType == ObservationOutcomeType.ModifiedResponse)
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Min(retryAfter, context.Config.Target.RequestTimeoutSeconds)),
+                        time, cancellationToken);
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
+            case ScenarioType.MalformedJson or ScenarioType.EmptyResponse:
+                // The target is not affected by what happens to its answer afterwards, so there is nothing to recover from.
+                faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "fault" }, cancellationToken, inject: true))];
+                break;
+            case ScenarioType.SlowDrip:
+                faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "fault" }, cancellationToken, inject: true))];
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
+            case ScenarioType.AuthExpiry:
+                // A request-side fault: the target itself has to reject it, so its answer is recorded as it came.
+                // shortcut: an expired credential can't be minted from outside, so an invalid one stands in for it.
+                var credential = parameters.GetProperty("credential").GetString();
+                var sent = credential == "missing" ? "missing" : "invalid";
+                var altered = prepared with
+                {
+                    Authenticate = (request, _) =>
+                    {
+                        if (sent == "invalid")
+                            prepared.Authenticate(request, FaultInjector.InvalidCredential);
+                    }
+                };
+                faults = [await RecordAsync(SendAsync(context, execution, altered, altered.Create(), ++attempt, null,
+                    new() { ["phase"] = "fault", ["credential"] = credential, ["sent"] = sent }, cancellationToken))];
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
                 break;
         }
         // The baseline's rule, for scenarios without one: no request reached the target, so the experiment never ran.
@@ -461,21 +540,25 @@ public sealed class RunExecutor(
             credentials.Add((scheme, profile.AuthType, secret, CredentialConfig.From(profile.PublicConfig).Username));
             secrets.Add(secret);
         }
-        void Authenticate(HttpRequestMessage request)
+        void Authenticate(HttpRequestMessage request, string? instead)
         {
             foreach (var (scheme, type, secret, username) in credentials)
-                TargetClient.Authenticate(request, type, secret, username, scheme);
+                TargetClient.Authenticate(request, type, instead ?? secret, username, scheme);
         }
 
-        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, secrets, Authenticate), null);
+        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, secrets, Authenticate,
+            credentials.Count > 0), null);
     }
 
-    // Sends one request with the environment's timeout and records what came back.
+    // Sends one request with the environment's timeout and records what came back. With inject, the scenario's fault is
+    // applied to the target's answer on its way to the runner (FaultInjector).
     private async Task<HttpObservation> SendAsync(
         Context context, Execution execution, Prepared prepared, HttpRequestMessage request, int attemptNo, Guid? correlationId,
-        Dictionary<string, object?> metadata, CancellationToken cancellationToken)
+        Dictionary<string, object?> metadata, CancellationToken cancellationToken, bool inject = false)
     {
         var target = context.Config.Target;
+        var parameters = execution.Parameters.RootElement;
+        var drip = inject && execution.ScenarioType == ScenarioType.SlowDrip;
         using var sent = request;
         using var client = TargetClient.CreateClient(httpClientFactory, target.VerifyTls);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -501,14 +584,18 @@ public sealed class RunExecutor(
         try
         {
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-            // Direct requests have no proxy in between, so the target's status is also the client's.
+            // The target's status is also the client's, unless a fault is injected below.
             observation.UpstreamStatusCode = observation.ClientStatusCode = (int)response.StatusCode;
             observation.OutcomeType = ObservationOutcomeType.Forwarded;
             // Kept for evaluation (invariants on fields and headers). Cookies may carry the target's sessions, so they aren't.
             metadata["headers"] = response.Headers.Concat(response.Content.Headers)
                 .Where(header => !header.Key.Equals("Set-Cookie", StringComparison.OrdinalIgnoreCase))
                 .ToDictionary(header => header.Key, header => Redact(string.Join(", ", header.Value)));
-            await ReadBodyAsync(response, kept, observation, timeout.Token);
+            // Slow Drip: the injector takes the body a few bytes at a time, so the target faces a slow reader.
+            // shortcut: a body that fits the socket buffers has left the target before the first pause; only larger
+            // ones hold its connection open.
+            await ReadBodyAsync(response, kept, observation, drip ? parameters.GetProperty("bytes").GetInt32() : 8192,
+                drip ? TimeSpan.FromMilliseconds(parameters.GetProperty("intervalMs").GetInt32()) : TimeSpan.Zero, timeout.Token);
         }
         catch (IOException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -531,14 +618,32 @@ public sealed class RunExecutor(
             {
                 ObservationOutcomeType.Dropped => "The runner closed the connection before the response.",
                 ObservationOutcomeType.Forwarded => "The target accepted the connection but closed it without a valid response.",
+                // The target did answer; the injector's own pace is what ran out the clock.
+                ObservationOutcomeType.Timeout when drip && observation.UpstreamStatusCode is not null =>
+                    $"The slow read did not finish within {target.RequestTimeoutSeconds} s.",
                 _ => TargetClient.Describe(exception is OperationCanceledException ? new TaskCanceledException() : exception,
                     target.RequestTimeoutSeconds)
             };
         }
         // Whatever part of the body arrived, also when the target cut it off or the timeout hit mid-body.
+        string? body = null;
         if (observation.ResponseBytes is not null)
             // PostgreSQL jsonb rejects \u0000, which binary bodies contain.
-            metadata["body"] = Redact(Encoding.UTF8.GetString(kept.GetBuffer(), 0, (int)kept.Length).Replace('\0', '�'));
+            metadata["body"] = body = Redact(Encoding.UTF8.GetString(kept.GetBuffer(), 0, (int)kept.Length).Replace('\0', '�'));
+        // Only an answer the target completed can be replaced. The upstream columns and "body" stay the target's own;
+        // the client status and "clientBody" are what the runner was made to see. The fault works on the redacted
+        // body, so cutting it can't leave half a secret behind.
+        // shortcut: only the stored first 16 KB of a body are corrupted; corrupt the stream when larger bodies matter.
+        if (inject && observation is { ErrorType: null, UpstreamStatusCode: { } status } && body is not null
+            && FaultInjector.Apply(execution.ScenarioType, parameters, status, body) is { } injected)
+        {
+            observation.ClientStatusCode = injected.Status;
+            observation.OutcomeType = ObservationOutcomeType.ModifiedResponse;
+            if (injected.Body is not null)
+                metadata["clientBody"] = injected.Body;
+            if (injected.RetryAfterSeconds is { } seconds)
+                metadata["clientHeaders"] = new Dictionary<string, string> { ["Retry-After"] = seconds.ToString() };
+        }
         observation.DurationMs = (long)time.GetElapsedTime(started).TotalMilliseconds;
         observation.RequestCompletedAt = time.GetUtcNow();
         observation.Metadata = JsonSerializer.SerializeToDocument(metadata, JsonSerializerOptions.Web);
@@ -546,18 +651,21 @@ public sealed class RunExecutor(
     }
 
     // Keeps the first 16 KB of the body in kept and counts every byte in ResponseBytes as it arrives, so a read that
-    // fails part way still leaves what came before it.
-    private static async Task ReadBodyAsync(
-        HttpResponseMessage response, MemoryStream kept, HttpObservation observation, CancellationToken cancellationToken)
+    // fails part way still leaves what came before it. Reads at most `chunk` bytes at a time, with `pause` in between.
+    private async Task ReadBodyAsync(
+        HttpResponseMessage response, MemoryStream kept, HttpObservation observation, int chunk, TimeSpan pause,
+        CancellationToken cancellationToken)
     {
         observation.ResponseBytes = 0;
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var buffer = new byte[8192];
+        var buffer = new byte[chunk];
         int read;
         while ((read = await stream.ReadAsync(buffer, cancellationToken)) > 0)
         {
             kept.Write(buffer, 0, (int)Math.Min(read, MaxStoredBodyBytes - kept.Length));
             observation.ResponseBytes += read;
+            if (pause > TimeSpan.Zero)
+                await Task.Delay(pause, time, cancellationToken);
         }
     }
 

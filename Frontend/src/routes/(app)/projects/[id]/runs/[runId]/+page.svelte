@@ -74,8 +74,11 @@
 	// Dot tone and caption of one observed request.
 	function event(e: TimelineEvent, method: string, path: string) {
 		const status = e.clientStatusCode ?? e.upstreamStatusCode;
-		const failed = ['Dropped', 'Timeout', 'ConnectionError', 'ProxyError'].includes(e.outcomeType) || (status ?? 0) >= 500;
 		const injected = e.outcomeType === 'SyntheticResponse' || e.outcomeType === 'ModifiedResponse';
+		// An injected 503 is ChaosLab's doing; only the target's own answer counts as its failure.
+		const failed =
+			['Dropped', 'Timeout', 'ConnectionError', 'ProxyError'].includes(e.outcomeType) ||
+			((injected ? e.upstreamStatusCode : status) ?? 0) >= 500;
 		const readBack = e.requestMethod !== method || e.requestPath !== path;
 		return {
 			tone: failed ? 'bg-rose-400' : injected || (status ?? 0) >= 400 ? 'bg-amber-400' : 'bg-emerald-400',
@@ -83,7 +86,11 @@
 			detail: [
 				readBack ? `${e.requestMethod} ${e.requestPath}` : null,
 				status ?? e.outcomeType.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(),
-				injected ? 'fault injected' : null,
+				!injected
+					? null
+					: e.upstreamStatusCode != null && e.upstreamStatusCode !== status
+						? `fault injected, target answered ${e.upstreamStatusCode}`
+						: 'fault injected',
 				e.durationMs != null ? `${e.durationMs} ms` : null,
 				e.errorType
 			]
