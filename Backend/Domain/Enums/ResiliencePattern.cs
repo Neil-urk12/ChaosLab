@@ -6,5 +6,10 @@ public enum ResiliencePattern
     Timeout,
     CircuitBreaker,
     Fallback,
-    Idempotency
+    Idempotency,
+    // Appended, like every later value: patterns are stored as integers.
+    RateLimit,
+    AuthenticationFailure,
+    ResponseValidation,
+    DependencyFailure
 }

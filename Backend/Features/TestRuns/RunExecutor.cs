@@ -16,8 +16,8 @@ namespace Backend.Features.TestRuns;
 // executions one at a time: an optional baseline request, then the fault. Latency, Timeout / Drop and Duplicate
 // Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
 // through the FaultInjector (PROJECT.md 10). Dependency failure arms the DependencySimulator in the target's outbound path.
-// Every request is stored as an HttpObservation, and each completed scenario is evaluated into a finding
-// (2.18, Evaluator); the injector's faults have no rules yet, so they complete without one. Scoring (2.19) is not built yet.
+// Every request is stored as an HttpObservation, and each completed scenario is evaluated into its findings
+// (2.18, Evaluator). A run whose every scenario ran is then scored (2.19, Scorer).
 // shortcut: ignores the run's concurrency and runner-retry settings (always 1 and 0); honour them when experiments get slow.
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
 public sealed class RunExecutor(
@@ -190,11 +190,12 @@ public sealed class RunExecutor(
             var findings = (await db.ResilienceFindings.Where(finding => finding.TestRunId == runId)
                     .Select(finding => new
                     {
-                        finding.EndpointId, finding.Pattern, finding.Outcome,
+                        finding.EndpointId, finding.Pattern, finding.Category, finding.Outcome,
                         Type = (ScenarioType?)finding.ScenarioExecution!.ScenarioType
                     })
                     .ToListAsync(cancellationToken))
-                .Select(finding => (finding.EndpointId, Scored: (Scorer.CategoryOf(finding.Type, finding.Pattern), finding.Outcome)))
+                .Select(finding => (finding.EndpointId,
+                    Scored: (finding.Category ?? Scorer.CategoryOf(finding.Type, finding.Pattern), finding.Outcome)))
                 .ToList();
             score = Scorer.Score(findings.Select(finding => finding.Scored).ToList());
             // The same method per endpoint; an endpoint with no scored findings gets no row.
@@ -496,24 +497,31 @@ public sealed class RunExecutor(
                 ++attempt, null, new() { ["phase"] = "readBack", ["invariant"] = index }, cancellationToken));
         }
 
-        if (Evaluator.Evaluate(execution.ScenarioType, parameters, invariants, observations) is { } finding)
+        var findings = Evaluator.Evaluate(execution.ScenarioType, parameters, invariants, observations);
+        if (findings.Count > 0)
         {
             // One transaction: a finding never exists without its scenario's outcome.
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            db.ResilienceFindings.Add(new ResilienceFinding
+            db.ResilienceFindings.AddRange(findings.Select(finding => new ResilienceFinding
             {
                 TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
-                Pattern = finding.Pattern, Outcome = finding.Outcome, Severity = finding.Severity, Summary = finding.Summary,
-                Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
-            });
+                Pattern = finding.Pattern, Category = finding.Category, Outcome = finding.Outcome, Severity = finding.Severity,
+                Summary = finding.Summary, Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
+            }));
             await db.SaveChangesAsync(cancellationToken);
-            var outcome = finding.Outcome switch
+            // The scenario's outcome is its worst finding; one that was judged outranks one that could not be.
+            var outcome = findings.Select(finding => finding.Outcome switch
             {
-                ResilienceFindingOutcome.Passed => ScenarioOutcome.Passed,
                 ResilienceFindingOutcome.Failed => ScenarioOutcome.Failed,
                 ResilienceFindingOutcome.Degraded => ScenarioOutcome.Degraded,
-                _ => ScenarioOutcome.Inconclusive
-            };
+                ResilienceFindingOutcome.Passed => ScenarioOutcome.Passed,
+                ResilienceFindingOutcome.Inconclusive => ScenarioOutcome.Inconclusive,
+                _ => ScenarioOutcome.NotApplicable
+            }).MinBy(outcome => outcome switch
+            {
+                ScenarioOutcome.Failed => 0, ScenarioOutcome.Degraded => 1, ScenarioOutcome.Passed => 2,
+                ScenarioOutcome.Inconclusive => 3, _ => 4
+            });
             await db.ScenarioExecutions.Where(row => row.Id == execution.Id)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.Outcome, outcome), cancellationToken);
             await transaction.CommitAsync(cancellationToken);

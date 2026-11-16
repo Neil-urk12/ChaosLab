@@ -339,6 +339,15 @@ Runner failures and unreachable targets (section 10.3) are **not** outcomes abou
 
 Exact thresholds that separate Pass, Degraded, and Fail per pattern (for example how long a response may take before Latency becomes Degraded) are **[Open]**. They must be fixed and documented before formal evaluation.
 
+**Decided on 2026-11-16** for the injector's and the simulator's faults (NEI-46). The thresholds of the direct-request faults (Latency, Timeout / Drop, Duplicate Request; `FeaturesFlow.md` 2.18) are still **[Proposed]**.
+
+1. **Faults only the runner sees are Fail or Inconclusive, never Pass.** 5xx Storm, 429 Throttle, Malformed JSON, and Empty Response in the runner's request path do not expose the target (section 10.2). The finding is Fail when the target's own answer broke (a 5xx or no response on a faulted or recovery request) and Inconclusive otherwise. Given up: Retry (from 5xx Storm), Rate-Limit, and Response Validation cannot score above 0 from these scenarios until the faults run in the dependency path.
+2. **Retry limits, read from the dependency call log.** More than 5 calls to the same method and path during one faulted request is a retry storm (Fail). 2 to 5 calls each at least 100 ms after the last is Pass; with a gap under 100 ms it is Degraded (no backoff).
+3. **One dependency call is Inconclusive for Retry**, not Degraded. Not retrying is not treated as a defect.
+4. **A controlled 502, 503, or 504 with no alternative response is Degraded for Graceful Degradation and Pass for Dependency Failure.** A 2xx while the dependency is down is Pass for both; a plain 500 is Fail for Graceful Degradation and Degraded for Dependency Failure; no response is Fail for both.
+5. **Slow Drip needs a body of at least 64 KB.** A smaller body has left the target before the first pause, so the finding is Inconclusive.
+6. **Authentication Expiry answered with a 2xx is Critical**, the only Fail above High, because it is the only rule where the failure exposes data.
+
 ---
 
 # 13. Developer-Defined Invariants
@@ -551,9 +560,9 @@ Notable decisions already in the code:
 
 ## 20.2 Planned schema changes (to match the decisions in this document)
 
-1. **Outcomes:** add **NotApplicable** to `ScenarioOutcome`. (**Degraded** is already in `ScenarioOutcome` and `ResilienceFindingOutcome`.)
+1. **Outcomes:** done. **NotApplicable** and **Degraded** are in both `ScenarioOutcome` and `ResilienceFindingOutcome`.
 2. **Category scores:** add a child table (for example `EndpointCategoryScores`: endpoint result, category, score, weight, finding count). Replace the five fixed score columns on `EndpointResult`. Add a run-level category breakdown the same way, plus an evidence-coverage value on `TestRun`.
-3. **Categories and patterns:** extend the pattern/category set to the eight scoring categories; keep CircuitBreaker and Fallback as evidence signals.
+3. **Categories and patterns:** done. `ResilienceFinding` stores its scoring category (`Category`, one of the eight) next to its pattern, and `ResiliencePattern` gained RateLimit, AuthenticationFailure, ResponseValidation, and DependencyFailure. CircuitBreaker and Fallback stay evidence signals.
 4. **Invariants:** replace the free-text `DeveloperInvariant` string with a structured assertion (JSONB `type` plus `params`) on `ChaosScenario` and its snapshot on `ScenarioExecution`; store per-run results as findings or finding evidence.
 5. **Failure classes:** rename `ObservationOutcomeType.ProxyError` to injector/runner wording, and make the three failure kinds in section 10.3 distinguishable (for example a runner-failure status versus a skipped execution with a recorded reason such as target unreachable).
 6. **Observation source:** document that observations can come from direct execution or the injector, not only a proxy.
@@ -683,7 +692,7 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 **Evaluation and scoring**
 
-8. Thresholds separating Pass, Degraded, and Fail per pattern.
+8. Thresholds separating Pass, Degraded, and Fail per pattern. Decided for the injector's and the simulator's faults (section 12.3); still open for the direct-request faults.
 9. Confirm per-outcome points (Pass 100, Degraded 50, Fail 0).
 10. Whether severity caps the score; how baselines affect evaluation.
 11. Final list of invariant assertion types and the read-back mechanism.

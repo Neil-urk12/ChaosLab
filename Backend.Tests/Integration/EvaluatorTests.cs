@@ -3,6 +3,7 @@ using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Scenarios;
 using Backend.Features.TestRuns;
+using static Backend.Domain.Enums.ResilienceFindingOutcome;
 
 namespace Backend.Tests.Integration;
 
@@ -13,19 +14,110 @@ public sealed class EvaluatorTests
 
     private static HttpObservation Observation(
         int attempt, string phase, int? status, long durationMs = 20, string body = "{}", string? error = null,
-        ObservationOutcomeType outcome = ObservationOutcomeType.Forwarded, int? invariant = null) => new()
+        ObservationOutcomeType outcome = ObservationOutcomeType.Forwarded, int? invariant = null, long bytes = 2,
+        string contentType = "application/json", long[]? calls = null) => new()
     {
         AttemptNo = attempt, UpstreamStatusCode = status, ClientStatusCode = status, DurationMs = durationMs, ErrorType = error,
-        OutcomeType = outcome,
+        OutcomeType = outcome, ResponseBytes = status is null ? null : bytes,
         Metadata = JsonSerializer.SerializeToDocument(new Dictionary<string, object?>
         {
-            ["phase"] = phase, ["invariant"] = invariant, ["body"] = body, ["headers"] = new Dictionary<string, string> { ["ETag"] = "1" }
+            ["phase"] = phase, ["invariant"] = invariant, ["body"] = body,
+            ["headers"] = new Dictionary<string, string> { ["ETag"] = "1", ["Content-Type"] = contentType },
+            // The simulator's call log: every call to the same dependency operation, at the given times.
+            ["dependencyCalls"] = calls is null ? null : new
+            {
+                total = calls.Length, calls = calls.Select(atMs => new { atMs, method = "GET", path = "/rates" })
+            }
         })
     };
 
+    private static IReadOnlyList<Evaluator.Finding> Faulted(ScenarioType type, object parameters, HttpObservation fault, int recovery = 200) =>
+        Evaluator.Evaluate(type, Parameters(parameters), [], [Observation(1, "baseline", 200), fault, Observation(3, "recovery", recovery)]);
+
+    [Fact]
+    public void Auth_expiry_passes_only_when_the_target_fails_closed_and_recovers()
+    {
+        (ResilienceFindingOutcome, RecommendationSeverity) Auth(int? status, int recovery = 200)
+        {
+            var finding = Faulted(ScenarioType.AuthExpiry, new { credential = "invalid" }, Observation(2, "fault", status), recovery).Single();
+            Assert.Equal((ResiliencePattern.AuthenticationFailure, ScoringCategory.AuthenticationFailure), (finding.Pattern, finding.Category));
+            return (finding.Outcome, finding.Severity);
+        }
+
+        Assert.Equal((Passed, RecommendationSeverity.Info), Auth(401));
+        Assert.Equal((Passed, RecommendationSeverity.Info), Auth(403));
+        Assert.Equal((Degraded, RecommendationSeverity.Medium), Auth(404));
+        // Answered without a valid credential: the one failure that exposes data.
+        Assert.Equal((Failed, RecommendationSeverity.Critical), Auth(200));
+        // A redirect to a login page turns the request away without exposing anything.
+        Assert.Equal((Degraded, RecommendationSeverity.Medium), Auth(302));
+        Assert.Equal((Failed, RecommendationSeverity.High), Auth(500));
+        // Rejected correctly, but the valid credential no longer works afterwards.
+        Assert.Equal((Failed, RecommendationSeverity.High), Auth(401, recovery: 401));
+    }
+
+    [Fact]
+    public void Slow_drip_needs_a_body_large_enough_to_hold_the_target()
+    {
+        ResilienceFindingOutcome Drip(long bytes, string? error = null, ObservationOutcomeType outcome = ObservationOutcomeType.Forwarded) =>
+            Faulted(ScenarioType.SlowDrip, new { bytes = 1, intervalMs = 200 },
+                Observation(2, "fault", 200, bytes: bytes, error: error, outcome: outcome)).Single().Outcome;
+
+        Assert.Equal(Passed, Drip(1000, error: "The target closed the connection before the response body ended."));
+        Assert.Equal(Degraded, Drip(100_000));
+        Assert.Equal(Degraded, Drip(70_000, error: "The slow read did not finish within 30 s.", outcome: ObservationOutcomeType.Timeout));
+        // Under 64 KB the body left the target before the first pause.
+        Assert.Equal(Inconclusive, Drip(2000));
+        Assert.Equal(NotApplicable, Drip(0));
+    }
+
+    [Fact]
+    public void A_dependency_failure_yields_isolation_retry_and_fallback_findings()
+    {
+        (ScoringCategory, ResilienceFindingOutcome)[] Down(int? status, params long[] calls) =>
+            Faulted(ScenarioType.DnsFailure, new { dependency = "unreachable" },
+                    Observation(2, "fault", status, calls: calls, outcome: status is null ? ObservationOutcomeType.Timeout : ObservationOutcomeType.Forwarded))
+                .Select(finding => (finding.Category, finding.Outcome)).ToArray();
+
+        // A controlled 503 after three spaced calls: contained and retried well, but nothing offered in its place.
+        Assert.Equal(
+            [(ScoringCategory.DependencyFailure, Passed), (ScoringCategory.Retry, Passed), (ScoringCategory.GracefulDegradation, Degraded)],
+            Down(503, 0, 200, 600));
+        // One call is no retry to judge; a 2xx is fallback-like.
+        Assert.Equal(
+            [(ScoringCategory.DependencyFailure, Passed), (ScoringCategory.Retry, Inconclusive), (ScoringCategory.GracefulDegradation, Passed)],
+            Down(200, 0));
+        // A plain 500 after retries without a pause.
+        Assert.Equal(
+            [(ScoringCategory.DependencyFailure, Degraded), (ScoringCategory.Retry, Degraded), (ScoringCategory.GracefulDegradation, Failed)],
+            Down(500, 0, 10, 20));
+        // No answer, and more than five calls: a retry storm.
+        Assert.Equal(
+            [(ScoringCategory.DependencyFailure, Failed), (ScoringCategory.Retry, Failed), (ScoringCategory.GracefulDegradation, Failed)],
+            Down(null, 0, 200, 400, 600, 800, 1000));
+    }
+
+    [Fact]
+    public void A_fault_only_the_runner_sees_never_passes()
+    {
+        ResilienceFindingOutcome Seen(ScenarioType type, object parameters, int status = 200, long bytes = 2, string contentType = "application/json") =>
+            Faulted(type, parameters, Observation(2, "fault", status, bytes: bytes, contentType: contentType)).Single().Outcome;
+        var storm = new { status = 503, count = 1, probability = 1.0 };
+
+        Assert.Equal(Inconclusive, Seen(ScenarioType.ServerErrorStorm, storm));
+        Assert.Equal(Inconclusive, Seen(ScenarioType.Throttle429, new { retryAfterSeconds = 2 }));
+        Assert.Equal(Inconclusive, Seen(ScenarioType.MalformedJson, new { variant = "truncated" }));
+        Assert.Equal(Inconclusive, Seen(ScenarioType.EmptyResponse, new { }));
+        // The target's own answer broke: that was observed.
+        Assert.Equal(Failed, Seen(ScenarioType.ServerErrorStorm, storm, status: 500));
+        // Nothing for the fault to change.
+        Assert.Equal(NotApplicable, Seen(ScenarioType.EmptyResponse, new { }, bytes: 0));
+        Assert.Equal(NotApplicable, Seen(ScenarioType.MalformedJson, new { variant = "truncated" }, contentType: "text/plain"));
+    }
+
     private static ResilienceFindingOutcome? Latency(HttpObservation? baseline, HttpObservation fault, params Invariant[] invariants) =>
         Evaluator.Evaluate(ScenarioType.Latency, Parameters(new { delayMs = 3000 }), invariants,
-            baseline is null ? [fault] : [baseline, fault])?.Outcome;
+            baseline is null ? [fault] : [baseline, fault]).SingleOrDefault()?.Outcome;
 
     [Fact]
     public void Compares_the_faulted_request_with_the_baseline()
@@ -50,7 +142,7 @@ public sealed class EvaluatorTests
         [
             Observation(1, "baseline", 200), Observation(2, "fault", null, outcome: ObservationOutcomeType.Dropped),
             Observation(3, "recovery", 500)
-        ])!;
+        ]).Single();
         Assert.Equal((ResiliencePattern.Timeout, ResilienceFindingOutcome.Failed, RecommendationSeverity.High),
             (finding.Pattern, finding.Outcome, finding.Severity));
         var interpretation = finding.Evidence.RootElement.GetProperty("interpretation");
@@ -65,7 +157,7 @@ public sealed class EvaluatorTests
     {
         ResilienceFindingOutcome? Duplicates(string key, params int?[] statuses) => Evaluator.Evaluate(
             ScenarioType.DuplicateRequest, Parameters(new { copies = statuses.Length, key, delayMs = 0 }), [],
-            statuses.Select((status, index) => Observation(index + 1, "fault", status)).ToList())?.Outcome;
+            statuses.Select((status, index) => Observation(index + 1, "fault", status)).ToList()).SingleOrDefault()?.Outcome;
 
         Assert.Equal(ResilienceFindingOutcome.Passed, Duplicates("same", 201, 409));
         // Both accepted: one record or two? The responses don't say.
@@ -82,7 +174,7 @@ public sealed class EvaluatorTests
         var count = new Invariant(InvariantType.MaxRecordsAfterDuplicates, new(Max: 1), new("GET", "/orders"));
         ResilienceFindingOutcome? After(string readBackBody) => Evaluator.Evaluate(
             ScenarioType.DuplicateRequest, Parameters(new { copies = 2, key = "same", delayMs = 0 }), [count],
-            [Observation(1, "fault", 201), Observation(2, "fault", 201), Observation(3, "readBack", 200, body: readBackBody, invariant: 0)])?.Outcome;
+            [Observation(1, "fault", 201), Observation(2, "fault", 201), Observation(3, "readBack", 200, body: readBackBody, invariant: 0)]).SingleOrDefault()?.Outcome;
 
         Assert.Equal(ResilienceFindingOutcome.Passed, After("[{}]"));
         Assert.Equal(ResilienceFindingOutcome.Failed, After("{\"data\":[{},{}]}"));
@@ -126,7 +218,7 @@ public sealed class EvaluatorTests
             [
                 Observation(1, "baseline", 200), Observation(2, "fault", null, outcome: ObservationOutcomeType.Dropped),
                 Observation(3, "recovery", 200)
-            ])!;
+            ]).Single();
         Assert.Equal(ResilienceFindingOutcome.Passed, finding.Outcome);
         Assert.Equal("NotEvaluated", finding.Evidence.RootElement.GetProperty("invariants")[0].GetProperty("result").GetString());
     }

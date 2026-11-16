@@ -31,5 +31,6 @@ public enum ScenarioOutcome
     Failed,
     Inconclusive,
     // Appended last so the stored integer values of the other outcomes don't change.
-    Degraded
+    Degraded,
+    NotApplicable
 }

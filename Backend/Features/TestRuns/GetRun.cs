@@ -160,11 +160,11 @@ public static class GetRun
                 execution.Status, execution.Outcome, execution.FailureReason, execution.StartedAt, execution.CompletedAt,
                 db.ResilienceFindings
                     .Where(finding => finding.ScenarioExecutionId == execution.Id)
-                    // Enum values aren't in severity order (Degraded was appended), so rank explicitly.
+                    // Worst first, a judged finding before one that could not be: the order the runner takes the scenario outcome from.
                     .OrderBy(finding => finding.Outcome == ResilienceFindingOutcome.Failed ? 0
                         : finding.Outcome == ResilienceFindingOutcome.Degraded ? 1
-                        : finding.Outcome == ResilienceFindingOutcome.Inconclusive ? 2
-                        : finding.Outcome == ResilienceFindingOutcome.Passed ? 3 : 4)
+                        : finding.Outcome == ResilienceFindingOutcome.Passed ? 2
+                        : finding.Outcome == ResilienceFindingOutcome.Inconclusive ? 3 : 4)
                     .ThenByDescending(finding => finding.Severity)
                     .Select(finding => new FeedFinding(finding.Outcome, finding.Summary))
                     .ToList()))

@@ -639,6 +639,9 @@ namespace Backend.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("Category")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 

@@ -3,7 +3,7 @@ import type { RunFinding } from './api';
 import { categoryScores, endpointScores, findingCategory, findingDetail, findingsCsv, weightedScore } from './findings';
 
 const finding: RunFinding = {
-	id: '1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', httpMethod: 'POST', path: '/payments',
+	id: '1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', category: null, httpMethod: 'POST', path: '/payments',
 	scenarioType: 'DuplicateRequest', summary: 'Duplicate charge, "twice"', evidence: {},
 	recommendation: { title: 'Keys', text: '=HYPERLINK("x")' }
 };
@@ -12,6 +12,10 @@ describe('findings', () => {
 	it('derives category and detail from the scenario, falling back to pattern', () => {
 		expect(findingCategory(finding)).toBe('Idempotency');
 		expect(findingCategory({ ...finding, scenarioType: null, pattern: 'Retry' })).toBe('Retry');
+		// A dependency failure's fallback finding is scored under its own category, not the scenario's.
+		const fallback = { ...finding, scenarioType: 'DnsFailure', pattern: 'Fallback', category: 'GracefulDegradation', outcome: 'Passed' } as const;
+		expect(findingCategory(fallback)).toBe('Graceful degradation');
+		expect(categoryScores([fallback]).find((c) => c.label === 'Graceful degradation')?.score).toBe(100);
 		expect(findingDetail(finding)).toBe('Duplicate request');
 		expect(findingDetail({ ...finding, evidence: { detail: 'Latency +3000 ms' } })).toBe('Latency +3000 ms');
 	});

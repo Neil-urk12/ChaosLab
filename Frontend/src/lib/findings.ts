@@ -1,4 +1,4 @@
-import type { FindingOutcome, RunFinding, Severity } from './api';
+import type { FindingOutcome, RunFinding, ScoringCategory, Severity } from './api';
 import { categories, faultLabels } from './scenarios';
 
 export const outcomeLabels: Record<FindingOutcome, string> = {
@@ -12,9 +12,21 @@ export const outcomeLabels: Record<FindingOutcome, string> = {
 // Highest first: table filter order and the severity sort.
 export const SEVERITIES: Severity[] = ['Critical', 'High', 'Medium', 'Low', 'Info'];
 
-// Scoring category from the scenario's fault; a finding without an execution falls back to its pattern.
-export const findingCategory = (f: Pick<RunFinding, 'scenarioType' | 'pattern'>) =>
-	f.scenarioType ? categories[f.scenarioType] : f.pattern;
+const categoryLabels: Record<ScoringCategory, string> = {
+	Timeout: 'Timeout',
+	Retry: 'Retry',
+	GracefulDegradation: 'Graceful degradation',
+	RateLimit: 'Rate-limit',
+	Idempotency: 'Idempotency',
+	AuthenticationFailure: 'Auth failure',
+	ResponseValidation: 'Response validation',
+	DependencyFailure: 'Dependency failure'
+};
+
+// The finding's own scoring category: one scenario can yield findings in several. Without one, the scenario's fault,
+// then the pattern.
+export const findingCategory = (f: Pick<RunFinding, 'scenarioType' | 'pattern'> & { category?: ScoringCategory | null }) =>
+	f.category ? categoryLabels[f.category] : f.scenarioType ? categories[f.scenarioType] : f.pattern;
 
 export const findingDetail = (f: Pick<RunFinding, 'scenarioType' | 'evidence'>) =>
 	(typeof f.evidence?.detail === 'string' && f.evidence.detail) || (f.scenarioType ? faultLabels[f.scenarioType] : '');
@@ -60,6 +72,7 @@ const scoringCategory: Record<string, string> = {
 	Retry: 'Retry behavior',
 	CircuitBreaker: 'Graceful degradation',
 	Fallback: 'Graceful degradation',
+	'Graceful degradation': 'Graceful degradation',
 	'Rate-limit': 'Rate-limit handling',
 	Idempotency: 'Idempotency',
 	'Auth failure': 'Authentication failure handling',

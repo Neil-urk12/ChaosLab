@@ -247,13 +247,24 @@ In the runner's path, Malformed JSON, Empty Response, and 429 Throttle change on
 
 ### 2.18 Resilience pattern evaluation [Partial]
 
-Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each completed scenario into one finding, linked to the run, endpoint, and scenario execution, with evidence (expected, observed, per-request facts, interpretation, invariant results). Skipped and runner-failed scenarios get no finding. Rules exist for the faults the runner can produce, with **[Proposed]** thresholds:
+Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each completed scenario into its findings, linked to the run, endpoint, and scenario execution, with evidence (expected, observed, per-request facts, interpretation, invariant results). Each finding stores its own scoring category. A Dependency failure yields up to three findings; every other fault yields one. The scenario's outcome is its worst finding, and a judged finding outranks an Inconclusive or Not Applicable one. Skipped and runner-failed scenarios get no finding. The direct-request faults have rules with **[Proposed]** thresholds:
 
 - **Latency** and **Timeout / Drop** (Timeout): the delayed request, or the recovery request after a dropped or held one, is compared with the baseline. Answered normally is Pass; a body cut short, or slower than three times the baseline and by more than one second, is Degraded; a 5xx, no response, or a 4xx after a successful baseline is Fail; a failed baseline, or a 4xx with no baseline, is Inconclusive.
 - **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
-- A violated invariant makes the finding Fail. Fail is High severity, Degraded is Medium, everything else is Info.
 
-Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, authentication-failure, response-validation, and dependency-failure evidence, so the injector's and the simulator's faults (2.16) complete without a finding; Not Applicable findings; a scoring category stored on the finding itself (scoring takes it from the scenario's fault, 2.19).
+The injector's and the simulator's faults have rules with the thresholds decided in PROJECT.md 12.3. Each rule also sends a recovery request's result through the baseline comparison above: a recovery that fails makes the finding Fail, a slow one lowers a Pass to Degraded, and a baseline that did not succeed makes it Inconclusive.
+
+- **Authentication Expiry** (Authentication Failure): 401 or 403 is Pass; a 3xx (redirects are not followed) or another 4xx is Degraded; a 5xx or no response is Fail; a 2xx is Fail with Critical severity.
+- **Slow Drip** (Timeout): the target closing the connection during the slow read is Pass; a body of 64 KB or more delivered in full, or still arriving at the request timeout, is Degraded; a smaller body is Inconclusive; a response with no body is Not Applicable.
+- **Dependency failure**, three findings:
+  - Dependency Failure: an answer with a 2xx, 3xx, 502, 503, or 504 is Pass; any other status is Degraded; no response is Fail.
+  - Retry, from the simulator's call log, per dependency method and path: more than 5 calls is Fail; 2 to 5 calls at least 100 ms apart is Pass; a gap under 100 ms is Degraded; one call is Inconclusive. The worst operation decides.
+  - Graceful Degradation (pattern Fallback): a 2xx or 3xx while the dependency is down is Pass; a 502, 503, or 504 is Degraded; anything else is Fail.
+  - When the baseline did not succeed, only the Dependency Failure finding is produced, as Inconclusive.
+- **5xx Storm** (Retry), **429 Throttle** (Rate-Limit), **Malformed JSON** and **Empty Response** (Response Validation): only the runner sees these faults, so the finding is Fail when the target's own answer was a 5xx or missing on any request of the scenario, and Inconclusive otherwise. Empty Response on a body that is already empty, and Malformed JSON on a response that is not JSON, are Not Applicable.
+- A violated invariant makes the finding Fail; for a Dependency failure that is the Dependency Failure finding. Fail is High severity, Degraded is Medium, everything else is Info.
+
+Not built: circuit-breaker evidence, since no scenario sends the target several faulted requests in a row; Pass and Degraded rules for the faults only the runner sees, which need those faults in the dependency path.
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.
@@ -266,7 +277,7 @@ Not built: rules for retry, backoff, rate-limit, circuit-breaker, fallback, auth
 
 ### 2.19 Resilience Score calculation [Done]
 
-Built: when a run ends with every scenario run (status Completed), the runner scores its findings and saves the overall score, evidence coverage, and category scores on the run, plus one endpoint score per endpoint that has scored findings. Partially completed, failed, and cancelled runs are not scored. Only the Timeout and Idempotency categories can be scored until the evaluator has rules for the injector's faults (2.18); the weight of the other categories is shared out between them. Runs that finished before scoring existed are not backfilled. The run results page still works out its category and endpoint breakdown in the browser from the findings, with the same method.
+Built: when a run ends with every scenario run (status Completed), the runner scores its findings and saves the overall score, evidence coverage, and category scores on the run, plus one endpoint score per endpoint that has scored findings. Partially completed, failed, and cancelled runs are not scored. Each finding is scored under the category stored on it; a finding saved before categories were stored takes the category of its scenario's fault. Rate-Limit and Response Validation can only score 0 or stay unscored until their faults run in the dependency path (2.18). Runs that finished before scoring existed are not backfilled. The run results page still works out its category and endpoint breakdown in the browser from the findings, with the same method.
 
 1. Retrieve the scored findings. Exclude Not Applicable and Inconclusive.
 2. Convert outcomes to points: Pass 100, Degraded 50, Fail 0 (locked with scoring version 1.0).

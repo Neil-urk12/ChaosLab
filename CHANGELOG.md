@@ -8,6 +8,23 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Evaluation rules for the injector's and the simulator's faults, so those scenarios
+  produced findings instead of completing without one. Authentication Expiry was
+  judged on whether the target rejected the request with 401 or 403, and a 2xx answer
+  became a Critical finding. Slow Drip was judged on whether the target ended a slow
+  read, and was Inconclusive for a body under 64 KB. A Dependency failure produced
+  three findings: Dependency Failure, Retry (from the number and spacing of the calls
+  the simulator cut), and Graceful Degradation. 5xx Storm, 429 Throttle, Malformed
+  JSON, and Empty Response only change what the runner receives, so their findings
+  were Fail when the target's own answer broke and Inconclusive otherwise. Not
+  Applicable findings were produced for the first time, when a fault had nothing to
+  act on. The thresholds were decided and recorded in `PROJECT.md` section 12.3; those
+  of the direct-request faults stayed proposed. The rules are documented in
+  `FeaturesFlow.md` section 2.18.
+- Each finding stored its own scoring category, and the findings API returned it, so
+  several findings from one scenario were scored and shown under different
+  categories. Findings saved earlier kept the category of their scenario's fault.
+
 - A dependency simulator, so Dependency failure scenarios ran instead of being
   skipped. A target environment gained an optional dependency URL, and the settings
   page showed owners and editors the simulator URL (`/api/simulator/{token}`) to put
@@ -33,8 +50,8 @@ released yet, so history is grouped by date.
   Pass counted 100 points, Degraded 50, and Fail 0; a category score was the mean of
   its findings, and a category with no scored findings was left out with its weight
   shared among the rest. Partially completed, failed, and cancelled runs were not
-  scored, and runs that finished earlier were not backfilled. Until the evaluator has
-  rules for the injector's faults, only the Timeout and Idempotency categories can be
+  scored, and runs that finished earlier were not backfilled. Until the evaluator had
+  rules for the injector's faults, only the Timeout and Idempotency categories could be
   scored. The points were locked as part of scoring version 1.0 in `PROJECT.md`
   section 14.3.
 
@@ -363,6 +380,10 @@ released yet, so history is grouped by date.
   and points everyone else to each project's Team tab.
 
 ### Changed
+
+- A scenario's outcome became its worst finding, with a judged finding ranked above an
+  Inconclusive one, and the live run feed listed a scenario's findings in the same
+  order. A scenario could now end as Not Applicable.
 
 - The project page's resilience breakdown showed the eight locked scoring categories
   from the latest scored run's stored category scores. It previously listed six

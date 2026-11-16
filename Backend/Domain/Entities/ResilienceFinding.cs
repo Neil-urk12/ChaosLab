@@ -13,6 +13,8 @@ public class ResilienceFinding
 
     // Table properties
     public ResiliencePattern Pattern { get; set; }
+    // Null on findings saved before categories were stored; Scorer.CategoryOf stands in for those.
+    public ScoringCategory? Category { get; set; }
     public ResilienceFindingOutcome Outcome { get; set; } = ResilienceFindingOutcome.Inconclusive;
     public RecommendationSeverity Severity { get; set; } = RecommendationSeverity.Info;
     public string Summary { get; set; } = string.Empty;

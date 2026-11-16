@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.TestRuns;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,8 @@ public static class ListFindings
         RecommendationSeverity Severity,
         ResilienceFindingOutcome Outcome,
         ResiliencePattern Pattern,
+        // Scoring category: the stored one, or the scenario's fault for a finding saved before it was stored.
+        ScoringCategory? Category,
         string HttpMethod,
         string Path,
         // Fault of the scenario execution that produced the finding; null when the finding has no execution.
@@ -71,7 +74,7 @@ public static class ListFindings
             .OrderByDescending(finding => finding.Severity).ThenBy(finding => finding.CreatedAt).ThenBy(finding => finding.Id)
             .Select(finding => new
             {
-                finding.Id, finding.Severity, finding.Outcome, finding.Pattern, finding.Endpoint.HttpMethod,
+                finding.Id, finding.Severity, finding.Outcome, finding.Pattern, finding.Category, finding.Endpoint.HttpMethod,
                 finding.Endpoint.Path, ScenarioType = (ScenarioType?)finding.ScenarioExecution!.ScenarioType,
                 finding.Summary, finding.Evidence,
                 Recommendation = db.Recommendations
@@ -84,7 +87,7 @@ public static class ListFindings
             .ToListAsync(cancellationToken);
 
         return TypedResults.Ok(new Response(runs, selected, rows.Select(row => new Row(
-            row.Id, row.Severity, row.Outcome, row.Pattern, row.HttpMethod, row.Path, row.ScenarioType, row.Summary,
+            row.Id, row.Severity, row.Outcome, row.Pattern, row.Category ?? Scorer.CategoryOf(row.ScenarioType, row.Pattern), row.HttpMethod, row.Path, row.ScenarioType, row.Summary,
             row.Evidence.RootElement.Clone(), row.Recommendation)).ToList()));
     }
 }

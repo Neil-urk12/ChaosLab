@@ -1,21 +1,6 @@
-using System.Text.Json.Serialization;
 using Backend.Domain.Enums;
 
 namespace Backend.Features.TestRuns;
-
-// The eight scoring categories (PROJECT.md 14.2). Stored by name inside jsonb, so renaming one changes stored data.
-[JsonConverter(typeof(JsonStringEnumConverter<ScoringCategory>))]
-public enum ScoringCategory
-{
-    Timeout,
-    Retry,
-    GracefulDegradation,
-    RateLimit,
-    Idempotency,
-    AuthenticationFailure,
-    ResponseValidation,
-    DependencyFailure
-}
 
 // Turns findings into the Resilience Score (FeaturesFlow 2.19, PROJECT.md 14.3). Pure: no database.
 // The same method scores a whole run or one endpoint; the caller chooses which findings to pass.
@@ -41,8 +26,7 @@ public static class Scorer
     // Overall is null when nothing was scored; Coverage is null when there is no finding that counts toward it.
     public sealed record Result(decimal? Overall, decimal? Coverage, IReadOnlyList<CategoryScore> Categories);
 
-    // shortcut: the category comes from the scenario's fault, so a 5xx Storm can't yet yield both a Retry and a
-    // Graceful Degradation finding; store the category on the finding when the evaluator produces both.
+    // Only for findings saved before the category was stored on the finding itself (ResilienceFinding.Category).
     public static ScoringCategory? CategoryOf(ScenarioType? type, ResiliencePattern pattern) => type switch
     {
         ScenarioType.Latency or ScenarioType.TimeoutDrop or ScenarioType.SlowDrip => ScoringCategory.Timeout,

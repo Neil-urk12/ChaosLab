@@ -25,7 +25,11 @@
 		Timeout: 'Timeout',
 		CircuitBreaker: 'Circuit breaker',
 		Fallback: 'Fallback',
-		Idempotency: 'Idempotency'
+		Idempotency: 'Idempotency',
+		RateLimit: 'Rate limit',
+		AuthenticationFailure: 'Auth failure',
+		ResponseValidation: 'Response validation',
+		DependencyFailure: 'Dependency failure'
 	};
 
 	const owner = $derived(project.members.find((m) => m.role === 'Owner'));

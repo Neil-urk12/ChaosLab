@@ -1,7 +1,13 @@
 // Response shapes of the backend dashboard queries (Backend/Features/Projects).
 
 export type TestRunStatus = 'Queued' | 'Running' | 'Completed' | 'PartiallyCompleted' | 'Failed' | 'Cancelled';
-export type ResiliencePattern = 'Retry' | 'Timeout' | 'CircuitBreaker' | 'Fallback' | 'Idempotency';
+export type ResiliencePattern =
+	| 'Retry' | 'Timeout' | 'CircuitBreaker' | 'Fallback' | 'Idempotency'
+	| 'RateLimit' | 'AuthenticationFailure' | 'ResponseValidation' | 'DependencyFailure';
+// ScoringCategory in the backend; the labels and weights are in findings.ts.
+export type ScoringCategory =
+	| 'Timeout' | 'Retry' | 'GracefulDegradation' | 'RateLimit' | 'Idempotency'
+	| 'AuthenticationFailure' | 'ResponseValidation' | 'DependencyFailure';
 export type ProjectRole = 'Owner' | 'Editor' | 'Viewer';
 
 export type TestRunRow = {
@@ -287,7 +293,7 @@ export type RunTimeline = {
 	httpMethod: string;
 	path: string;
 	scenarioType: ScenarioType;
-	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | null;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | 'NotApplicable' | null;
 	failureReason: string | null;
 	completedAt: string | null;
 	events: TimelineEvent[];
@@ -322,7 +328,7 @@ export type FeedRow = {
 	path: string;
 	scenarioType: ScenarioType;
 	status: ScenarioExecutionStatus;
-	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | null;
+	outcome: 'Passed' | 'Failed' | 'Inconclusive' | 'Degraded' | 'NotApplicable' | null;
 	failureReason: string | null;
 	startedAt: string | null;
 	completedAt: string | null;
@@ -359,6 +365,8 @@ export type RunFinding = {
 	severity: Severity;
 	outcome: FindingOutcome;
 	pattern: ResiliencePattern;
+	// Null only for a finding of a Baseline scenario, which is not scored.
+	category: ScoringCategory | null;
 	httpMethod: string;
 	path: string;
 	scenarioType: ScenarioType | null;

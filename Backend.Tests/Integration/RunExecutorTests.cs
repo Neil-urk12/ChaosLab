@@ -190,12 +190,14 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         static (ObservationOutcomeType, int, int) Seen(Backend.Domain.Entities.HttpObservation o) =>
             (o.OutcomeType, o.UpstreamStatusCode ?? 0, o.ClientStatusCode ?? 0);
 
-        // A forbidden credential can't be produced; everything else ran, with no rules yet to judge it.
+        // A forbidden credential can't be produced; everything else ran and was judged into one finding each.
         Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.ForbiddenNeedsAccount),
             (executions[forbidden].Status, executions[forbidden].FailureReason));
         Assert.All(new[] { storm, throttle, malformed, empty, drip, expired, missing },
-            id => Assert.Equal((ScenarioExecutionStatus.Completed, (ScenarioOutcome?)null), (executions[id].Status, executions[id].Outcome)));
-        Assert.Empty(await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToListAsync());
+            id => Assert.True(executions[id] is { Status: ScenarioExecutionStatus.Completed, Outcome: not null }));
+        var judged = await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToListAsync();
+        Assert.Equal(7, judged.Count);
+        Assert.All(judged, finding => Assert.NotNull(finding.Category));
 
         // 5xx Storm: the target answered every attempt; the runner saw 503 twice, then the answer got through.
         var stormRows = Of(storm);
@@ -313,8 +315,19 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var call = Assert.Single(Calls(unresolvable));
         Assert.Equal(("GET", "/7"), (call.GetProperty("method").GetString(), call.GetProperty("path").GetString()));
         Assert.Equal(2, received.Count(r => r.Method == "GET" && r.Path == "/v1/7" && r.Query == "?source=target"));
-        // No rule judges this evidence yet, so the scenario has no outcome.
-        Assert.Null(unresolvable.Outcome);
+        // Three findings from the one scenario: a single call is no retry to judge, a controlled 503 contains the
+        // failure but offers nothing in its place. The scenario takes the worst of them.
+        Assert.Equal(ScenarioOutcome.Degraded, unresolvable.Outcome);
+        await using (var scope = factory.Services.CreateAsyncScope())
+            Assert.Equal(
+                [
+                    ((ScoringCategory?)ScoringCategory.Retry, ResilienceFindingOutcome.Inconclusive),
+                    (ScoringCategory.GracefulDegradation, ResilienceFindingOutcome.Degraded),
+                    (ScoringCategory.DependencyFailure, ResilienceFindingOutcome.Passed)
+                ],
+                (await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ResilienceFindings.AsNoTracking()
+                    .Where(f => f.ScenarioExecutionId == unresolvable.Id).ToListAsync())
+                .OrderBy(f => f.Category).Select(f => (f.Category, f.Outcome)));
 
         // Unreachable: silence instead, so the target waited out its own 300 ms before answering.
         var unreachable = await RunAsync("unreachable");
