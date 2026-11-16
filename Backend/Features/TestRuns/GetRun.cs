@@ -34,7 +34,9 @@ public static class GetRun
         Previous? Previous,
         List<Timeline> Timelines,
         // Set only while the run is Queued or Running.
-        Live? Live);
+        Live? Live,
+        // Every started or skipped execution of a finished run, newest first; null while the run is live (see Live.Feed).
+        List<FeedRow>? Scenarios);
 
     // Every started execution, newest first, and the oldest one still running with its requests so far.
     public sealed record Live(List<FeedRow> Feed, Current? Current);
@@ -140,17 +142,18 @@ public static class GetRun
                     .ToList()))
             .ToListAsync(cancellationToken);
 
+        var live = run.Status is TestRunStatus.Queued or TestRunStatus.Running;
         return TypedResults.Ok(new Response(
             run.Id, run.Number, run.Status, run.EnvironmentName, run.RequestedBy, run.CreatedAt, run.StartedAt,
             run.CompletedAt, run.CompletedScenarios, run.TotalScenarios, run.Skipped, run.ResilienceScore,
             run.ScoringVersion, run.FailureMessage, previous, timelines,
-            run.Status is TestRunStatus.Queued or TestRunStatus.Running ? await LiveAsync(db, runId, cancellationToken) : null));
+            live ? await LiveAsync(db, runId, cancellationToken) : null,
+            live ? null : await FeedAsync(db, runId, cancellationToken)));
     }
 
     // shortcut: the feed holds every started execution of the run (bounded by the run's scenario count); page it if runs grow past a few hundred scenarios.
-    private static async Task<Live> LiveAsync(ApplicationDbContext db, Guid runId, CancellationToken cancellationToken)
-    {
-        var feed = await db.ScenarioExecutions.AsNoTracking()
+    private static Task<List<FeedRow>> FeedAsync(ApplicationDbContext db, Guid runId, CancellationToken cancellationToken) =>
+        db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId && execution.Status != ScenarioExecutionStatus.Queued)
             // Never null, so an execution that was skipped before it started can't sort above newer rows (DESC puts NULLs first).
             .OrderByDescending(execution => execution.CompletedAt ?? execution.StartedAt ?? execution.CreatedAt)
@@ -170,6 +173,9 @@ public static class GetRun
                     .ToList()))
             .ToListAsync(cancellationToken);
 
+    private static async Task<Live> LiveAsync(ApplicationDbContext db, Guid runId, CancellationToken cancellationToken)
+    {
+        var feed = await FeedAsync(db, runId, cancellationToken);
         var current = await db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId && execution.Status == ScenarioExecutionStatus.Running)
             .OrderBy(execution => execution.SequenceNo)

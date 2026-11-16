@@ -122,7 +122,7 @@ Tests run against real REST APIs in controlled environments: local development, 
 ## 5.3 Clients
 
 - **Web application (primary):** all functionality.
-- **Mobile viewer (v1, read-only):** sign in, browse accessible projects, view project overview, recent test runs, run results (status, score, scenario results, failure timeline, detected behavior), recommendations, and available reports. It cannot configure targets, import specifications, or start tests. The mobile stack is **[Open]**. The backend already issues bearer and refresh tokens for this client.
+- **Mobile viewer (v1, read-only):** sign in, browse accessible projects, view project overview, recent test runs, run results (status, score, scenario results, failure timeline, detected behavior), recommendations, and available reports. It cannot configure targets, import specifications, or start tests. The mobile stack is Expo (React Native, TypeScript), in `Mobile/`. The backend already issues bearer and refresh tokens for this client.
 
 ---
 
@@ -488,7 +488,7 @@ Controls:
 | PDF reports | QuestPDF | Planned |
 | Charts | ECharts proposed; the current UI has a custom score ring | **[Open]** |
 | CI | GitHub Actions | Planned |
-| Mobile client | **[Open]** | Not started |
+| Mobile client | Expo (React Native, TypeScript, Expo Router), sharing the web app's response types | In use |
 
 PostgreSQL is sufficient for V1. Supabase is intentionally not used. A free or low-cost development and deployment path is preferred. Large transient execution streams should not automatically become normalized relational rows.
 
@@ -691,7 +691,7 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 **Product**
 
-13. Mobile stack and exact viewer screens.
+13. Decided: the mobile stack is Expo, and the viewer screens are login, projects, project, run, and scenario and finding detail.
 14. Chart library (ECharts or alternative).
 15. Which research questions and methodology wording to use: the original RQ1 assumes proxy-based injection and should be reworded to evaluate the actual V1 injection mechanisms and their reproduction accuracy.
 

@@ -3,7 +3,7 @@ SECRET_FILE       ?= secret.yaml
 KUBE_FILE         ?= backend-pod.yaml
 POD_NAME          ?= chaoslab-stack
 
-.PHONY: help build up start down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be migrate
+.PHONY: help build up start down restart ps logs logs-backend logs-db clean-data secret-init dev-fe dev-be dev-mobile migrate
 
 help:
 	@echo "Available commands:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make restart       - Restart the pod stack"
 	@echo "  make dev-fe        - Run frontend"
 	@echo "  make dev-be        - Run backend"
+	@echo "  make dev-mobile    - Run the mobile viewer (Expo dev server)"
 	@echo "  make migrate       - Apply EF migrations to the database in Backend/.env.local"
 	@echo "  make ps            - Check status of running pods and containers"
 	@echo "  make logs          - Follow logs from all containers in the pod"
@@ -54,6 +55,11 @@ dev-fe:
 
 dev-be:
 	cd Backend && dotnet run
+
+# Needs Mobile/.env.local (see Mobile/.env.example). A real phone also needs the backend on the LAN:
+# cd Backend && dotnet run --urls http://0.0.0.0:5274
+dev-mobile:
+	cd Mobile && pnpm start
 
 migrate:
 	cd Backend && dotnet ef database update

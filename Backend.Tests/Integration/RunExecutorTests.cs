@@ -88,6 +88,9 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.NotNull(run.StartedAt);
         Assert.NotNull(run.CompletedAt);
         Assert.Null(run.Live);
+        // A finished run lists every execution, skipped ones included, not just the failing timelines.
+        Assert.Equal(5, run.Scenarios!.Count);
+        Assert.Contains(run.Scenarios, row => row.Status == ScenarioExecutionStatus.Skipped);
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

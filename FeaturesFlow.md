@@ -61,7 +61,7 @@ Assumes the user has already installed the app.
 
 ### 1.2 Mobile flow (read-only viewer, v1)
 
-The mobile app is a **viewer only**. It cannot configure targets, import specifications, or start tests. The mobile stack is **[Open]**. Test-completion push notifications are not part of the v1 decision.
+The mobile app is a **viewer only**. It cannot configure targets, import specifications, or start tests. It is an Expo (React Native) app in `Mobile/`. Test-completion push notifications are not part of the v1 decision.
 
 1. Start the mobile app and check for an authenticated session.
 2. If none exists, show the login page and sign in with the backend's bearer-token endpoint. Store tokens securely on the device and refresh them as needed.
@@ -324,7 +324,9 @@ Built: the paged history with filters, date, status, score and its change from t
 5. Decide which existing scenarios still apply and regenerate where needed. Past runs keep their execution-time snapshots.
 6. Save the new specification and display the updated structure.
 
-### 2.26 Mobile login and viewing [Planned]
+### 2.26 Mobile login and viewing [Done]
+
+Built: everything below, in `Mobile/`. Recommendations appear once something produces them (section 2.22). Not built: viewing reports (flow 1.2 step 7), which waits on PDF generation (2.24). An account that must change its password is sent to the web app. A running run is refreshed by pulling down; there is no polling.
 
 Mobile login
 

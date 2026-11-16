@@ -312,6 +312,8 @@ export type RunDetail = {
 	timelines: RunTimeline[];
 	// Set only while the run is Queued or Running.
 	live: RunLive | null;
+	// Every started or skipped execution of a finished run, newest first; null while the run is live.
+	scenarios: FeedRow[] | null;
 };
 
 export type ScenarioExecutionStatus = 'Queued' | 'Running' | 'Completed' | 'Failed' | 'Skipped';

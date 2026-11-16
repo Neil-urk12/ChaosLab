@@ -8,6 +8,21 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- A read-only mobile viewer in `Mobile/`, built with Expo (React Native). It signed in
+  through the bearer-token endpoints, kept the tokens in the device's secure storage,
+  refreshed an expired access token once and retried, and signed out on every device
+  through the logout endpoint. It listed the user's projects, showed a project's API
+  summary, latest score with its category breakdown, and recent runs, and showed a run's
+  status, score, evidence coverage, findings, recommendations, failure timelines, and
+  scenario results, with a detail screen for a scenario and for a finding. It shared the
+  web app's response types and label, format, and scoring helpers instead of copying
+  them. The server address came from the build-time `EXPO_PUBLIC_API_URL`, and an account
+  with a pending password change was sent to the web app. `make dev-mobile` started it.
+
+- The run detail API returned the scenario list of a finished run (`scenarios`), so
+  passed, skipped, and finding-less scenarios could be shown. Before, the list was only
+  available while a run was live and a finished run exposed its failing timelines only.
+
 - A dependency simulator, so Dependency failure scenarios ran instead of being
   skipped. A target environment gained an optional dependency URL, and the settings
   page showed owners and editors the simulator URL (`/api/simulator/{token}`) to put
