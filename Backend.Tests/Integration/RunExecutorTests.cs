@@ -842,9 +842,10 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
         Assert.True(await executor.TickAsync(CancellationToken.None));
 
-        // The read-back went out after the copies, authenticated, with the template filled from the request body.
+        // The read-back went out after the copies, authenticated, with the template filled from the request body
+        // and without the tested endpoint's own Idempotency-Key header.
         var readBack = Assert.Single(received, r => r.Path == "/v1/list");
-        Assert.Equal(("GET", "?item=book", $"Bearer {Token}"), (readBack.Method, readBack.Query, readBack.Authorization));
+        Assert.Equal(("GET", "?item=book", $"Bearer {Token}", null), (readBack.Method, readBack.Query, readBack.Authorization, readBack.IdempotencyKey));
 
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

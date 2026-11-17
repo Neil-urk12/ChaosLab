@@ -384,6 +384,9 @@ released yet, so history is grouped by date.
 - A scenario's whole-number settings were refused when written as `3000.0` or `3e3`.
   They used to be saved, and the runner then failed on every run of that scenario with
   an internal error.
+- An invariant's read-back request no longer carried the header parameters of the
+  endpoint under test, such as a fresh idempotency key. It still sent the
+  environment's headers and the credentials.
 - The run results page showed the category breakdown, endpoint scores, and evidence
   coverage that the backend stored when it scored the run, and the browser's own copy
   of the scoring method was removed. A run without a stored score (partially

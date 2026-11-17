@@ -44,10 +44,10 @@ public sealed class RunExecutor(
         JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security);
 
     // The endpoint's request, ready to be sent any number of times. Authenticate applies the stored credentials, or
-    // the given secret in their place.
+    // the given secret in their place. EnvironmentHeaders is the part of Headers that is not the endpoint's own.
     private sealed record Prepared(
         HttpMethod Method, Uri Url, byte[]? Body, string? ContentType, List<KeyValuePair<string, string>> Headers,
-        List<string> Secrets, Action<HttpRequestMessage, string?> Authenticate, bool HasCredential)
+        List<KeyValuePair<string, string>> EnvironmentHeaders, List<string> Secrets, Action<HttpRequestMessage, string?> Authenticate, bool HasCredential)
     {
         public HttpRequestMessage Create(HttpContent? content = null)
         {
@@ -482,8 +482,7 @@ public sealed class RunExecutor(
         // Read-back requests of the invariants (2.14): a GET after the fault that shows the state it left behind.
         // shortcut: sent right after the last response, so a target that writes asynchronously may not show the record
         // yet; add a wait setting to the read-back when that happens.
-        // shortcut: the GET also carries the endpoint's own required header parameters (a fresh idempotency key
-        // included); keep them apart from the environment's headers when a target objects.
+        // The GET carries the environment's headers and the credentials, not the tested endpoint's own header parameters.
         var invariants = execution.Invariants.Deserialize<List<Invariant>>(ScenarioRules.Json) ?? [];
         for (var index = 0; index < invariants.Count; index++)
         {
@@ -492,7 +491,7 @@ public sealed class RunExecutor(
                 || Evaluator.ResolveReadBack(template, prepared.Body) is not { } path
                 || TargetClient.Combine(context.Config.Target.BaseUrl, path) is not { } url)
                 continue;
-            var readBack = prepared with { Method = HttpMethod.Get, Url = url, Body = null };
+            var readBack = prepared with { Method = HttpMethod.Get, Url = url, Body = null, Headers = prepared.EnvironmentHeaders };
             await RecordAsync(SendAsync(context, execution with { HttpMethod = "GET", Path = path }, readBack, readBack.Create(),
                 ++attempt, null, new() { ["phase"] = "readBack", ["invariant"] = index }, cancellationToken));
         }
@@ -585,7 +584,8 @@ public sealed class RunExecutor(
         var (environmentHeaders, headerError) = TargetClient.GlobalHeaders(context.Environment.Headers, operation, protector);
         if (headerError is not null)
             return (null, headerError);
-        headers.AddRange(environmentHeaders.Select(header => new KeyValuePair<string, string>(header.Name, header.Value)));
+        var fromEnvironment = environmentHeaders.Select(header => new KeyValuePair<string, string>(header.Name, header.Value)).ToList();
+        headers.AddRange(fromEnvironment);
         var secrets = environmentHeaders.Where(header => header.Secret).Select(header => header.Value).ToList();
 
         // OpenAPI security lists alternatives, and each alternative needs all of its schemes together. The first one whose
@@ -616,7 +616,7 @@ public sealed class RunExecutor(
                 TargetClient.Authenticate(request, type, instead ?? secret, username, scheme);
         }
 
-        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, secrets, Authenticate,
+        return (new Prepared(new HttpMethod(execution.HttpMethod), url, body, contentType, headers, fromEnvironment, secrets, Authenticate,
             credentials.Count > 0), null);
     }
 
