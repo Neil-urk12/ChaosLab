@@ -116,10 +116,6 @@
 		</p>
 	</div>
 	<div class="flex gap-3">
-		<a href="/runs" class="flex h-9 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] hover:bg-field">
-			<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z" /></svg>
-			Run test
-		</a>
 		<a href="/projects" class="flex h-9 items-center gap-2 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent-hover">
 			<svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
 			Create project
@@ -219,7 +215,6 @@
 		{@render panelHeader('Active & recent test runs', 'Monitor test execution across your environments', '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>')}
 		<div class="flex shrink-0 gap-4 text-xs">
 			<button type="button" disabled title="Filtering is not available yet" class="text-slate-500">Filter</button>
-			<a href="/runs" class="text-accent-ink hover:text-accent-ink-strong">View all runs</a>
 		</div>
 	</div>
 	{#if overview.recentRuns.length}

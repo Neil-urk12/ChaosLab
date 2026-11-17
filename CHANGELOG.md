@@ -471,6 +471,10 @@ released yet, so history is grouped by date.
 
 ### Removed
 
+- The workspace sidebar's Test Runs, Findings, and Settings links, and the Overview
+  page's "Run test" and "View all runs" links. They led to pages that do not exist
+  yet and showed a not-found error. Runs and findings are still reached from each
+  project.
 - The SvelteKit template leftovers: the public `/demo` and `/demo/playwright` pages and
   their end-to-end test, the `src/lib/vitest-examples` sample, and the empty
   `src/lib/index.ts`.

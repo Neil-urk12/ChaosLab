@@ -27,16 +27,6 @@
           label: "Projects",
           icon: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
         },
-        {
-          href: "/runs",
-          label: "Test Runs",
-          icon: '<path d="M7 5v14l11-7z"/>',
-        },
-        {
-          href: "/findings",
-          label: "Findings",
-          icon: '<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>',
-        },
       ],
     },
     {
@@ -46,11 +36,6 @@
           href: "/team",
           label: "Team",
           icon: '<circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M16 4.5a3.5 3.5 0 010 7M21 20c0-3-1.5-5-4-5.7"/>',
-        },
-        {
-          href: "/settings",
-          label: "Settings",
-          icon: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
         },
       ],
     },
@@ -67,7 +52,6 @@
 
   const badges: Record<string, number> = $derived({
     "/projects": data.overview.projectCount,
-    "/findings": data.overview.failedFindingCount,
   });
 
   // Search and notifications have no backend yet; shown disabled as placeholders.
