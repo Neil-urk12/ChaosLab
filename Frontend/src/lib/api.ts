@@ -4,10 +4,12 @@ export type TestRunStatus = 'Queued' | 'Running' | 'Completed' | 'PartiallyCompl
 export type ResiliencePattern =
 	| 'Retry' | 'Timeout' | 'CircuitBreaker' | 'Fallback' | 'Idempotency'
 	| 'RateLimit' | 'AuthenticationFailure' | 'ResponseValidation' | 'DependencyFailure';
-// ScoringCategory in the backend; the labels and weights are in findings.ts.
+// ScoringCategory in the backend; the labels are in findings.ts. Weights and scores come stored from the backend
+// (Scorer.cs) and are never worked out here.
 export type ScoringCategory =
 	| 'Timeout' | 'Retry' | 'GracefulDegradation' | 'RateLimit' | 'Idempotency'
 	| 'AuthenticationFailure' | 'ResponseValidation' | 'DependencyFailure';
+export type CategoryScore = { category: ScoringCategory; weight: number; score: number | null; findings: number; inconclusive: number };
 export type ProjectRole = 'Owner' | 'Editor' | 'Viewer';
 
 export type TestRunRow = {
@@ -88,7 +90,7 @@ export type ProjectDetail = {
 		score: number;
 		previousScore: number | null;
 		// The run's stored category scores; null for a run scored before they were stored.
-		breakdown: { category: string; weight: number; score: number | null; findings: number; inconclusive: number }[] | null;
+		breakdown: CategoryScore[] | null;
 	} | null;
 	spec: { title: string | null; openApiVersion: string; importedAt: string } | null;
 	members: { userId: string; displayName: string; role: ProjectRole }[];
@@ -312,6 +314,10 @@ export type RunDetail = {
 	totalScenarios: number;
 	skippedScenarios: number;
 	score: number | null;
+	// Stored when the run was scored; null (endpoints: empty) for a run without a stored breakdown.
+	evidenceCoverage: number | null;
+	categories: CategoryScore[] | null;
+	endpoints: { httpMethod: string; path: string; score: number }[];
 	scoringVersion: string;
 	failureMessage: string | null;
 	previous: { id: string; number: number; score: number } | null;

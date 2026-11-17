@@ -32,20 +32,6 @@ public sealed class ScorerTests
         Assert.Equal(85.71m, result.Coverage);
     }
 
-    // The same findings as Frontend/src/lib/findings.spec.ts, so the browser and the server agree.
-    [Fact]
-    public void Agrees_with_the_frontend_calculation()
-    {
-        var result = Score(
-            (ScoringCategory.Idempotency, Failed), (ScoringCategory.Idempotency, Passed), (ScoringCategory.Idempotency, Inconclusive),
-            (ScoringCategory.Timeout, Degraded), (Scorer.CategoryOf(ScenarioType.Baseline, ResiliencePattern.Idempotency), Failed));
-
-        Assert.Equal((50m, 3, 1), (Category(result, ScoringCategory.Idempotency).Score, Category(result, ScoringCategory.Idempotency).Findings,
-            Category(result, ScoringCategory.Idempotency).Inconclusive));
-        Assert.Equal(50m, Category(result, ScoringCategory.Timeout).Score);
-        Assert.Equal(50m, result.Overall);
-    }
-
     [Fact]
     public void Leaves_the_score_empty_when_nothing_was_scored()
     {

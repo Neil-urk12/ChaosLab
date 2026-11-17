@@ -394,7 +394,7 @@ The weights are fixed and recorded before evaluation as scoring version `1.0` (s
 6. The **overall score** is the weighted mean of the scored categories.
 7. Every report shows **evidence coverage** (scored findings versus total, including Inconclusive) so a high score from thin evidence is visible.
 8. Endpoint scores use the same method restricted to one endpoint.
-9. Only a run whose every scenario ran (status Completed) gets a stored score. Partially completed, failed, and cancelled runs are not scored, so they do not enter the score trend. Not Applicable findings count toward neither the score nor evidence coverage.
+9. Only a run whose every scenario ran (status Completed) gets a stored score. Partially completed, failed, and cancelled runs are not scored, so they do not enter the score trend. Their results page and run history show them as not scored (no category breakdown, endpoint scores, or evidence coverage) instead of working out a provisional score; the scores shown always come from what the backend stored. Not Applicable findings count toward neither the score nor evidence coverage.
 
 How baselines affect evaluation, and whether severity caps the score (for example a Critical failure limiting the maximum), are **[Open]**.
 

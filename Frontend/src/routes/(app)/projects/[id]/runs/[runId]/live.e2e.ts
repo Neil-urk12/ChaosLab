@@ -10,7 +10,7 @@ const row = (id: string, scenarioType: string, httpMethod: string, path: string,
 const runningRun = {
 	id: 'r27', number: 27, status: 'Running', environmentName: 'Staging', requestedBy: 'Maya Chen',
 	createdAt: '2026-11-08T08:12:00Z', startedAt: '2026-11-08T08:12:00Z', completedAt: null,
-	completedScenarios: 4, totalScenarios: 96, skippedScenarios: 1, score: null, scoringVersion: '1.0',
+	completedScenarios: 4, totalScenarios: 96, skippedScenarios: 1, score: null, evidenceCoverage: null, categories: null, endpoints: [], scoringVersion: '1.0',
 	failureMessage: null, previous: null, timelines: [],
 	live: {
 		feed: [

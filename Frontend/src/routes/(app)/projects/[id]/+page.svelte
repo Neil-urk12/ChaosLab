@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ScoreRing from '$lib/components/ScoreRing.svelte';
 	import type { ResiliencePattern, TestRunRow } from '$lib/api';
-	import { SCORING_CATEGORIES } from '$lib/findings';
+	import { scoringCategoryLabels } from '$lib/findings';
 	import { dateTime, duration, initials, PLACEHOLDER, score } from '$lib/format';
 
 	let { data } = $props();
@@ -14,7 +14,7 @@
 
 	// A category with no scored findings in the latest run stays a placeholder.
 	const breakdown = $derived(
-		SCORING_CATEGORIES.map(([label, , key]) => ({
+		Object.entries(scoringCategoryLabels).map(([key, label]) => ({
 			label,
 			value: latest?.breakdown?.find((c) => c.category === key)?.score ?? null
 		}))

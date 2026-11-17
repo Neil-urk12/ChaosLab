@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunFinding } from './api';
-import { categoryScores, endpointScores, findingCategory, findingDetail, findingsCsv, weightedScore } from './findings';
+import { findingCategory, findingDetail, findingsCsv } from './findings';
 
 const finding: RunFinding = {
 	id: '1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', category: null, httpMethod: 'POST', path: '/payments',
@@ -15,7 +15,6 @@ describe('findings', () => {
 		// A dependency failure's fallback finding is scored under its own category, not the scenario's.
 		const fallback = { ...finding, scenarioType: 'DnsFailure', pattern: 'Fallback', category: 'GracefulDegradation', outcome: 'Passed' } as const;
 		expect(findingCategory(fallback)).toBe('Graceful degradation');
-		expect(categoryScores([fallback]).find((c) => c.label === 'Graceful degradation')?.score).toBe(100);
 		expect(findingDetail(finding)).toBe('Duplicate request');
 		expect(findingDetail({ ...finding, evidence: { detail: 'Latency +3000 ms' } })).toBe('Latency +3000 ms');
 	});
@@ -25,27 +24,5 @@ describe('findings', () => {
 		expect(row).toBe('Critical,Fail,POST,/payments,Idempotency,"Duplicate charge, ""twice""","\'=HYPERLINK(""x"")"');
 		const [, tabbed] = findingsCsv([{ ...finding, summary: '\t=1+1', recommendation: null }]).split('\r\n');
 		expect(tabbed).toBe('Critical,Fail,POST,/payments,Idempotency,\'\t=1+1,');
-	});
-
-	it('scores categories by mean outcome points and redistributes empty weights', () => {
-		const findings: RunFinding[] = [
-			finding,
-			{ ...finding, id: '2', outcome: 'Passed' },
-			{ ...finding, id: '3', outcome: 'Inconclusive' },
-			{ ...finding, id: '4', scenarioType: 'Latency', outcome: 'Degraded', path: '/health', httpMethod: 'GET' },
-			{ ...finding, id: '5', scenarioType: 'Baseline', outcome: 'Failed' }
-		];
-		const categories = categoryScores(findings);
-		const idempotency = categories.find((c) => c.label === 'Idempotency')!;
-		expect([idempotency.score, idempotency.findings, idempotency.inconclusive]).toEqual([50, 3, 1]);
-		expect(categories.find((c) => c.label === 'Timeout handling')!.score).toBe(50);
-		expect(categories.find((c) => c.label === 'Retry behavior')!.score).toBeNull();
-		// Timeout 50 × 20 and Idempotency 50 × 10 over the 30 points of weight that were scored.
-		expect(weightedScore(categories)).toBe(50);
-		expect(weightedScore(categoryScores([{ ...finding, outcome: 'NotApplicable' }]))).toBeNull();
-		expect(endpointScores(findings)).toEqual([
-			{ httpMethod: 'POST', path: '/payments', score: 50 },
-			{ httpMethod: 'GET', path: '/health', score: 50 }
-		]);
 	});
 });

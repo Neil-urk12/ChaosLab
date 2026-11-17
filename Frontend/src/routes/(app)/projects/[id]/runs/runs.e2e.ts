@@ -99,7 +99,7 @@ test('Back within a project refills the search box from the URL', async ({ page 
 	await expect(search(page)).toHaveValue('foo');
 });
 
-test('a run opens its results with scores computed from findings', async ({ page }) => {
+test('a run opens its results with the stored scores', async ({ page }) => {
 	const finding = {
 		id: 'f1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', httpMethod: 'POST', path: '/payments',
 		scenarioType: 'DuplicateRequest', summary: 'Duplicate charge after a timeout retry', evidence: {},
@@ -107,7 +107,9 @@ test('a run opens its results with scores computed from findings', async ({ page
 	};
 	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
 		json: {
-			...run('a', 30), skippedScenarios: 2, score: 78, previous: { id: 'a-29', number: 29, score: 70 },
+			...run('a', 30), skippedScenarios: 2, score: 78, previous: { id: 'a-29', number: 29, score: 70 }, evidenceCoverage: 66.67,
+			categories: [{ category: 'Idempotency', weight: 10, score: 50, findings: 2, inconclusive: 0 }],
+			endpoints: [{ httpMethod: 'POST', path: '/payments', score: 50 }],
 			timelines: [{
 				executionId: 'e1', httpMethod: 'POST', path: '/payments', scenarioType: 'DuplicateRequest', outcome: 'Failed',
 				failureReason: 'record count ≤ 1 · actual 2', completedAt: '2026-11-01T00:00:06Z',
@@ -117,7 +119,12 @@ test('a run opens its results with scores computed from findings', async ({ page
 		}
 	}));
 	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({
-		json: { runs: [], run: null, findings: [finding, { ...finding, id: 'f2', outcome: 'Passed', severity: 'Info' }] }
+		json: {
+			runs: [], run: null, findings: [
+				finding, { ...finding, id: 'f2', outcome: 'Passed', severity: 'Info' },
+				{ ...finding, id: 'f3', outcome: 'Inconclusive', severity: 'Info', recommendation: null }
+			]
+		}
 	}));
 
 	await page.goto(`${origin}/projects/a/runs`);
@@ -127,7 +134,24 @@ test('a run opens its results with scores computed from findings', async ({ page
 	await expect(page.getByRole('navigation', { name: 'Project sections' }).getByRole('link', { name: 'Test runs' })).toHaveAttribute('aria-current', 'page');
 	await expect(page.getByText('+8 vs RUN-029')).toBeVisible();
 	await expect(page.getByRole('row', { name: /Idempotency 10% 50 2 findings/ })).toBeVisible();
+	await expect(page.getByText('67%')).toBeVisible();
+	await expect(page.getByText('2 of 3 findings scored.')).toBeVisible();
 	await expect(page.getByText('Persist idempotency keys')).toBeVisible();
 	await expect(page.getByText('2 scenarios were skipped.')).toBeVisible();
 	await expect(page.getByText('record count ≤ 1 · actual 2')).toBeVisible();
+});
+
+test('a completed run with nothing scored says so instead of claiming it did not finish', async ({ page }) => {
+	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
+		json: {
+			...run('a', 30), skippedScenarios: 0, score: null, previous: null, evidenceCoverage: 0,
+			categories: [{ category: 'Idempotency', weight: 10, score: null, findings: 1, inconclusive: 1 }], endpoints: [], timelines: []
+		}
+	}));
+	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({ json: { runs: [], run: null, findings: [] } }));
+
+	await page.goto(`${origin}/projects/a/runs`);
+	await page.getByRole('link', { name: 'RUN-030' }).click();
+	await expect(page.getByText('No scored findings in this run.')).toBeVisible();
+	await expect(page.getByText(/every scenario ran/)).toHaveCount(0);
 });

@@ -53,67 +53,15 @@ export function findingsCsv(findings: RunFinding[]): string {
 	return rows.map((row) => row.map(cell).join(',')).join('\r\n');
 }
 
-// Scoring categories and their locked weights, scoring version 1.0 (PROJECT.md §14.2).
-// The third entry is the category's name in the scores the backend stores (ScoringCategory in Scorer.cs).
-export const SCORING_CATEGORIES = [
-	['Timeout handling', 20, 'Timeout'],
-	['Retry behavior', 15, 'Retry'],
-	['Graceful degradation', 15, 'GracefulDegradation'],
-	['Rate-limit handling', 10, 'RateLimit'],
-	['Idempotency', 10, 'Idempotency'],
-	['Authentication failure handling', 10, 'AuthenticationFailure'],
-	['Response validation', 10, 'ResponseValidation'],
-	['Dependency-failure handling', 10, 'DependencyFailure']
-] as const;
-
-// findingCategory → scoring category. Circuit breaker and fallback feed graceful degradation; Baseline isn't scored.
-const scoringCategory: Record<string, string> = {
+// Scoring categories in the backend's order (Scorer.cs), by their full names. Weights and scores are stored by the backend.
+export const scoringCategoryLabels: Record<ScoringCategory, string> = {
 	Timeout: 'Timeout handling',
 	Retry: 'Retry behavior',
-	CircuitBreaker: 'Graceful degradation',
-	Fallback: 'Graceful degradation',
-	'Graceful degradation': 'Graceful degradation',
-	'Rate-limit': 'Rate-limit handling',
+	GracefulDegradation: 'Graceful degradation',
+	RateLimit: 'Rate-limit handling',
 	Idempotency: 'Idempotency',
-	'Auth failure': 'Authentication failure handling',
-	'Response validation': 'Response validation',
-	'Dependency failure': 'Dependency-failure handling'
+	AuthenticationFailure: 'Authentication failure handling',
+	ResponseValidation: 'Response validation',
+	DependencyFailure: 'Dependency-failure handling'
 };
 
-// Per-outcome points (PROJECT.md §14.3); Inconclusive and Not applicable aren't scored.
-const POINTS: Partial<Record<FindingOutcome, number>> = { Passed: 100, Degraded: 50, Failed: 0 };
-
-export const isScored = (f: Pick<RunFinding, 'outcome'>) => POINTS[f.outcome] !== undefined;
-
-export type CategoryScore = { label: string; weight: number; score: number | null; findings: number; inconclusive: number };
-
-// A category score is the mean of its scored findings; null when it has none.
-export function categoryScores(findings: RunFinding[]): CategoryScore[] {
-	return SCORING_CATEGORIES.map(([label, weight]) => {
-		const mine = findings.filter((f) => scoringCategory[findingCategory(f)] === label);
-		const points = mine.flatMap((f) => POINTS[f.outcome] ?? []);
-		return {
-			label,
-			weight,
-			findings: mine.length,
-			inconclusive: mine.filter((f) => f.outcome === 'Inconclusive').length,
-			score: points.length ? points.reduce((a, b) => a + b, 0) / points.length : null
-		};
-	});
-}
-
-// Weighted mean of the scored categories; empty categories' weight is redistributed by leaving them out.
-export function weightedScore(categories: CategoryScore[]): number | null {
-	const scored = categories.filter((c) => c.score != null);
-	const weight = scored.reduce((sum, c) => sum + c.weight, 0);
-	return weight ? scored.reduce((sum, c) => sum + c.score! * c.weight, 0) / weight : null;
-}
-
-// The same method restricted to each endpoint, worst first; endpoints with no scored findings are left out.
-export function endpointScores(findings: RunFinding[]) {
-	const groups = Map.groupBy(findings, (f) => `${f.httpMethod} ${f.path}`);
-	return [...groups.values()]
-		.map((group) => ({ httpMethod: group[0].httpMethod, path: group[0].path, score: weightedScore(categoryScores(group)) }))
-		.filter((e): e is { httpMethod: string; path: string; score: number } => e.score != null)
-		.sort((a, b) => a.score - b.score);
-}

@@ -2,7 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import type { FeedRow, FindingOutcome, RunDetail, Severity, TimelineEvent } from '$lib/api';
 	import ScoreRing from '$lib/components/ScoreRing.svelte';
-	import { categoryScores, endpointScores, findingCategory, isScored, outcomeLabels } from '$lib/findings';
+	import { findingCategory, outcomeLabels, scoringCategoryLabels } from '$lib/findings';
 	import { dateTime, duration, PLACEHOLDER, score, scoreLabel } from '$lib/format';
 	import { send } from '$lib/problem';
 	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, runLabel, statusStyles, type FeedResult } from '$lib/runs';
@@ -28,10 +28,17 @@
 			['NotApplicable', 'bg-slate-600', 'text-slate-400']
 		] as const).map(([outcome, bar, tone]) => ({ label: outcomeLabels[outcome], value: count(outcome), bar, tone }))
 	);
-	const scored = $derived(findings.filter(isScored).length);
+	const scored = $derived(count('Passed') + count('Degraded') + count('Failed'));
 	const inconclusive = $derived(count('Inconclusive'));
-	// Same definition as the run history: scored findings over scored plus Inconclusive.
-	const coverage = $derived(scored + inconclusive ? Math.round((100 * scored) / (scored + inconclusive)) : null);
+	// Scores are shown as the backend stored them, never worked out here (PROJECT.md 14.3, rule 9).
+	const coverage = $derived(run.evidenceCoverage == null ? null : Math.round(run.evidenceCoverage));
+	// A Completed run always has stored categories, unless it predates scoring or the breakdown.
+	const unscored = $derived(
+		run.status !== 'Completed' ? 'Not scored. Only a run whose every scenario ran is scored.'
+		: run.score == null && run.categories == null ? 'This run finished before runs were scored.'
+		: run.categories == null ? 'This run was scored before its breakdown was stored.'
+		: 'No scored findings in this run.'
+	);
 
 	const change = $derived(run.score != null && run.previous ? Math.round(run.score - run.previous.score) : null);
 	const trend = $derived(
@@ -46,12 +53,10 @@
 		return parts.join(' ');
 	});
 
-	const categories = $derived(categoryScores(findings));
 	const failing = $derived(findings.filter((f) => f.outcome === 'Failed' || f.outcome === 'Degraded'));
 	// The findings query returns severity order, so the first rows are the worst.
 	const topFindings = $derived(failing.slice(0, 4));
 	const recommended = $derived(failing.filter((f) => f.recommendation));
-	const endpoints = $derived(endpointScores(findings));
 
 	// Unset or stale (after moving to another run) falls back to the first, worst timeline.
 	let timelineId = $state<string>();
@@ -411,7 +416,7 @@
 						<div class="h-full rounded-full bg-emerald-400" style:width="{coverage ?? 0}%"></div>
 					</div>
 					<p class="mt-2 text-[11px] text-slate-500">
-						{scored} of {scored + inconclusive} findings scored. Inconclusive and N/A findings don't affect the score.
+						{#if coverage == null}{unscored}{:else}{scored} of {scored + inconclusive} findings scored. Inconclusive and N/A findings don't affect the score.{/if}
 					</p>
 				</div>
 			</div>
@@ -442,6 +447,7 @@
 	<div class="mt-5 grid gap-5 lg:grid-cols-[5fr_3fr]">
 		<section class={card}>
 			{@render heading('Category breakdown', `Each category is the mean of its findings. Locked weights from scoring version ${run.scoringVersion}.`)}
+			{#if run.categories}
 			<div class="overflow-x-auto px-5 py-3">
 				<table class="w-full min-w-[34rem] text-left text-[13px]">
 					<thead class="text-[10px] tracking-wider text-slate-500 uppercase">
@@ -454,9 +460,9 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each categories as c (c.label)}
+						{#each run.categories as c (c.category)}
 							<tr>
-								<td class="py-2 pr-4 text-slate-200">{c.label}</td>
+								<td class="py-2 pr-4 text-slate-200">{scoringCategoryLabels[c.category]}</td>
 								<td class="py-2 pr-4 text-slate-500">{c.weight}%</td>
 								{#if c.score == null}
 									<td class="py-2 pr-4 text-[11px] text-slate-500">No scored findings · weight redistributed to other categories</td>
@@ -476,6 +482,9 @@
 					</tbody>
 				</table>
 			</div>
+			{:else}
+				<p class="px-5 py-8 text-center text-xs text-slate-500">{unscored}</p>
+			{/if}
 		</section>
 
 		<section class={card}>
@@ -566,9 +575,9 @@
 
 		<section class={card}>
 			{@render heading('Endpoint scores', 'Same method, one endpoint at a time')}
-			{#if endpoints.length}
+			{#if run.endpoints.length}
 				<ul class="divide-y divide-line-faint">
-					{#each endpoints as e (`${e.httpMethod} ${e.path}`)}
+					{#each run.endpoints as e (`${e.httpMethod} ${e.path}`)}
 						<li class="flex items-center gap-3 px-5 py-3">
 							<span class="flex min-w-0 flex-1 items-center gap-2 truncate">{@render endpoint(e.httpMethod, e.path)}</span>
 							<span class="h-1 w-24 overflow-hidden rounded-full bg-line" aria-hidden="true">
@@ -579,7 +588,7 @@
 					{/each}
 				</ul>
 			{:else}
-				<p class="px-5 py-8 text-center text-xs text-slate-500">No scored findings yet.</p>
+				<p class="px-5 py-8 text-center text-xs text-slate-500">{unscored}</p>
 			{/if}
 		</section>
 	</div>

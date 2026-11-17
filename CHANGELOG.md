@@ -381,6 +381,14 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- The run results page showed the category breakdown, endpoint scores, and evidence
+  coverage that the backend stored when it scored the run, and the browser's own copy
+  of the scoring method was removed. A run without a stored score (partially
+  completed, failed, cancelled, or still running) was shown as not scored instead of
+  getting a breakdown worked out from its findings, and run history showed no evidence
+  coverage for it. Run history rounded a coverage ending in .5 up, so it matched the
+  results page. PROJECT.md section 14.3 recorded the rule.
+
 - A scenario's outcome became its worst finding, with a judged finding ranked above an
   Inconclusive one, and the live run feed listed a scenario's findings in the same
   order. A scenario could now end as Not Applicable.

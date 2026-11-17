@@ -42,7 +42,7 @@ public static partial class ListRuns
         decimal? PreviousScore,
         string ScoringVersion,
         string? FailureMessage,
-        // Scored findings (Passed/Degraded/Failed) as a percentage of scored plus Inconclusive; null with no such findings.
+        // The stored coverage as a whole percentage; null for a run without one (see GetRun.Response.EvidenceCoverage).
         int? EvidenceCoverage);
 
     // "RUN-027", "run27" or "27" searches by run number.
@@ -116,11 +116,7 @@ public static partial class ListRuns
                             && other.EnvironmentId == row.Run.EnvironmentId && other.ScoringVersion == row.Run.ScoringVersion)
                         .OrderByDescending(other => other.CompletedAt)
                         .Select(other => other.ResilienceScore).FirstOrDefault(),
-                row.Run.ScoringVersion, row.Run.FailureMessage,
-                Scored = row.Run.ResilienceFindings.Count(finding => finding.Outcome == ResilienceFindingOutcome.Passed
-                    || finding.Outcome == ResilienceFindingOutcome.Degraded || finding.Outcome == ResilienceFindingOutcome.Failed),
-                Inconclusive = row.Run.ResilienceFindings.Count(finding =>
-                    finding.Outcome == ResilienceFindingOutcome.Inconclusive)
+                row.Run.ScoringVersion, row.Run.FailureMessage, row.Run.EvidenceCoverage
             })
             .ToListAsync(cancellationToken);
 
@@ -135,8 +131,7 @@ public static partial class ListRuns
                 run.Id, run.Number, run.EnvironmentName, run.Status, run.CompletedScenarios, run.TotalScenarios,
                 run.RequestedBy, run.CreatedAt, run.StartedAt, run.CompletedAt, run.ResilienceScore, run.PreviousScore,
                 run.ScoringVersion, run.FailureMessage,
-                run.Scored + run.Inconclusive == 0
-                    ? null
-                    : (int)Math.Round(100m * run.Scored / (run.Scored + run.Inconclusive)))).ToList()));
+                // Halves round up, as the results page and Scorer round them.
+                run.EvidenceCoverage is { } coverage ? (int)Math.Round(coverage, MidpointRounding.AwayFromZero) : null)).ToList()));
     }
 }

@@ -4,7 +4,7 @@ namespace Backend.Features.TestRuns;
 
 // Turns findings into the Resilience Score (FeaturesFlow 2.19, PROJECT.md 14.3). Pure: no database.
 // The same method scores a whole run or one endpoint; the caller chooses which findings to pass.
-// Frontend/src/lib/findings.ts repeats this for the run page; ScorerTests and findings.spec.ts pin both to the same numbers.
+// The only copy of the method: pages show what this stored (GetRun, GetProject) and do not score findings themselves.
 public static class Scorer
 {
     // Locked for scoring version 1.0, like the points below: changing either needs a new scoring version.

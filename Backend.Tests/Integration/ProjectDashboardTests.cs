@@ -118,8 +118,11 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Equal(TestRunStatus.Running, runs[0].Status);
         Assert.Null(runs[0].EvidenceCoverage);
         Assert.Equal((seeded.LatestRunId, 78m, 70m), (runs[1].Id, runs[1].Score, runs[1].PreviousScore));
-        Assert.Equal(100, runs[1].EvidenceCoverage);
+        // The stored coverage, rounded: not counted from the findings, which are all scored here.
+        Assert.Equal(67, runs[1].EvidenceCoverage);
         Assert.Null(runs[2].PreviousScore);
+        // Scored before coverage was stored.
+        Assert.Null(runs[2].EvidenceCoverage);
 
         var second = await Get("?pageSize=2&page=2");
         Assert.Equal((3, 2), (second.Matched, second.Page));
@@ -216,7 +219,16 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Equal((ScenarioType.DuplicateRequest, "/payments"), (timeline.ScenarioType, timeline.Path));
         Assert.Equal([1, 2], timeline.Events.Select(e => e.AttemptNo));
 
+        // The stored scores, endpoints worst first.
+        Assert.Equal(66.67m, run.EvidenceCoverage);
+        Assert.Equal(8, run.Categories!.Count);
+        Assert.Equal(75m, run.Categories.Single(c => c.Category == ScoringCategory.Retry).Score);
+        Assert.Equal([40m, 90m], run.Endpoints.Select(e => e.Score));
+
         var first = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{run.Previous.Id}", Json))!;
+        // A run with no stored breakdown gets none: nothing is worked out from its findings.
+        Assert.Equal((null, null), (first.EvidenceCoverage, first.Categories));
+        Assert.Empty(first.Endpoints);
         Assert.Null(first.Previous);
         Assert.Empty(first.Timelines);
 
@@ -385,6 +397,9 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Finding(latest, endpoints[0], ResilienceFindingOutcome.Failed);
         Finding(latest, endpoints[1], ResilienceFindingOutcome.Failed);
         Finding(latest, endpoints[2], ResilienceFindingOutcome.Passed);
+        latest.EvidenceCoverage = 66.67m;
+        db.Add(new EndpointResult { TestRunId = latest.Id, EndpointId = endpoints[1].Id, OverallScore = 90, Evidence = JsonDocument.Parse("[]") });
+        db.Add(new EndpointResult { TestRunId = latest.Id, EndpointId = endpoints[0].Id, OverallScore = 40, Evidence = JsonDocument.Parse("[]") });
         latest.CategoryScores = JsonSerializer.SerializeToDocument(Scorer.Score(
         [
             (ScoringCategory.Retry, ResilienceFindingOutcome.Passed), (ScoringCategory.Retry, ResilienceFindingOutcome.Degraded),

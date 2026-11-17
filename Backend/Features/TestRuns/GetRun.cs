@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend.Features.TestRuns;
 
-// Query: one run's results header and the failure timelines of its failing scenarios. Findings come from the
+// Query: one run's results header, its stored scores, and the failure timelines of its failing scenarios. Findings come from the
 // findings query (GET /projects/{id}/findings?run=), which the results page also loads.
 public static class GetRun
 {
@@ -28,6 +28,12 @@ public static class GetRun
         int TotalScenarios,
         int SkippedScenarios,
         decimal? Score,
+        // As stored when the run was scored. Null for a run that was not scored, or was scored before these were stored:
+        // nothing here is worked out from the findings (PROJECT.md 14.3, rule 9).
+        decimal? EvidenceCoverage,
+        List<Scorer.CategoryScore>? Categories,
+        // Worst first; empty when no endpoint scores are stored.
+        List<EndpointScore> Endpoints,
         string ScoringVersion,
         string? FailureMessage,
         // Previous completed, scored run on the same environment and scoring version (see ListRuns.Row.PreviousScore).
@@ -57,6 +63,8 @@ public static class GetRun
     public sealed record Current(Guid ExecutionId, JsonElement Parameters, JsonElement Invariants, List<Event> Events);
 
     public sealed record Previous(Guid Id, int Number, decimal Score);
+
+    public sealed record EndpointScore(string HttpMethod, string Path, decimal Score);
 
     public sealed record Timeline(
         Guid ExecutionId,
@@ -97,7 +105,8 @@ public static class GetRun
                 testRun.CreatedAt, testRun.StartedAt, testRun.CompletedAt, testRun.CompletedScenarios,
                 testRun.TotalScenarios, testRun.EnvironmentId,
                 Skipped = testRun.ScenarioExecutions.Count(execution => execution.Status == ScenarioExecutionStatus.Skipped),
-                testRun.ResilienceScore, testRun.ScoringVersion, testRun.FailureMessage
+                testRun.ResilienceScore, testRun.EvidenceCoverage, testRun.CategoryScores, testRun.ScoringVersion,
+                testRun.FailureMessage
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (run is null)
@@ -116,6 +125,12 @@ public static class GetRun
                         || (earlier.CreatedAt == other.CreatedAt && earlier.Id.CompareTo(other.Id) <= 0))),
                     other.ResilienceScore!.Value))
                 .FirstOrDefaultAsync(cancellationToken);
+
+        var endpoints = await db.EndpointResults.AsNoTracking()
+            .Where(result => result.TestRunId == runId)
+            .OrderBy(result => result.OverallScore).ThenBy(result => result.Endpoint.Path).ThenBy(result => result.Endpoint.HttpMethod)
+            .Select(result => new EndpointScore(result.Endpoint.HttpMethod, result.Endpoint.Path, result.OverallScore))
+            .ToListAsync(cancellationToken);
 
         var timelines = await db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId && db.ResilienceFindings.Any(finding =>
@@ -143,6 +158,7 @@ public static class GetRun
         return TypedResults.Ok(new Response(
             run.Id, run.Number, run.Status, run.EnvironmentName, run.RequestedBy, run.CreatedAt, run.StartedAt,
             run.CompletedAt, run.CompletedScenarios, run.TotalScenarios, run.Skipped, run.ResilienceScore,
+            run.EvidenceCoverage, run.CategoryScores?.Deserialize<List<Scorer.CategoryScore>>(JsonSerializerOptions.Web), endpoints,
             run.ScoringVersion, run.FailureMessage, previous, timelines,
             run.Status is TestRunStatus.Queued or TestRunStatus.Running ? await LiveAsync(db, runId, cancellationToken) : null));
     }
