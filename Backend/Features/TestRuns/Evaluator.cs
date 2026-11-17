@@ -22,9 +22,22 @@ public static class Evaluator
     private const int MaxRetryCalls = 5;
     private const long MinRetryGapMs = 100;
 
+    // What went wrong behind a Failed or Degraded finding, which its scoring category alone does not say: a retry storm
+    // and a target that fails without any fault are both Retry findings. Recommender has one rule per value.
+    public enum Problem
+    {
+        Unhandled, SlowUnderFault, CutShort, NotRecovered, NoReadDeadline,
+        RetryStorm, RetryWithoutPause,
+        DuplicatesBroke, SeparateRejected, DuplicateSideEffects,
+        AnsweredWithoutCredential, AuthUnhandled, AuthWrongStatus,
+        DependencyNotContained, NoFallback,
+        InvariantViolated, FailedWithoutFault
+    }
+
+    // Problem is set on every Failed and Degraded finding, and on no other.
     public sealed record Finding(
         ResiliencePattern Pattern, ScoringCategory Category, ResilienceFindingOutcome Outcome, RecommendationSeverity Severity,
-        string Summary, JsonDocument Evidence);
+        string Summary, JsonDocument Evidence, Problem? Problem = null);
 
     private enum Check { Held, Violated, NotEvaluated }
 
@@ -33,7 +46,11 @@ public static class Evaluator
         // The responses alone can't decide; a record count read back from the target can.
         bool NeedsReadBack = false,
         // Null: the outcome's usual severity.
-        RecommendationSeverity? Severity = null);
+        RecommendationSeverity? Severity = null,
+        Problem? Problem = null);
+
+    // A request after the fault that is not answered normally: whatever it got, the problem is the missing recovery.
+    private static Verdict Unrecovered(Verdict after) => after.Problem is null ? after : after with { Problem = Problem.NotRecovered };
 
     private sealed record Rated(ResiliencePattern Pattern, ScoringCategory Category, Verdict Verdict);
 
@@ -58,11 +75,11 @@ public static class Evaluator
                         "Whether the target enforces its own timeouts on slow callers or slow dependencies."))];
                 break;
             case ScenarioType.TimeoutDrop when probe is not null:
-                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, Compare(baseline, probe,
+                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, Unrecovered(Compare(baseline, probe,
                     parameters.GetProperty("mode").GetString() == "hold"
                         ? "The request after one the runner held open until it timed out"
                         : "The request after one whose connection the runner dropped",
-                    "Whether the target stopped working on the abandoned request or released its resources."))];
+                    "Whether the target stopped working on the abandoned request or released its resources.")))];
                 break;
             case ScenarioType.DuplicateRequest:
                 rated = [new(ResiliencePattern.Idempotency, ScoringCategory.Idempotency,
@@ -100,7 +117,9 @@ public static class Evaluator
             {
                 Outcome = ResilienceFindingOutcome.Failed,
                 Summary = $"A developer invariant was violated: {violated}",
-                Suggests = "The endpoint breaks a rule its developers set for this scenario."
+                Suggests = "The endpoint breaks a rule its developers set for this scenario.",
+                // A broken rule about duplicates is the side effect PROJECT.md 15.1 gives idempotency advice for.
+                Problem = type == ScenarioType.DuplicateRequest ? Problem.DuplicateSideEffects : Problem.InvariantViolated
             };
         else if (first.NeedsReadBack && checks.Any(check => check is { Type: InvariantType.MaxRecordsAfterDuplicates, Result.State: Check.Held }))
             first = first with
@@ -143,7 +162,8 @@ public static class Evaluator
             _ => RecommendationSeverity.Info
         };
         return new Finding(entry.Pattern, entry.Category, verdict.Outcome, severity, verdict.Summary,
-            JsonSerializer.SerializeToDocument(evidence, JsonSerializerOptions.Web));
+            JsonSerializer.SerializeToDocument(evidence, JsonSerializerOptions.Web),
+            verdict.Outcome is ResilienceFindingOutcome.Failed or ResilienceFindingOutcome.Degraded ? verdict.Problem : null);
     }
 
     // Authentication Expiry: the target itself has to turn the request away, then accept the valid credential again.
@@ -157,16 +177,16 @@ public static class Evaluator
         var verdict = status switch
         {
             null or >= 500 => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", expected, "",
-                "The endpoint does not handle a failed authentication.", notProven),
+                "The endpoint does not handle a failed authentication.", notProven, Problem: Problem.AuthUnhandled),
             // The only failure that exposes data (PROJECT.md 12.3). A 3xx carries none: redirects aren't followed, so it
             // falls through to Degraded with the other refusals.
             >= 200 and < 300 => new Verdict(ResilienceFindingOutcome.Failed, $"{what} was answered with {status}", expected, "",
                 "The endpoint answers without the credential its spec requires.", "Whether the response held protected data.",
-                Severity: RecommendationSeverity.Critical),
+                Severity: RecommendationSeverity.Critical, Problem: Problem.AnsweredWithoutCredential),
             401 or 403 => new Verdict(ResilienceFindingOutcome.Passed, $"{what} was rejected with {status}", expected, "",
                 "The endpoint fails closed.", notProven),
             _ => new Verdict(ResilienceFindingOutcome.Degraded, $"{what} was rejected with {status} rather than 401 or 403", expected, "",
-                "The request is turned away, but not as an authentication failure.", notProven)
+                "The request is turned away, but not as an authentication failure.", notProven, Problem: Problem.AuthWrongStatus)
         };
         return After(verdict, baseline, probe, Seen(baseline, what, fault, probe));
     }
@@ -180,7 +200,7 @@ public static class Evaluator
         var seen = Seen(baseline, what, fault, probe);
         if (Broke(fault))
             return new(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", expected, seen,
-                "The endpoint did not handle this condition.", "Where in the target the failure comes from.");
+                "The endpoint did not handle this condition.", "Where in the target the failure comes from.", Problem: Problem.Unhandled);
         // A read the timeout ended has not counted the whole body; the declared length has.
         var size = Math.Max(fault.ResponseBytes ?? 0, long.TryParse(Header(fault, "Content-Length"), out var declared) ? declared : 0);
         if (size == 0 && fault.ErrorType is null)
@@ -195,7 +215,7 @@ public static class Evaluator
                 fault.OutcomeType == ObservationOutcomeType.Timeout
                     ? "The response was still being delivered to a slow reader when the request timed out"
                     : $"A {size}-byte response was delivered in full over {fault.DurationMs} ms of slow reading",
-                expected, seen, "No complete-operation deadline was observed.", notProven);
+                expected, seen, "No complete-operation deadline was observed.", notProven, Problem: Problem.NoReadDeadline);
         else
             verdict = new(ResilienceFindingOutcome.Inconclusive,
                 $"The {size}-byte body is under {SlowReadMinBytes / 1024} KB, so it left the target before the first pause",
@@ -214,11 +234,12 @@ public static class Evaluator
         var isolation = After(status switch
         {
             null => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", contained, "",
-                "The dependency's failure became the endpoint's own.", howContained),
+                "The dependency's failure became the endpoint's own.", howContained, Problem: Problem.DependencyNotContained),
             < 400 or 502 or 503 or 504 => new Verdict(ResilienceFindingOutcome.Passed, $"{what} was answered with {status}", contained, "",
                 "The endpoint contains its dependency's failure.", howContained),
             _ => new Verdict(ResilienceFindingOutcome.Degraded, $"{what} was answered with {status}", contained, "",
-                "The endpoint answers, but not with a controlled error for a failed dependency.", howContained)
+                "The endpoint answers, but not with a controlled error for a failed dependency.", howContained,
+                Problem: Problem.DependencyNotContained)
         }, baseline, probe, seen);
         List<Rated> rated = [new(ResiliencePattern.DependencyFailure, ScoringCategory.DependencyFailure, isolation)];
         // A baseline that never worked decides nothing about retries or fallbacks either.
@@ -234,9 +255,11 @@ public static class Evaluator
                 "Whether the response was complete or a reduced one."),
             502 or 503 or 504 => new Verdict(ResilienceFindingOutcome.Degraded,
                 $"The target answered {status} while its dependency was down, with nothing in its place", alternative, seen,
-                "The failure is reported in a controlled way, but no alternative is offered.", "Whether a fallback exists for other failures."),
+                "The failure is reported in a controlled way, but no alternative is offered.", "Whether a fallback exists for other failures.",
+                Problem: Problem.NoFallback),
             _ => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", alternative, seen,
-                "The endpoint has no fallback for a failed dependency.", "Where in the target the failure comes from.")
+                "The endpoint has no fallback for a failed dependency.", "Where in the target the failure comes from.",
+                Problem: Problem.NoFallback)
         }));
         return rated;
     }
@@ -269,10 +292,10 @@ public static class Evaluator
         return worst.Outcome switch
         {
             ResilienceFindingOutcome.Failed => new(worst.Outcome, $"The target called {worst.Operation} {worst.Count} times during one request",
-                expected, observed, "Retries are not limited enough to spare a failing dependency.", notProven),
+                expected, observed, "Retries are not limited enough to spare a failing dependency.", notProven, Problem: Problem.RetryStorm),
             ResilienceFindingOutcome.Degraded => new(worst.Outcome,
                 $"The target called {worst.Operation} {worst.Count} times, as little as {worst.Gap} ms apart", expected, observed,
-                "Retry-like behavior without a pause between attempts.", notProven),
+                "Retry-like behavior without a pause between attempts.", notProven, Problem: Problem.RetryWithoutPause),
             ResilienceFindingOutcome.Passed when worst.Operation is not null => new(worst.Outcome,
                 $"The target called {worst.Operation} {worst.Count} times, at least {worst.Gap} ms apart", expected, observed,
                 "Behavior consistent with a few retries with a pause between them.", notProven),
@@ -302,7 +325,8 @@ public static class Evaluator
                 expected, seen, "The endpoint or the spec's example request does not work without a fault either.", notProven);
         if (all.FirstOrDefault(Broke) is { } broken)
             return new(ResilienceFindingOutcome.Failed, $"The target itself failed during the scenario: attempt {broken.AttemptNo} got {Describe(broken)}",
-                expected, seen, "The endpoint failed on an ordinary request; the injected fault was not the cause.", notProven);
+                expected, seen, "The endpoint failed on an ordinary request; the injected fault was not the cause.", notProven,
+                Problem: Problem.FailedWithoutFault);
         if (type == ScenarioType.EmptyResponse && faults[0].ResponseBytes is null or 0)
             return new(ResilienceFindingOutcome.NotApplicable, "The target's own response body is already empty, so the fault changed nothing",
                 expected, seen, "Empty Response does not apply to this endpoint.", notProven);
@@ -322,7 +346,7 @@ public static class Evaluator
         var lowered = recovery.Outcome == ResilienceFindingOutcome.Inconclusive
             || (recovery.Outcome == ResilienceFindingOutcome.Failed && fault.Outcome != ResilienceFindingOutcome.Failed)
             || (recovery.Outcome == ResilienceFindingOutcome.Degraded && fault.Outcome == ResilienceFindingOutcome.Passed);
-        return (lowered ? recovery : fault) with { Expected = fault.Expected, Observed = seen };
+        return (lowered ? Unrecovered(recovery) : fault) with { Expected = fault.Expected, Observed = seen };
     }
 
     private static string Seen(HttpObservation? baseline, string what, HttpObservation fault, HttpObservation probe) =>
@@ -372,16 +396,16 @@ public static class Evaluator
                 "How the endpoint behaves under this fault.");
         if (status is null or >= 500 || (status >= 400 && baseline is not null))
             return new(ResilienceFindingOutcome.Failed, $"{what} got {Describe(subject)}", expected, seen,
-                "The endpoint did not handle this condition.", "Where in the target the failure comes from.");
+                "The endpoint did not handle this condition.", "Where in the target the failure comes from.", Problem: Problem.Unhandled);
         if (status >= 400)
             return new(ResilienceFindingOutcome.Inconclusive, $"The target rejected the request with {status}, so the fault's effect could not be judged",
                 expected, seen, "The spec's example request is not valid for the target.", "How the endpoint behaves under this fault.");
         if (subject.ErrorType is not null)
             return new(ResilienceFindingOutcome.Degraded, $"{what} was answered, but the response body was cut short", expected, seen,
-                "The endpoint answers under this condition, but not completely.", notProven);
+                "The endpoint answers under this condition, but not completely.", notProven, Problem: Problem.CutShort);
         if (baseline?.DurationMs is { } normal && subject.DurationMs is { } took && took > Math.Max(3 * normal, normal + SlowMarginMs))
             return new(ResilienceFindingOutcome.Degraded, $"{what} was answered in {took} ms, against {normal} ms for the baseline", expected, seen,
-                "The endpoint answers under this condition, but much more slowly.", notProven);
+                "The endpoint answers under this condition, but much more slowly.", notProven, Problem: Problem.SlowUnderFault);
         return new(ResilienceFindingOutcome.Passed, $"{what} was answered normally", expected, seen,
             "The endpoint tolerates this condition.", notProven);
     }
@@ -397,7 +421,8 @@ public static class Evaluator
         const string records = "How many records the target created.";
         if (broken > 0)
             return new(ResilienceFindingOutcome.Failed, $"{broken} of {copies.Count} duplicate requests got a server error or no response",
-                expected, seen, "The endpoint does not handle repeated or concurrent copies of a request.", records);
+                expected, seen, "The endpoint does not handle repeated or concurrent copies of a request.", records,
+                Problem: Problem.DuplicatesBroke);
         if (accepted == 0)
             return new(ResilienceFindingOutcome.Inconclusive, "The target rejected every copy, so duplicate handling was not observed",
                 expected, seen, "The spec's example request is not valid for the target.", records);
@@ -406,7 +431,7 @@ public static class Evaluator
                 ? new(ResilienceFindingOutcome.Passed, "Every copy with its own idempotency key was accepted", expected, seen,
                     "Requests with different keys are treated as separate operations.", records)
                 : new(ResilienceFindingOutcome.Degraded, "Some copies with their own idempotency key were rejected", expected, seen,
-                    "Separate operations may be mistaken for duplicates.", records);
+                    "Separate operations may be mistaken for duplicates.", records, Problem: Problem.SeparateRejected);
         return accepted == 1
             ? new(ResilienceFindingOutcome.Passed, "Only one of the duplicate requests was accepted", expected, seen,
                 "Behavior consistent with duplicate detection.", "That exactly one record exists; no read-back checked it.")

@@ -860,7 +860,15 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         Assert.Equal([1, 2, 3], evidence.GetProperty("observations").EnumerateArray().Select(o => o.GetProperty("attemptNo").GetInt32()));
         // The results page lists the finding.
         var listed = await client.GetFromJsonAsync<Backend.Features.Findings.ListFindings.Response>($"/api/projects/{projectId}/findings?run={runId}", Json);
-        Assert.Equal(ResilienceFindingOutcome.Failed, Assert.Single(listed!.Findings).Outcome);
+        var row = Assert.Single(listed!.Findings);
+        Assert.Equal(ResilienceFindingOutcome.Failed, row.Outcome);
+        // The failed finding was saved with the recommendation of its problem, and the page gets its title and fix.
+        var advice = Recommender.For(Evaluator.Problem.DuplicateSideEffects);
+        Assert.Equal(new Backend.Features.Findings.ListFindings.RecommendationInfo(advice.Title, advice.Fix), row.Recommendation);
+        var recommendation = await db.Recommendations.AsNoTracking().SingleAsync(r => r.TestRunId == runId);
+        Assert.Equal((finding.Id, finding.EndpointId, finding.ScenarioExecutionId, "Idempotency", RecommendationSeverity.High, "DuplicateSideEffects"),
+            (recommendation.ResilienceFindingId, recommendation.EndpointId, recommendation.ScenarioExecutionId, recommendation.Category,
+                recommendation.Severity, recommendation.Evidence.RootElement.GetProperty("rule").GetString()));
     }
 
     private static async Task SetParametersAsync(HttpClient client, Guid projectId, Guid scenarioId, object parameters) =>

@@ -499,14 +499,31 @@ public sealed class RunExecutor(
         var findings = Evaluator.Evaluate(execution.ScenarioType, parameters, invariants, observations);
         if (findings.Count > 0)
         {
-            // One transaction: a finding never exists without its scenario's outcome.
+            // One transaction: a finding never exists without its scenario's outcome, or without its recommendation.
             await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            db.ResilienceFindings.AddRange(findings.Select(finding => new ResilienceFinding
+            foreach (var finding in findings)
             {
-                TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
-                Pattern = finding.Pattern, Category = finding.Category, Outcome = finding.Outcome, Severity = finding.Severity,
-                Summary = finding.Summary, Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
-            }));
+                var saved = new ResilienceFinding
+                {
+                    TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
+                    Pattern = finding.Pattern, Category = finding.Category, Outcome = finding.Outcome, Severity = finding.Severity,
+                    Summary = finding.Summary, Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
+                };
+                db.ResilienceFindings.Add(saved);
+                // A Failed or Degraded finding gets the fix its problem calls for (FeaturesFlow 2.22).
+                if (finding.Problem is { } problem)
+                {
+                    var advice = Recommender.For(problem);
+                    db.Recommendations.Add(new Recommendation
+                    {
+                        TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
+                        ResilienceFinding = saved, Category = finding.Category.ToString(), Severity = finding.Severity,
+                        Title = advice.Title, Description = advice.Why, Remediation = advice.Fix,
+                        Evidence = JsonSerializer.SerializeToDocument(new { rule = problem.ToString() }, JsonSerializerOptions.Web),
+                        CreatedAt = time.GetUtcNow()
+                    });
+                }
+            }
             await db.SaveChangesAsync(cancellationToken);
             // The scenario's outcome is its worst finding; one that was judged outranks one that could not be.
             var outcome = findings.Select(finding => finding.Outcome switch

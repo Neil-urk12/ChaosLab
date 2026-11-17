@@ -290,7 +290,7 @@ Built: when a run ends with every scenario run (status Completed), the runner sc
 
 ### 2.20 Viewing test results [Partial]
 
-Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: nothing produces recommendations yet (section 2.22), so real runs show findings (2.18) and a score (2.19) but no recommendations, and there is no drill-down into a single endpoint or scenario.
+Built: the run results page and API, showing the score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and failure timelines of failing scenarios. Not built: there is no drill-down into a single endpoint or scenario. Runs executed before recommendations existed (2.22) show none.
 
 1. The user opens a completed run.
 2. Retrieve run information, scenario executions, findings, scores, and recommendations.
@@ -303,12 +303,16 @@ Built: the run results page and API, showing the score, evidence coverage, categ
 2. Identify failure-injection start, requests sent, errors and responses received, repeated attempts, timeout events, recovery events, and scenario completion.
 3. Build and display the timeline. The user can inspect individual events.
 
-### 2.22 Recommendation generation [Planned]
+### 2.22 Recommendation generation [Partial]
 
-1. Retrieve the Fail, Degraded, and weak findings.
-2. Identify the type of problem.
-3. Map it to deterministic, rule-based recommendations (for example bounded retries with exponential backoff and jitter, honoring `Retry-After`, idempotency keys, schema validation, explicit timeout budgets).
-4. Attach each recommendation to the endpoint, scenario, pattern, and severity.
+Built: every Fail and Degraded finding is saved with one recommendation, in the same step that saves the finding. The evaluator names the problem behind the finding, because one scoring category holds different problems (a retry storm, retries without a pause, and a target that fails without any fault are all Retry findings), and a fixed rule per problem gives the title and the fix. The results page, the findings page, and the findings export show it. Not built: rules for honoring `Retry-After`, for validating malformed or empty responses, and for circuit breakers, because no finding can show those problems until their faults run in the dependency path (2.18) and circuit-breaker evidence is collected. Reports (2.24) do not exist yet.
+
+Decided: "weak" findings are not a separate kind; only Fail and Degraded findings get a recommendation, since an Inconclusive finding proves nothing about the API. A finding gets exactly one recommendation. Runs executed before this existed are not backfilled.
+
+1. Take each Fail and Degraded finding as it is evaluated.
+2. Identify the type of problem (the evaluator does this when it decides the outcome).
+3. Map it to a deterministic, rule-based recommendation (for example bounded retries with exponential backoff and jitter, idempotency keys, explicit timeout budgets).
+4. Attach the recommendation to the endpoint, scenario, finding, category, and severity.
 5. Save, display in the results, and include in reports. ChaosLab does not change source code.
 
 ### 2.23 Test run history [Partial]

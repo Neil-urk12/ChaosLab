@@ -8,6 +8,16 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Rule-based recommendations. Every Fail and Degraded finding was saved with one
+  recommendation that names a fix, such as limiting retries, waiting between them,
+  storing idempotency keys, failing closed on a bad credential, or isolating a failing
+  dependency. The rule was chosen by the problem the evaluator found, not by the
+  finding's category, so a retry storm and a target that failed without any fault no
+  longer shared the same advice. The results page, the findings page, and the findings
+  export, which already had a place for recommendations, showed them. Runs executed
+  earlier were not backfilled. Rules for honoring `Retry-After`, validating malformed
+  or empty responses, and circuit breakers were left out, because no finding can show
+  those problems yet.
 - Evaluation rules for the injector's and the simulator's faults, so those scenarios
   produced findings instead of completing without one. Authentication Expiry was
   judged on whether the target rejected the request with 401 or 403, and a 2xx answer

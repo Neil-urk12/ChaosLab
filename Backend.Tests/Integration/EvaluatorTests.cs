@@ -136,6 +136,51 @@ public sealed class EvaluatorTests
     }
 
     [Fact]
+    public void Names_the_problem_behind_a_failed_or_degraded_finding_and_no_other()
+    {
+        Evaluator.Problem?[] Problems(ScenarioType type, object parameters, HttpObservation fault, int recovery = 200) =>
+            Faulted(type, parameters, fault, recovery).Select(finding => finding.Problem).ToArray();
+        var auth = new { credential = "invalid" };
+        var down = new { dependency = "unreachable" };
+
+        Assert.Equal([Evaluator.Problem.AnsweredWithoutCredential], Problems(ScenarioType.AuthExpiry, auth, Observation(2, "fault", 200)));
+        Assert.Equal([Evaluator.Problem.AuthWrongStatus], Problems(ScenarioType.AuthExpiry, auth, Observation(2, "fault", 404)));
+        // Rejected correctly, but the request after it failed: the problem is the missing recovery.
+        Assert.Equal([Evaluator.Problem.NotRecovered], Problems(ScenarioType.AuthExpiry, auth, Observation(2, "fault", 401), recovery: 500));
+        // One category, different problems: a retry storm and retries without a pause are both Retry findings.
+        Assert.Equal([Evaluator.Problem.DependencyNotContained, Evaluator.Problem.RetryStorm, Evaluator.Problem.NoFallback],
+            Problems(ScenarioType.DnsFailure, down,
+                Observation(2, "fault", null, calls: [0, 200, 400, 600, 800, 1000], outcome: ObservationOutcomeType.Timeout)));
+        Assert.Equal([Evaluator.Problem.DependencyNotContained, Evaluator.Problem.RetryWithoutPause, Evaluator.Problem.NoFallback],
+            Problems(ScenarioType.DnsFailure, down, Observation(2, "fault", 500, calls: [0, 10, 20])));
+        // So is a 5xx Storm during which the target itself failed, and that is no retry problem at all.
+        Assert.Equal([Evaluator.Problem.FailedWithoutFault],
+            Problems(ScenarioType.ServerErrorStorm, new { status = 503, count = 1, probability = 1.0 }, Observation(2, "fault", 500)));
+        // A broken rule about duplicates gets the idempotency advice.
+        var count = new Invariant(InvariantType.MaxRecordsAfterDuplicates, new(Max: 1), new("GET", "/orders"));
+        Assert.Equal(Evaluator.Problem.DuplicateSideEffects, Evaluator.Evaluate(
+            ScenarioType.DuplicateRequest, Parameters(new { copies = 2, key = "same", delayMs = 0 }), [count],
+            [Observation(1, "fault", 201), Observation(2, "fault", 201), Observation(3, "readBack", 200, body: "{\"data\":[{},{}]}", invariant: 0)])
+            .Single().Problem);
+        // Passed and Inconclusive findings name none.
+        Assert.Equal([null], Problems(ScenarioType.AuthExpiry, auth, Observation(2, "fault", 401)));
+        Assert.Equal([null, null, null], Problems(ScenarioType.DnsFailure, down, Observation(2, "fault", 200, calls: [0])));
+    }
+
+    // A problem added later must be given a rule, or its findings would silently get no recommendation.
+    [Fact]
+    public void Every_problem_has_a_recommendation()
+    {
+        Assert.All(Enum.GetValues<Evaluator.Problem>(), problem =>
+        {
+            var advice = Recommender.For(problem);
+            Assert.All(new[] { advice.Title, advice.Why, advice.Fix }, text => Assert.False(string.IsNullOrWhiteSpace(text)));
+            // The Title column's limit.
+            Assert.InRange(advice.Title.Length, 1, 500);
+        });
+    }
+
+    [Fact]
     public void Words_findings_as_observation_suggestion_and_what_is_not_proven()
     {
         var finding = Evaluator.Evaluate(ScenarioType.TimeoutDrop, Parameters(new { mode = "drop" }), [],
