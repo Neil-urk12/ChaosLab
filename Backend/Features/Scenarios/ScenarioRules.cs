@@ -68,7 +68,8 @@ public static class ScenarioRules
                     return $"{field.Key} must be one of {string.Join(", ", field.Choices)}.";
             }
             else if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var number)
-                || number < field.Min || number > field.Max || (field.Integer && number != Math.Floor(number)))
+                // TryGetInt32, not a whole-valued double: the runner reads these with GetInt32, which throws on 3000.0 and 3e3.
+                || number < field.Min || number > field.Max || (field.Integer && !value.TryGetInt32(out _)))
                 return $"{field.Key} must be {(field.Integer ? "a whole number" : "a number")} from {field.Min} to {field.Max}.";
         }
         return null;

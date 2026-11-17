@@ -100,6 +100,10 @@ public sealed class ScenarioEndpointTests(PostgreSqlFixture postgres)
 
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync(url, new { parameters = new { copies = 1, key = "same", delayMs = 0 } })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync(url, new { parameters = new { copies = 2 } })).StatusCode);
+        // Whole numbers written as 3000.0 or 3e3 are refused: the runner cannot read them. Raw JSON, because the serializer writes 3000.
+        foreach (var delayMs in new[] { "3000.0", "3e3" })
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsync(url, new StringContent(
+                """{"parameters":{"copies":2,"key":"same","delayMs":""" + delayMs + "}}", System.Text.Encoding.UTF8, "application/json"))).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync(url, new { invariants = new object?[] { null } })).StatusCode);
         // Record count needs a read-back request to count with.
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync(url,
