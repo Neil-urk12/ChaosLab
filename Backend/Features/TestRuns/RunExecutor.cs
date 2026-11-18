@@ -268,8 +268,9 @@ public sealed class RunExecutor(
         // environment's route, so a scenario running beside one would meet a fault it never asked for.
         bool Alone(Execution execution) => concurrency > 1 && execution.ScenarioType == ScenarioType.DnsFailure;
         // One lane per endpoint, its scenarios in sequence order, since two scenarios on one endpoint at once would count
-        // each other's records. Executions are sequenced by endpoint, so with concurrency 1 this is the sequence order.
-        var lanes = executions.Where(execution => !Alone(execution)).GroupBy(execution => execution.EndpointId).ToList();
+        // each other's records. With concurrency 1, a single lane keeps the sequence order whatever it is sorted by.
+        var lanes = executions.Where(execution => !Alone(execution))
+            .GroupBy(execution => concurrency == 1 ? Guid.Empty : execution.EndpointId).ToList();
         await Parallel.ForEachAsync(lanes, new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancellationToken },
             async (lane, token) =>
             {
