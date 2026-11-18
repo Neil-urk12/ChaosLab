@@ -13,12 +13,12 @@ using Microsoft.EntityFrameworkCore;
 namespace Backend.Features.TestRuns;
 
 // Background runner (FeaturesFlow 2.16, 2.17). Takes Queued runs oldest first and works through each run's scenario
-// executions one at a time: an optional baseline request, then the fault. Latency, Timeout / Drop and Duplicate
-// Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
+// executions, up to the run's concurrency at once, each endpoint's in order (ExecuteRunAsync); a scenario the runner
+// itself failed is tried again up to the run's runner retries. Each scenario sends an optional baseline request, then
+// the fault. Latency, Timeout / Drop and Duplicate Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
 // through the FaultInjector (PROJECT.md 10). Dependency failure arms the DependencySimulator in the target's outbound path.
 // Every request is stored as an HttpObservation, and each completed scenario is evaluated into its findings
 // (2.18, Evaluator). A run whose every scenario ran is then scored (2.19, Scorer).
-// shortcut: ignores the run's concurrency and runner-retry settings (always 1 and 0); honour them when experiments get slow.
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
 public sealed class RunExecutor(
     IServiceScopeFactory scopes, IHttpClientFactory httpClientFactory, CredentialProtector protector, TimeProvider time,
@@ -31,17 +31,19 @@ public sealed class RunExecutor(
     public const string NoCredential = "No credential is stored for this operation, so there is none to take away.";
     private const int MaxStoredBodyBytes = 16 * 1024;
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(1);
 
-    private sealed record RunConfig(bool BaselineRequests, TargetConfig Target);
+    private sealed record RunConfig(int Concurrency, bool BaselineRequests, int RunnerRetries, TargetConfig Target);
 
     private sealed record TargetConfig(string BaseUrl, bool VerifyTls, int RequestTimeoutSeconds);
 
     private sealed record Context(Guid RunId, RunConfig Config, ApiEnvironment Environment, List<SchemeInfo> Schemes, JsonElement Document);
 
+    // RunnerAttempt counts the runner's tries at this scenario, from 1; each observation records it.
     private sealed record Execution(
         Guid Id, Guid EndpointId, ScenarioType ScenarioType, JsonDocument Parameters, JsonDocument Invariants, string HttpMethod,
         string Path,
-        JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security);
+        JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security, int RunnerAttempt);
 
     // The endpoint's request, ready to be sent any number of times. Authenticate applies the stored credentials, or
     // the given secret in their place. EnvironmentHeaders is the part of Headers that is not the endpoint's own.
@@ -258,48 +260,87 @@ public sealed class RunExecutor(
                 execution.Id, execution.EndpointId, execution.ScenarioType, execution.Parameters, execution.Invariants,
                 execution.Endpoint.HttpMethod,
                 execution.Endpoint.Path, execution.Endpoint.Parameters, execution.Endpoint.RequestBodySchema,
-                execution.Endpoint.SecurityRequirements))
+                execution.Endpoint.SecurityRequirements, 1))
             .ToListAsync(cancellationToken);
 
-        foreach (var execution in executions)
-        {
-            // Re-checked before every scenario (2.17): a cancelled run starts nothing new; TickAsync skips the rest.
-            var startedAt = time.GetUtcNow();
-            if (await db.ScenarioExecutions
-                    .Where(row => row.Id == execution.Id && row.Status == ScenarioExecutionStatus.Queued
-                        && row.TestRun.Status == TestRunStatus.Running)
-                    .ExecuteUpdateAsync(setters => setters
-                        .SetProperty(row => row.Status, ScenarioExecutionStatus.Running)
-                        .SetProperty(row => row.StartedAt, startedAt), cancellationToken) == 0)
-                return null;
+        var concurrency = Math.Clamp(config.Concurrency, 1, CreateRun.MaxConcurrency);
+        // Side by side, Dependency failures wait and then run alone: the armed simulator cuts every call through the
+        // environment's route, so a scenario running beside one would meet a fault it never asked for.
+        bool Alone(Execution execution) => concurrency > 1 && execution.ScenarioType == ScenarioType.DnsFailure;
+        // One lane per endpoint, its scenarios in sequence order, since two scenarios on one endpoint at once would count
+        // each other's records. Executions are sequenced by endpoint, so with concurrency 1 this is the sequence order.
+        var lanes = executions.Where(execution => !Alone(execution)).GroupBy(execution => execution.EndpointId).ToList();
+        await Parallel.ForEachAsync(lanes, new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancellationToken },
+            async (lane, token) =>
+            {
+                foreach (var execution in lane)
+                    if (!await RunScenarioAsync(context, execution, token))
+                        return;
+            });
+        foreach (var execution in executions.Where(Alone))
+            if (!await RunScenarioAsync(context, execution, cancellationToken))
+                break;
+        return null;
+    }
 
-            ScenarioExecutionStatus status;
-            string? reason;
+    // Runs one scenario and stores its status. A runner failure is tried again up to the run's runner retries
+    // (PROJECT.md 10.3); every other result already says what happened. Returns false when the run was cancelled first.
+    private async Task<bool> RunScenarioAsync(Context context, Execution execution, CancellationToken cancellationToken)
+    {
+        // Its own scope: scenarios run side by side, and a DbContext serves one caller at a time.
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        // Re-checked before every scenario (2.17): a cancelled run starts nothing new; TickAsync skips the rest.
+        var startedAt = time.GetUtcNow();
+        if (await db.ScenarioExecutions
+                .Where(row => row.Id == execution.Id && row.Status == ScenarioExecutionStatus.Queued
+                    && row.TestRun.Status == TestRunStatus.Running)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(row => row.Status, ScenarioExecutionStatus.Running)
+                    .SetProperty(row => row.StartedAt, startedAt), cancellationToken) == 0)
+            return false;
+
+        ScenarioExecutionStatus status;
+        string? reason;
+        for (var runnerAttempt = 1; ; runnerAttempt++)
+        {
             try
             {
-                (status, reason) = await ExecuteScenarioAsync(db, context, execution, cancellationToken);
+                (status, reason) = await ExecuteScenarioAsync(db, context, execution with { RunnerAttempt = runnerAttempt },
+                    cancellationToken);
+                break;
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
-                // A runner failure in one scenario is never the target's, and the run goes on.
-                logger.LogError(exception, "Scenario execution {ExecutionId} stopped on a runner error.", execution.Id);
+                // A runner failure in one scenario is never the target's, and the run goes on. A cancelled run is not retried.
+                logger.LogError(exception, "Scenario execution {ExecutionId} stopped on a runner error (try {Try}).", execution.Id,
+                    runnerAttempt);
                 db.ChangeTracker.Clear();
-                (status, reason) = (ScenarioExecutionStatus.Failed, "The runner hit an internal error during this scenario.");
+                if (runnerAttempt > context.Config.RunnerRetries
+                    || !await db.TestRuns.AnyAsync(run => run.Id == context.RunId && run.Status == TestRunStatus.Running,
+                        cancellationToken))
+                {
+                    (status, reason) = (ScenarioExecutionStatus.Failed, runnerAttempt == 1
+                        ? "The runner hit an internal error during this scenario."
+                        : $"The runner hit an internal error during this scenario on each of {runnerAttempt} tries.");
+                    break;
+                }
+                await Task.Delay(RetryPause, time, cancellationToken);
             }
-            db.ChangeTracker.Clear();
-
-            var completedAt = time.GetUtcNow();
-            await db.ScenarioExecutions.Where(row => row.Id == execution.Id)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(row => row.Status, status)
-                    .SetProperty(row => row.FailureReason, reason)
-                    .SetProperty(row => row.CompletedAt, completedAt), cancellationToken);
-            // Counts every scenario the runner finished, skipped and runner errors included, so progress reaches the total.
-            await db.TestRuns.Where(row => row.Id == runId)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(row => row.CompletedScenarios, row => row.CompletedScenarios + 1), cancellationToken);
         }
-        return null;
+        db.ChangeTracker.Clear();
+
+        var completedAt = time.GetUtcNow();
+        await db.ScenarioExecutions.Where(row => row.Id == execution.Id)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(row => row.Status, status)
+                .SetProperty(row => row.FailureReason, reason)
+                .SetProperty(row => row.CompletedAt, completedAt), cancellationToken);
+        // Counts every scenario the runner finished, skipped and runner errors included, so progress reaches the total.
+        await db.TestRuns.Where(row => row.Id == context.RunId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(row => row.CompletedScenarios, row => row.CompletedScenarios + 1), cancellationToken);
+        return true;
     }
 
     private async Task<(ScenarioExecutionStatus, string?)> ExecuteScenarioAsync(
@@ -319,7 +360,10 @@ public sealed class RunExecutor(
         // Without a stored credential the faulted request would be the baseline again.
         if (execution.ScenarioType == ScenarioType.AuthExpiry && !prepared.HasCredential)
             return (ScenarioExecutionStatus.Skipped, NoCredential);
-        var attempt = 0;
+        // A retry numbers its requests after the ones a failed try already stored, so no two share a number.
+        var attempt = execution.RunnerAttempt == 1 ? 0
+            : await db.HttpObservations.Where(observation => observation.ScenarioExecutionId == execution.Id)
+                .MaxAsync(observation => (int?)observation.AttemptNo, cancellationToken) ?? 0;
         var observations = new List<HttpObservation>();
         // Saved one by one, so the live view shows each request as it finishes.
         async Task<HttpObservation> RecordAsync(Task<HttpObservation> sending)
@@ -666,6 +710,8 @@ public sealed class RunExecutor(
             .Where(secret => secret is { Length: >= 8 }).SelectMany(secret => new[] { secret!, Uri.EscapeDataString(secret!) })
             .Distinct().ToList();
         string Redact(string text) => secrets.Aggregate(text, (kept, secret) => kept.Replace(secret, "[redacted]"));
+        // Requests of a failed try stay on record; this tells them apart from the try that counted.
+        metadata["runnerAttempt"] = execution.RunnerAttempt;
         var started = time.GetTimestamp();
         using var kept = new MemoryStream();
         try

@@ -133,8 +133,14 @@
 	}
 
 	// ---- Options, confirmation and start ----
-	// shortcut: concurrency and runner-retry options are hidden until RunExecutor honours them; the API defaults them to 1 and 0.
+	// The API's limits (CreateRun.MaxConcurrency, MaxRunnerRetries).
+	const CONCURRENCY = [1, 2, 3, 4, 5];
+	const RETRIES = [0, 1, 2, 3];
+	const selectClass =
+		'h-9 w-20 shrink-0 rounded-md border border-line bg-panel pr-9 text-[13px] text-slate-200 focus:border-accent focus:ring-1 focus:ring-accent';
 	let baseline = $state(true);
+	let concurrency = $state(1);
+	let runnerRetries = $state(0);
 	let confirmed = $state(false);
 	let starting = $state(false);
 	let startError = $state('');
@@ -169,6 +175,8 @@
 				body: JSON.stringify({
 					scenarioIds: selected.map((s) => s.id),
 					baselineRequests: baseline,
+					concurrency,
+					runnerRetries,
 					confirmStateChanging: confirmed
 				})
 			});
@@ -361,6 +369,29 @@
 							<p class="mt-1 text-[11px] text-slate-500">Send a normal request first where a scenario needs one.</p>
 						</div>
 						<Toggle checked={baseline} label="Baseline requests" onchange={(on) => (baseline = on)} />
+					</div>
+					<div class="flex items-start justify-between gap-4 py-5">
+						<div>
+							<label for="concurrency" class="text-[13px]">Scenarios at once</label>
+							<p class="mt-1 text-[11px] text-slate-500">
+								One at a time keeps timings clean. With more, different endpoints run side by side, so timings can read slower.
+								An endpoint's own scenarios and dependency failures still run alone.
+							</p>
+						</div>
+						<select id="concurrency" bind:value={concurrency} class={selectClass}>
+							{#each CONCURRENCY as n (n)}<option value={n}>{n}</option>{/each}
+						</select>
+					</div>
+					<div class="flex items-start justify-between gap-4 py-5">
+						<div>
+							<label for="runner-retries" class="text-[13px]">Retry runner errors</label>
+							<p class="mt-1 text-[11px] text-slate-500">
+								Tries a scenario again when Chaos Lab itself fails, never when the target does. Requests from a failed try are kept and sent again.
+							</p>
+						</div>
+						<select id="runner-retries" bind:value={runnerRetries} class={selectClass}>
+							{#each RETRIES as n (n)}<option value={n}>{n}</option>{/each}
+						</select>
 					</div>
 				</div>
 			</section>

@@ -871,6 +871,121 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
                 recommendation.Severity, recommendation.Evidence.RootElement.GetProperty("rule").GetString()));
     }
 
+    [Fact]
+    public async Task Side_by_side_runs_endpoints_in_parallel_lanes_and_dependency_failures_alone()
+    {
+        using var listener = StartTarget(new ConcurrentQueue<Received>(), out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        Guid Pick(string method, string path, ScenarioType type) =>
+            scenarios.Single(s => s.HttpMethod == method && s.Path == path && s.Type == type).Id;
+        var orderLatency = Pick("GET", "/orders/{id}", ScenarioType.Latency);
+        var orderDrop = Pick("GET", "/orders/{id}", ScenarioType.TimeoutDrop);
+        var echoLatency = Pick("GET", "/echo", ScenarioType.Latency);
+        var dependency = Pick("POST", "/orders", ScenarioType.DnsFailure);
+        await SetParametersAsync(client, projectId, orderLatency, new { delayMs = 400 });
+        await SetParametersAsync(client, projectId, echoLatency, new { delayMs = 400 });
+        var runId = await CreateRunAsync(client, projectId, [orderLatency, orderDrop, echoLatency, dependency], concurrency: 3);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var executions = await db.ScenarioExecutions.AsNoTracking().Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
+        Assert.All(executions.Values, e => Assert.NotNull(e.CompletedAt));
+        static bool Overlap(Backend.Domain.Entities.ScenarioExecution a, Backend.Domain.Entities.ScenarioExecution b) =>
+            a.StartedAt < b.CompletedAt && b.StartedAt < a.CompletedAt;
+
+        // Two endpoints, two lanes side by side; one endpoint's scenarios one after another.
+        Assert.True(Overlap(executions[echoLatency], executions[orderLatency]) || Overlap(executions[echoLatency], executions[orderDrop]));
+        Assert.False(Overlap(executions[orderLatency], executions[orderDrop]));
+        // The dependency failure starts only after every lane is done.
+        Assert.All(executions.Values.Where(e => e.ScenarioId != dependency),
+            e => Assert.True(e.CompletedAt <= executions[dependency].StartedAt));
+        var run = await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId);
+        Assert.Equal(4, run.CompletedScenarios);
+    }
+
+    [Fact]
+    public async Task A_runner_failure_is_retried_and_its_requests_stay_on_record()
+    {
+        using var listener = StartTarget(new ConcurrentQueue<Received>(), out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        var latency = scenarios.Single(s => s.HttpMethod == "GET" && s.Path == "/orders/{id}" && s.Type == ScenarioType.Latency).Id;
+        await SetParametersAsync(client, projectId, latency, new { delayMs = 0 });
+        var runId = await CreateRunAsync(client, projectId, [latency], runnerRetries: 1);
+
+        // The first try's baseline goes through, then its faulted request hits a runner bug.
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services,
+            new CrashingClients(factory.Services.GetRequiredService<IHttpMessageHandlerFactory>(), sent => sent == 2));
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var execution = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations).SingleAsync(e => e.TestRunId == runId);
+        Assert.Equal((ScenarioExecutionStatus.Completed, null), (execution.Status, execution.FailureReason));
+        // The failed try's baseline is kept; the second try numbers its requests after it.
+        Assert.Equal([(1, 1), (2, 2), (3, 2)], execution.Observations.OrderBy(o => o.AttemptNo)
+            .Select(o => (o.AttemptNo, o.Metadata.RootElement.GetProperty("runnerAttempt").GetInt32())));
+        Assert.Single(await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToListAsync());
+        Assert.Equal(TestRunStatus.Completed, (await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status);
+    }
+
+    [Fact]
+    public async Task Runner_failures_stop_at_the_retry_limit_and_other_failures_are_not_retried()
+    {
+        using var listener = StartTarget(new ConcurrentQueue<Received>(), out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
+        Guid Pick(string path) => scenarios.Single(s => s.HttpMethod == "GET" && s.Path == path && s.Type == ScenarioType.Latency).Id;
+        var latency = Pick("/orders/{id}");
+        var noExample = Pick("/items/{sku}");
+        await SetParametersAsync(client, projectId, latency, new { delayMs = 0 });
+        var runId = await CreateRunAsync(client, projectId, [latency, noExample], runnerRetries: 2);
+
+        var sends = 0;
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services,
+            new CrashingClients(factory.Services.GetRequiredService<IHttpMessageHandlerFactory>(), sent => (sends = sent) > 0));
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var executions = await db.ScenarioExecutions.AsNoTracking().Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
+        // One try and two retries, each stopped at its first request.
+        Assert.Equal(3, sends);
+        Assert.Equal((ScenarioExecutionStatus.Failed, "The runner hit an internal error during this scenario on each of 3 tries."),
+            (executions[latency].Status, executions[latency].FailureReason));
+        // A request the spec can't fill in fails the same way every time, so it keeps its own reason.
+        Assert.Equal(ScenarioExecutionStatus.Failed, executions[noExample].Status);
+        Assert.Contains("\"sku\"", executions[noExample].FailureReason);
+        Assert.Equal(TestRunStatus.Failed, (await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status);
+    }
+
+    // Target clients whose nth request (counted from 1) throws where no HTTP failure would: a runner failure.
+    private sealed class CrashingClients(IHttpMessageHandlerFactory handlers, Func<int, bool> crashes) : IHttpClientFactory
+    {
+        private readonly Func<int, bool> crashes = crashes;
+        private int sent;
+
+        public HttpClient CreateClient(string name) => new(new Crash(this, handlers.CreateHandler(name)));
+
+        private sealed class Crash(CrashingClients owner, HttpMessageHandler inner) : DelegatingHandler(inner)
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+                owner.crashes(Interlocked.Increment(ref owner.sent))
+                    ? throw new InvalidOperationException("A runner bug.")
+                    : base.SendAsync(request, cancellationToken);
+        }
+    }
+
     private static async Task SetParametersAsync(HttpClient client, Guid projectId, Guid scenarioId, object parameters) =>
         Assert.Equal(HttpStatusCode.NoContent,
             (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{scenarioId}", new { parameters })).StatusCode);
@@ -891,9 +1006,11 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         return (projectId, scenarios!.Scenarios);
     }
 
-    internal static async Task<Guid> CreateRunAsync(HttpClient client, Guid projectId, List<Guid> scenarioIds)
+    internal static async Task<Guid> CreateRunAsync(
+        HttpClient client, Guid projectId, List<Guid> scenarioIds, int concurrency = 1, int runnerRetries = 0)
     {
-        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/runs", new { scenarioIds, confirmStateChanging = true });
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/runs",
+            new { scenarioIds, concurrency, runnerRetries, confirmStateChanging = true });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<CreateRun.Response>(Json))!.Id;
     }

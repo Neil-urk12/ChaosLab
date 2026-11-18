@@ -67,10 +67,14 @@ test('starts a run with the chosen scenarios after confirming state-changing one
 
 	// Deselecting GET /payments leaves only the POST scenarios.
 	await page.getByRole('listitem').filter({ hasText: 'GET' }).filter({ hasText: '/payments' }).first().getByRole('checkbox').uncheck();
+	await page.getByLabel('Scenarios at once').selectOption('3');
+	await page.getByLabel('Retry runner errors').selectOption('1');
 	await start.click();
 
 	await expect(page).toHaveURL(`${origin}/projects/p/runs/r1`);
-	expect(posted).toEqual([{ scenarioIds: ['s3', 's4'], baselineRequests: true, confirmStateChanging: true }]);
+	expect(posted).toEqual([
+		{ scenarioIds: ['s3', 's4'], baselineRequests: true, concurrency: 3, runnerRetries: 1, confirmStateChanging: true }
+	]);
 });
 
 test('a preflight blocker keeps the run from starting', async ({ page }) => {

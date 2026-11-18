@@ -8,6 +8,14 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Concurrency and runner retries for test runs. The run setup page let the user run up
+  to five scenarios at once and retry runner errors up to three times, and the runner
+  honored both settings instead of ignoring them. Each endpoint's scenarios still ran
+  one after another, and Dependency failure scenarios ran alone after the others, so
+  side-by-side scenarios could not skew each other's evidence. Only errors inside the
+  runner were retried; target failures, unreachable targets, and requests the spec
+  could not fill in were not. Requests sent by a failed try were kept, and every
+  recorded request noted which try sent it.
 - Rule-based recommendations. Every Fail and Degraded finding was saved with one
   recommendation that names a fix, such as limiting retries, waiting between them,
   storing idempotency keys, failing closed on a bad credential, or isolating a failing

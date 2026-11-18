@@ -215,7 +215,11 @@ Built: invariants are saved on a scenario, snapshotted per execution, and checke
 
 ### 2.16 Resilience test execution [Partial]
 
-Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines, one scenario at a time; a recovery request after each Timeout / Drop fault; the invariants' read-back requests; and the fault injector (`Backend/Features/TestRuns/FaultInjector.cs`), which runs in process in the runner's request path; and the dependency simulator (`Backend/Features/TestRuns/DependencySimulator.cs`), a backend route in the target's outbound path. Not built: concurrency above one, runner retries, and the other faults in the dependency path.
+Built: direct-request faults (Latency, Timeout / Drop, Duplicate Request) and baselines; a recovery request after each Timeout / Drop fault; the invariants' read-back requests; the fault injector (`Backend/Features/TestRuns/FaultInjector.cs`), which runs in process in the runner's request path; the dependency simulator (`Backend/Features/TestRuns/DependencySimulator.cs`), a backend route in the target's outbound path; the run's concurrency; and runner retries. Not built: the other faults in the dependency path.
+
+**Concurrency** is one scenario at a time by default. With more, each endpoint is a lane whose scenarios run one after another in sequence order, and up to that many lanes run side by side, so scenarios on one endpoint never count each other's records. Dependency failures wait until every lane is done and then run one at a time, because the armed simulator cuts every call through the environment's route. Side by side, the target carries more load, so timings can read slower than they would alone.
+
+**Runner retries** apply only to runner failures: an error inside the runner while it executes a scenario. The scenario is tried again after one second, up to the run's limit (0 to 3), unless the run was cancelled. A target failure, an unreachable target, and a request the spec can't fill in are never retried. Requests a failed try already sent stay on record: every observation carries `runnerAttempt`, and a retry numbers its requests after the stored ones. The evaluator judges the last try only.
 
 The injector calls the target for real and changes what the runner receives. Each observation keeps the target's own status and body next to the injected ones (outcome `ModifiedResponse`):
 
