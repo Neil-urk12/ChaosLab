@@ -109,6 +109,8 @@ export type SpecImportReport = {
 	openApiVersion: string | null;
 	operationCount: number;
 	issues: SpecIssue[];
+	// Scenarios the new spec has after a re-import sync; absent when none were synced.
+	scenarios?: number | null;
 };
 
 export type SpecEndpoint = {

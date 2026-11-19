@@ -5,31 +5,39 @@ using System.Text;
 using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
+using Backend.Features.Scenarios;
 using Backend.Infrastructure.Data;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+// Results<> takes at most six types, so the refusals share one slot.
+using Refused = Microsoft.AspNetCore.Http.HttpResults.Results<
+    Microsoft.AspNetCore.Http.HttpResults.NotFound,
+    Microsoft.AspNetCore.Http.HttpResults.ForbidHttpResult,
+    Microsoft.AspNetCore.Http.HttpResults.Conflict>;
 
 namespace Backend.Features.ApiSpecs;
 
-// Command: validates an OpenAPI document and, when it has no errors, makes it the project's active spec.
+// Command: validates an OpenAPI document and, when it has no errors, makes it the project's active spec. A re-import
+// carries testing choices over and, when the replaced spec had scenarios, re-syncs them onto the new endpoints.
 public static class ImportSpec
 {
     public const string FetchClient = "spec-fetch";
 
     public sealed record Request(ApiSpecSourceType? Source, string? Content, string? Url, string? Filename);
 
-    public sealed record Report(string? Filename, string? OpenApiVersion, int OperationCount, List<SpecIssue> Issues);
+    // Scenarios: how many the new spec has after a re-import sync; null when none were synced.
+    public sealed record Report(string? Filename, string? OpenApiVersion, int OperationCount, List<SpecIssue> Issues, int? Scenarios = null);
 
-    public static async Task<Results<Created<Report>, UnprocessableEntity<Report>, ValidationProblem, NotFound, ForbidHttpResult, Conflict>> Handle(
+    public static async Task<Results<Created<Report>, Ok<Report>, UnprocessableEntity<Report>, ValidationProblem, Refused>> Handle(
         Guid id, Request request, ClaimsPrincipal principal, ApplicationDbContext db,
         IHttpClientFactory httpClientFactory, CancellationToken cancellationToken)
     {
         var role = await ProjectAccess.RoleAsync(db, id, principal, cancellationToken);
         if (role is null)
-            return TypedResults.NotFound();
+            return (Refused)TypedResults.NotFound();
         if (role == ProjectRole.Viewer)
-            return TypedResults.Forbid();
+            return (Refused)TypedResults.Forbid();
 
         string? content;
         string? filename;
@@ -84,8 +92,14 @@ public static class ImportSpec
         if (parsed is null)
             return TypedResults.UnprocessableEntity(new Report(filename, null, 0, issues));
 
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var previous = await db.ApiSpecs.SingleOrDefaultAsync(spec => spec.ProjectId == id && spec.IsActive, cancellationToken);
+        // The same document again is a no-op: a new version would change nothing but drop the scenarios.
+        if (previous?.SpecHash == hash)
+            return TypedResults.Ok(new Report(filename, parsed.OpenApiVersion, parsed.Endpoints.Count, issues));
+        var resync = previous is not null
+            && await db.ChaosScenarios.AnyAsync(scenario => scenario.Endpoint.ApiSpecId == previous.Id, cancellationToken);
         if (previous is not null)
         {
             // Never-test and excluded choices survive re-import for the same path and method.
@@ -113,7 +127,7 @@ public static class ImportSpec
             SourceFormat = parsed.Format,
             OriginalDocument = content,
             ParsedDocument = parsed.Document,
-            SpecHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content))),
+            SpecHash = hash,
             UploadedById = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!),
             Endpoints = parsed.Endpoints
         };
@@ -125,13 +139,15 @@ public static class ImportSpec
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             // Another import for this project committed first.
-            return TypedResults.Conflict();
+            return (Refused)TypedResults.Conflict();
         }
-        // Scenarios are not generated here: the user starts generation from the Scenarios page (FeaturesFlow §2.13).
+        // A first import generates nothing: the user starts generation from the Scenarios page (FeaturesFlow §2.13).
+        // A re-import keeps the project runnable by carrying the replaced spec's scenarios and edits over (§2.25).
+        int? scenarios = resync ? (await ScenarioGenerator.SyncAsync(db, spec.Id, previous!.Id, cancellationToken)).Added : null;
         await transaction.CommitAsync(cancellationToken);
 
         return TypedResults.Created($"/api/projects/{id}/spec",
-            new Report(filename, parsed.OpenApiVersion, parsed.Endpoints.Count, issues));
+            new Report(filename, parsed.OpenApiVersion, parsed.Endpoints.Count, issues, scenarios));
     }
 
     // Checks every resolved address at connect time, so redirects and DNS rebinding cannot bypass it.

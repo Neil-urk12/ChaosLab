@@ -9,7 +9,7 @@ using Npgsql;
 namespace Backend.Features.Scenarios;
 
 // Command: generates scenarios for the active spec on the user's request, or re-applies the rules, keeping edits to
-// scenarios that still apply. Import never generates; this is the only way scenarios are created.
+// scenarios that still apply. A first import never generates; a re-import re-syncs scenarios the project already had.
 public static class GenerateScenarios
 {
     public sealed record Response(int Added, int Removed);
@@ -26,7 +26,7 @@ public static class GenerateScenarios
             .Select(spec => (Guid?)spec.Id).SingleOrDefaultAsync(cancellationToken);
         if (specId is null)
             return TypedResults.NotFound();
-        // After a re-import the new spec starts empty, so edits come from the latest earlier spec that had scenarios.
+        // When the active spec has no scenarios yet, edits come from the latest earlier spec that had them.
         var previousSpecId = await db.ApiSpecs
             .Where(spec => spec.ProjectId == id && !spec.IsActive && spec.Endpoints.Any(endpoint => endpoint.ChaosScenarios.Any()))
             .OrderByDescending(spec => spec.CreatedAt)

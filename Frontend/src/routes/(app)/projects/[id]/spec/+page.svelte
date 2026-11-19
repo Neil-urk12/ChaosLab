@@ -23,6 +23,8 @@
 	let busy = $state(false);
 	let formError = $state('');
 	let report = $state<SpecImportReport | null>(null);
+	// The backend answers 200 instead of 201 when the document matches the active spec.
+	let unchanged = $state(false);
 	let fileInput = $state<HTMLInputElement>();
 
 	const errors = $derived(report?.issues.filter((i) => i.severity === 'Error').length ?? 0);
@@ -59,11 +61,12 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body)
 			});
-			if (res.status === 201 || res.status === 422) {
+			if (res.status === 200 || res.status === 201 || res.status === 422) {
 				report = await res.json();
+				unchanged = res.status === 200;
+				if (res.status !== 422) importing = false;
 				if (res.status === 201) {
 					await invalidateAll();
-					importing = false;
 					pageNo = 1;
 				}
 			} else if (res.status === 400) {
@@ -90,6 +93,7 @@
 
 	function startImport() {
 		report = null;
+		unchanged = false;
 		formError = '';
 		importing = true;
 	}
@@ -345,10 +349,17 @@
 		</div>
 	</div>
 
-	{#if spec.changes && changed}
+	{#if unchanged}
 		<p class="mt-5 flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-3 text-xs text-slate-300">
 			<span class="shrink-0 text-accent-ink">{@render svg(icon.info)}</span>
-			Last re-import changed {changed} operation{changed === 1 ? '' : 's'}: {spec.changes.added} added, {spec.changes.removed.length} removed, {spec.changes.modified} modified. Past runs keep the snapshots they ran with.
+			This document matches the current specification. Nothing changed.
+		</p>
+	{:else if (spec.changes && changed) || report?.scenarios != null}
+		<!-- A re-import can sync scenarios without changing any operation (e.g. only descriptions changed). -->
+		<p class="mt-5 flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-3 text-xs text-slate-300">
+			<span class="shrink-0 text-accent-ink">{@render svg(icon.info)}</span>
+			{#if spec.changes && changed}Last re-import changed {changed} operation{changed === 1 ? '' : 's'}: {spec.changes.added} added, {spec.changes.removed.length} removed, {spec.changes.modified} modified. Past runs keep the snapshots they ran with.{/if}
+			{#if report?.scenarios != null}Scenarios were updated to match: {report.scenarios} now apply, with your edits kept.{/if}
 		</p>
 	{/if}
 

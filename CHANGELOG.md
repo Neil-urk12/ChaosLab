@@ -399,6 +399,14 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- Re-importing an OpenAPI spec kept the project's scenarios. When the replaced spec
+  had scenarios, the import re-applied the generation rules to the new endpoints in the
+  same transaction, carrying edits over by path, method, and fault, so the project
+  could run again without a separate Generate step. New endpoints got fresh scenarios,
+  and removed endpoints kept theirs on the old spec for past runs. The import report
+  gave the number of scenarios on the new spec, and the specification page showed it.
+  A first import still generated nothing. Importing a document identical to the active
+  spec returned `200` and saved nothing, instead of creating an empty new version.
 - The backend logged one summary line per request, with its method, path, status
   code, and duration, and stopped logging every database command. The run executor
   checks for queued runs every two seconds, and its queries had filled the log even

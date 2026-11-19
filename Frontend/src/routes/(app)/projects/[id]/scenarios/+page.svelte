@@ -22,7 +22,7 @@
 
 	// Optimistic edits replace items in this list until the next load.
 	let scenarios = $derived<Scenario[]>(data.list?.scenarios ?? []);
-	// Import doesn't generate; the user starts generation here. Every included endpoint gets at least one scenario.
+	// A first import doesn't generate; the user starts generation here (a re-import re-syncs existing scenarios). Every included endpoint gets at least one scenario.
 	const generated = $derived(scenarios.length > 0);
 
 	const icon = {

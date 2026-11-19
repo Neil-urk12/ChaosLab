@@ -157,20 +157,45 @@ public sealed class ApiSpecEndpointTests(PostgreSqlFixture postgres)
 
         var patch = await client.PatchAsJsonAsync($"/api/projects/{projectId}/spec/endpoints/{payout.Id}", new { testing = "NeverTest" });
         Assert.Equal(HttpStatusCode.NoContent, patch.StatusCode);
+        (await client.PostAsync($"/api/projects/{projectId}/scenarios/generate", null)).EnsureSuccessStatusCode();
 
         var changed = Spec
             .Replace("""responses: {"201": {description: ok}}""" + "\n  /payouts", """responses: {"201": {description: ok}, "409": {description: dup}}""" + "\n  /payouts")
             .Replace("  /health:\n    get:\n      security: []\n      responses: {\"200\": {description: ok}}", "  /refunds:\n    post:\n      responses: {\"201\": {description: ok}}");
         Assert.NotEqual(Spec, changed);
-        (await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = changed })).EnsureSuccessStatusCode();
+        var reimport = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = changed });
+        Assert.Equal(HttpStatusCode.Created, reimport.StatusCode);
+        var report = await reimport.Content.ReadFromJsonAsync<ImportSpec.Report>(Json);
 
         var second = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        // Scenarios were re-synced onto the new spec, including the new endpoint, without a separate generate.
+        Assert.True(Assert.Single(second!.Endpoints, e => e.Path == "/refunds").ScenarioCount > 0);
+        Assert.Equal(report!.Scenarios, second.Endpoints.Sum(e => e.ScenarioCount));
         Assert.Equal(EndpointTesting.NeverTest, Assert.Single(second!.Endpoints, e => e.Path == "/payouts").Testing);
         Assert.Equal("New", Assert.Single(second.Endpoints, e => e.Path == "/refunds").Change);
         Assert.Equal("Modified", Assert.Single(second.Endpoints, e => e.OperationId == "createPayment").Change);
         Assert.Null(Assert.Single(second.Endpoints, e => e.OperationId == "listPayments").Change);
         Assert.Equal((1, 1), (second.Changes!.Added, second.Changes.Modified));
         Assert.Equal(["GET /health"], second.Changes.Removed);
+    }
+
+    [Fact]
+    public async Task Reimporting_the_same_document_changes_nothing()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var projectId = await CreateProjectAsync(client);
+        (await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Spec })).EnsureSuccessStatusCode();
+        var first = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+
+        var again = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Spec });
+
+        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        Assert.Equal(4, (await again.Content.ReadFromJsonAsync<ImportSpec.Report>(Json))!.OperationCount);
+        var second = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        Assert.Equal(first!.Id, second!.Id);
+        Assert.Null(second.Changes);
     }
 
     [Fact]

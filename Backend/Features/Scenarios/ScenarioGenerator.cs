@@ -87,7 +87,7 @@ public static class ScenarioGenerator
 
     // Brings the spec's scenarios in line with the rules. Existing scenarios keep their edits; ones that no longer
     // apply are removed unless a run used them. Scenarios of `previousSpecId` seed edits for matching new ones.
-    // Only GenerateScenarios calls this, when the user asks.
+    // Called by GenerateScenarios when the user asks, and by ImportSpec on a re-import.
     public static async Task<(int Added, int Removed)> SyncAsync(
         ApplicationDbContext db, Guid specId, Guid? previousSpecId, CancellationToken cancellationToken)
     {

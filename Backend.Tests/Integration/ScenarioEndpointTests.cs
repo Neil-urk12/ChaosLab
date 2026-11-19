@@ -125,9 +125,8 @@ public sealed class ScenarioEndpointTests(PostgreSqlFixture postgres)
         Assert.Equal(HttpStatusCode.NoContent, update.StatusCode);
 
         Assert.Equal(new GenerateScenarios.Response(0, 0), await GenerateAsync(client, projectId)); // regenerate keeps edits and adds nothing
-        await ImportAsync(client, projectId);
-        Assert.Empty((await client.GetFromJsonAsync<GetScenarios.Response>($"/api/projects/{projectId}/scenarios", Json))!.Scenarios);
-        await GenerateAsync(client, projectId);
+        await ImportAsync(client, projectId, Spec + "\n# v2\n"); // re-import syncs scenarios and carries edits
+        Assert.Equal(new GenerateScenarios.Response(0, 0), await GenerateAsync(client, projectId));
 
         var after = Assert.Single((await client.GetFromJsonAsync<GetScenarios.Response>($"/api/projects/{projectId}/scenarios", Json))!
             .Scenarios, s => s.Type == ScenarioType.DuplicateRequest);
@@ -164,14 +163,14 @@ public sealed class ScenarioEndpointTests(PostgreSqlFixture postgres)
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/projects/{Guid.NewGuid()}/scenarios")).StatusCode);
     }
 
-    private static async Task<Guid> ImportAsync(HttpClient client, Guid? projectId = null)
+    private static async Task<Guid> ImportAsync(HttpClient client, Guid? projectId = null, string content = Spec)
     {
         if (projectId is null)
         {
             var created = await client.PostAsJsonAsync("/api/projects", new { name = "Payments" });
             projectId = (await created.Content.ReadFromJsonAsync<ProjectResponse>())!.Id;
         }
-        var import = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Spec });
+        var import = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content });
         Assert.Equal(HttpStatusCode.Created, import.StatusCode);
         return projectId.Value;
     }

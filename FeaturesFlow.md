@@ -334,13 +334,15 @@ Built: the paged history with filters, date, status, score and its change from t
 2. Retrieve project and API information (sensitive values redacted), test configuration, results, scores, failure timeline, findings, recommendations, invariant results, limitations, and the comparison with the previous run when available.
 3. Generate the PDF, store report metadata with a storage reference, and let the user view or download it.
 
-### 2.25 Updating an OpenAPI specification [Planned]
+### 2.25 Updating an OpenAPI specification [Done]
+
+Built as Re-import on the specification page. A re-import saves a new spec version and retires the old one; there is no preview before saving, and re-importing the old document undoes it.
 
 1. Open API specification settings and select Update / Re-import.
-2. Provide the new document. Parse and validate it.
+2. Provide the new document. Parse and validate it. A document identical to the active spec changes nothing.
 3. Compare it with the stored spec and identify added, removed, and modified endpoints.
-4. Update endpoint records.
-5. Decide which existing scenarios still apply and regenerate where needed. Past runs keep their execution-time snapshots.
+4. Update endpoint records. Testing choices carry over by path and method.
+5. Decide which existing scenarios still apply and regenerate where needed: when the old spec had scenarios, the generation rules re-run on the new endpoints and edits carry over by path, method, and fault. Past runs keep their execution-time snapshots.
 6. Save the new specification and display the updated structure.
 
 ### 2.26 Mobile login and viewing [Planned]
