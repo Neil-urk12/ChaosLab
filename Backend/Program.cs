@@ -89,6 +89,16 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference().AllowAnonymous();
 }
 
+// One summary line per request. The path only: a query string can carry tokens, and a simulator path is cut short
+// because its token is the route's only key.
+app.Use(async (context, next) =>
+{
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    await next(context);
+    var path = context.Request.Path.StartsWithSegments("/api/simulator") ? "/api/simulator/…" : context.Request.Path.Value;
+    app.Logger.LogInformation("{Method} {Path} {StatusCode} {ElapsedMs:0}ms", context.Request.Method, path,
+        context.Response.StatusCode, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+});
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();

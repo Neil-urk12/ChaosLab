@@ -399,6 +399,13 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- The backend logged one summary line per request, with its method, path, status
+  code, and duration, and stopped logging every database command. The run executor
+  checks for queued runs every two seconds, and its queries had filled the log even
+  when nothing was running. Query strings were left out of the request line, since
+  they can carry tokens, and dependency simulator calls were logged without their
+  path, which holds the environment's simulator token.
+
 - A scenario's whole-number settings were refused when written as `3000.0` or `3e3`.
   They used to be saved, and the runner then failed on every run of that scenario with
   an internal error.
