@@ -585,7 +585,7 @@ chaos/
 │   └── src/routes/          # (auth): install, login, setup; (app): overview, projects
 ├── Makefile                 # build, up, down, dev-be, dev-fe, migrate, ...
 ├── backend-pod.yaml, secret.yaml.example   # Podman pod
-├── CHANGELOG.md, CONTEXT.md, FeaturesFlow.md, README.md
+├── CHANGELOG.md, GLOSSARY.md, FeaturesFlow.md, README.md
 ```
 
 This replaces the earlier proposed `apps/`, `services/chaos-runner/`, `packages/`, `docs/`, and `infrastructure/` structure. New directories are added only when matching code exists. The fault injector begins inside `Backend` (section 19).
