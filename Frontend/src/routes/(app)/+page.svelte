@@ -186,8 +186,7 @@
 		{@render panelHeader(
 			'Open findings',
 			'Issues that can impact reliability or data integrity',
-			'<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>',
-			{ href: '/findings', label: 'View all' }
+			'<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>'
 		)}
 		{#if overview.findings.length}
 			<ul class="-mt-2 divide-y divide-danger-divide">
