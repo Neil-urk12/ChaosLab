@@ -7,6 +7,7 @@ using Backend.Features.Projects;
 using Backend.Features.TestRuns;
 using Backend.Features.Findings;
 using Backend.Features.Members;
+using Backend.Features.Reports;
 using Backend.Features.Users;
 using Backend.Infrastructure.Data;
 using Backend.Domain.Entities;
@@ -47,6 +48,7 @@ builder.Services.AddSingleton<CredentialProtector>();
 builder.Services.AddHttpForwarder();
 builder.Services.AddSingleton<DependencySimulator>();
 builder.Services.AddHostedService<RunExecutor>();
+builder.Services.AddSingleton<ReportStorage>();
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -111,6 +113,7 @@ api.MapScenarioEndpoints();
 api.MapEnvironmentEndpoints();
 api.MapTestRunEndpoints();
 api.MapFindingEndpoints();
+api.MapReportEndpoints();
 api.MapMemberEndpoints();
 api.MapUserEndpoints();
 

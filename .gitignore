@@ -52,6 +52,9 @@ secret.yaml
 !secret.yaml.example
 !*secret*.yaml.example
 
+# Generated PDF reports (Reports:Path defaults to Backend/reports)
+Backend/reports/
+
 
 ## Test & coverage results
 [Tt]est[Rr]esult*/

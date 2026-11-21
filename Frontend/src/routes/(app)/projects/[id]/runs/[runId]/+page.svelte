@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import type { FeedRow, FindingOutcome, RunDetail, Severity, TimelineEvent } from '$lib/api';
+	import type { FeedRow, FindingOutcome, ReportRow, RunDetail, Severity, TimelineEvent } from '$lib/api';
 	import ScoreRing from '$lib/components/ScoreRing.svelte';
 	import { findingCategory, outcomeLabels, scoringCategoryLabels } from '$lib/findings';
 	import { dateTime, duration, PLACEHOLDER, score, scoreLabel } from '$lib/format';
-	import { send } from '$lib/problem';
+	import { problemMessage, send } from '$lib/problem';
 	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, runLabel, statusStyles, type FeedResult } from '$lib/runs';
 	import { categories as faultCategories, describeInvariant, describeParameters, faultLabels } from '$lib/scenarios';
 
@@ -107,7 +107,7 @@
 	// Live view while the run is Queued or Running.
 	const live = $derived(run.live);
 	const active = $derived(live != null);
-	const canCancel = $derived(canStartRuns(project, data.me));
+	const canEdit = $derived(canStartRuns(project, data.me));
 
 	let now = $state(Date.now());
 	// A failed poll keeps the last good data and the next tick tries again; a 4xx (run gone, signed out) goes to load.
@@ -204,6 +204,31 @@
 		cancelling = false;
 	}
 
+	// Reports of a finished run. Owners and editors generate them; every member downloads them.
+	const reports = $derived(data.reports);
+	const reportHref = (report: ReportRow) => `/api/projects/${project.id}/runs/${run.id}/reports/${report.id}/file`;
+	let generating = $state(false);
+	let reportError = $state<string | null>(null);
+	async function generateReport() {
+		generating = true;
+		reportError = null;
+		const res = await fetch(`/api/projects/${project.id}/runs/${run.id}/reports`, { method: 'POST' }).catch(() => null);
+		if (!res) reportError = 'Could not reach the server.';
+		else if (!res.ok) reportError = await problemMessage(res);
+		else {
+			const report: ReportRow | null = await res.json().catch(() => null);
+			if (report) {
+				// A download link, not a navigation: if the file request fails, the browser stays on this page.
+				const link = Object.assign(document.createElement('a'), { href: reportHref(report), download: report.fileName });
+				document.body.append(link);
+				link.click();
+				link.remove();
+			} else reportError = 'The report was generated. Download it from the list below.';
+			await invalidateAll();
+		}
+		generating = false;
+	}
+
 	const card = 'rounded-lg border border-line';
 	const chip = 'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] whitespace-nowrap';
 	const eyebrow = 'text-[10px] font-semibold tracking-wider text-slate-500 uppercase';
@@ -246,7 +271,7 @@
 		</p>
 	</div>
 	{#if live}
-		{#if canCancel}
+		{#if canEdit}
 			<div class="flex flex-col items-end gap-2">
 				<button type="button" onclick={cancelRun} disabled={cancelling} class="flex h-10 items-center gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-4 text-[13px] text-rose-300 hover:bg-rose-500/20 disabled:opacity-50">
 					<span aria-hidden="true">✕</span> {cancelling ? 'Cancelling…' : 'Cancel run'}
@@ -260,7 +285,11 @@
 			<button type="button" disabled title="Comparing runs is not available yet" class={disabledButton}>Compare with {runLabel(run.previous)}</button>
 		{/if}
 		<button type="button" disabled title="Rerunning scenarios is not available yet" class={disabledButton}>Rerun failed ({failing.length})</button>
-		<button type="button" disabled title="PDF reports are not available yet" class="h-10 rounded-md bg-accent/50 px-4 text-[13px] font-semibold text-on-accent">Generate PDF report</button>
+		{#if canEdit}
+			<button type="button" onclick={generateReport} disabled={generating} class="h-10 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent/90 disabled:opacity-50">
+				{generating ? 'Generating…' : 'Generate PDF report'}
+			</button>
+		{/if}
 	</div>
 	{/if}
 </div>
@@ -593,13 +622,32 @@
 		</section>
 	</div>
 
-	<section class="{card} mt-5 flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-		<div>
-			<h3 class="text-[13px] font-semibold">PDF report</h3>
-			<p class="mt-1 text-[11px] text-slate-500">
-				Includes scores, evidence, invariant results, timeline and recommendations{run.previous ? ` and the comparison with ${runLabel(run.previous)}` : ''}. Credentials and secret headers are redacted.
-			</p>
+	<section class="{card} mt-5 px-5 py-4" aria-labelledby="reports-heading">
+		<div class="flex flex-wrap items-center justify-between gap-4">
+			<div>
+				<h3 id="reports-heading" class="text-[13px] font-semibold">PDF reports</h3>
+				<p class="mt-1 text-[11px] text-slate-500">
+					Includes scores, evidence, invariant results, timelines, recommendations and limitations{run.previous ? `, and the score change since ${runLabel(run.previous)}` : ''}. Credentials and header values are never included.
+				</p>
+			</div>
+			{#if canEdit}
+				<button type="button" onclick={generateReport} disabled={generating} class="flex h-10 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] text-slate-200 hover:bg-panel disabled:opacity-50">
+					{generating ? 'Generating…' : reports.length ? 'Generate new version' : 'Generate PDF report'}
+				</button>
+			{/if}
 		</div>
-		<button type="button" disabled title="PDF reports are not available yet" class={disabledButton}>Generate PDF report</button>
+		{#if reportError}<p class="mt-3 text-xs text-rose-300" role="alert">{reportError}</p>{/if}
+		{#if reports.length}
+			<ul class="mt-4 divide-y divide-line-faint border-t border-line-faint">
+				{#each reports as report (report.id)}
+					<li class="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs">
+						<span class="text-slate-300">Version {report.version} · {dateTime(report.generatedAt)}{report.generatedBy ? ` · ${report.generatedBy}` : ''}</span>
+						<a href={reportHref(report)} download={report.fileName} class="text-accent-ink hover:text-accent-ink-strong">Download<span class="sr-only"> version {report.version}</span></a>
+					</li>
+				{/each}
+			</ul>
+		{:else if !canEdit}
+			<p class="mt-3 text-[11px] text-slate-500">No reports yet. An owner or editor can generate one.</p>
+		{/if}
 	</section>
 {/if}

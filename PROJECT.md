@@ -494,7 +494,7 @@ Controls:
 | OpenAPI parsing | Microsoft.OpenApi (OpenAPI.NET) | Planned |
 | HTTP fault injection | In-process injector in the runner's request path | In use |
 | Dependency simulation | A backend route that forwards with YARP's `IHttpForwarder` | In use |
-| PDF reports | QuestPDF | Planned |
+| PDF reports | QuestPDF (Community license) | In use |
 | Charts | ECharts proposed; the current UI has a custom score ring | **[Open]** |
 | CI | GitHub Actions | Planned |
 | Mobile client | **[Open]** | Not started |

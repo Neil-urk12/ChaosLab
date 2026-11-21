@@ -16,6 +16,9 @@ public sealed class BackendFactory(
     Action<IServiceCollection>? configureServices = null, string publicUrl = "http://localhost:5173")
     : WebApplicationFactory<Program>
 {
+    // Report PDFs go to a folder of this factory's own, removed on dispose.
+    public string ReportsPath { get; } = Path.Combine(Path.GetTempPath(), "chaoslab-tests", Guid.NewGuid().ToString("N"));
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -23,7 +26,8 @@ public sealed class BackendFactory(
             new Dictionary<string, string?>
             {
                 ["BootstrapSetup:PublicUrl"] = publicUrl,
-                ["Credentials:Key"] = Convert.ToBase64String(new byte[32])
+                ["Credentials:Key"] = Convert.ToBase64String(new byte[32]),
+                ["Reports:Path"] = ReportsPath
             }));
         builder.ConfigureTestServices(services =>
         {
@@ -41,5 +45,12 @@ public sealed class BackendFactory(
             }
             configureServices?.Invoke(services);
         });
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        if (Directory.Exists(ReportsPath))
+            Directory.Delete(ReportsPath, recursive: true);
     }
 }

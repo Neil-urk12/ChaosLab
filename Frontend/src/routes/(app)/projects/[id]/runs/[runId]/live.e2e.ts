@@ -56,6 +56,7 @@ async function mockRun(page: Page) {
 		}
 	}));
 	await page.route(/\/api\/projects\/a\/findings/, (route) => route.fulfill({ status: 404 }));
+	await page.route(/\/api\/projects\/a\/runs\/r27\/reports$/, (route) => route.fulfill({ json: [] }));
 	await page.route(/\/api\/projects\/a\/runs\/r27\/cancel$/, (route) => {
 		state.cancelled++;
 		return route.fulfill({ status: 204 });

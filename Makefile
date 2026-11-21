@@ -71,4 +71,4 @@ logs-db:
 	podman logs -f $(POD_NAME)-postgres
 
 clean-data: down
-	podman volume rm -f chaoslab-postgres-data
+	podman volume rm -f chaoslab-postgres-data chaoslab-backend-reports

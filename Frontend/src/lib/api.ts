@@ -391,6 +391,9 @@ export type RunFindings = {
 	findings: RunFinding[];
 };
 
+// Backend/Features/Reports/ListReports.cs: a run's stored PDF reports, newest version first.
+export type ReportRow = { id: string; version: number; fileName: string; generatedAt: string; generatedBy: string | null };
+
 // Backend/Features/Members
 export type ProjectMemberRow = {
 	userId: string;

@@ -34,6 +34,7 @@ async function mockApi(page: Page) {
 	await page.route(/\/api\/projects\/(a|b)$/, (route) => route.fulfill({ json: project(route.request().url().slice(-1)) }));
 	await page.route(/\/api\/projects\/(a|b)\/runs/, (route) => {
 		const url = new URL(route.request().url());
+		if (url.pathname.endsWith('/reports')) return route.fulfill({ json: [] });
 		const id = url.pathname.split('/')[3];
 		const pageNo = Number(url.searchParams.get('page') ?? '1');
 		const runs = Array.from({ length: 20 }, (_, i) => run(id, 30 - (pageNo - 1) * 20 - i)).filter((r) => r.number > 0);

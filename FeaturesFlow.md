@@ -309,7 +309,7 @@ Built: the run results page and API, showing the score, evidence coverage, categ
 
 ### 2.22 Recommendation generation [Partial]
 
-Built: every Fail and Degraded finding is saved with one recommendation, in the same step that saves the finding. The evaluator names the problem behind the finding, because one scoring category holds different problems (a retry storm, retries without a pause, and a target that fails without any fault are all Retry findings), and a fixed rule per problem gives the title and the fix. The results page, the findings page, and the findings export show it. Not built: rules for honoring `Retry-After`, for validating malformed or empty responses, and for circuit breakers, because no finding can show those problems until their faults run in the dependency path (2.18) and circuit-breaker evidence is collected. Reports (2.24) do not exist yet.
+Built: every Fail and Degraded finding is saved with one recommendation, in the same step that saves the finding. The evaluator names the problem behind the finding, because one scoring category holds different problems (a retry storm, retries without a pause, and a target that fails without any fault are all Retry findings), and a fixed rule per problem gives the title and the fix. The results page, the findings page, and the findings export show it. Not built: rules for honoring `Retry-After`, for validating malformed or empty responses, and for circuit breakers, because no finding can show those problems until their faults run in the dependency path (2.18) and circuit-breaker evidence is collected.
 
 Decided: "weak" findings are not a separate kind; only Fail and Degraded findings get a recommendation, since an Inconclusive finding proves nothing about the API. A finding gets exactly one recommendation. Runs executed before this existed are not backfilled.
 
@@ -328,9 +328,11 @@ Built: the paged history with filters, date, status, score and its change from t
 3. Selecting a run opens its results.
 4. A run can be compared with the previous one. Failed or degraded scenarios can be rerun manually.
 
-### 2.24 PDF report generation [Planned]
+### 2.24 PDF report generation [Done]
 
-1. The user opens a completed run and selects Generate Report.
+Built (`Backend/Features/Reports/`): owners and editors generate a report for any finished run (Completed, Partially completed, Failed, or Cancelled) from the run results page; every member can list and download a run's reports. Each generation stores a new version: the PDF goes to `Reports:Path` (a pod volume) and a `Reports` row keeps its file name and storage key. The content comes from the results page's own queries and the run's configuration snapshot, never from request headers, bodies, or credentials. The comparison with the previous run is its score change; side-by-side comparison is part of 2.23. An unscored run's report says why under limitations. The PDF is rendered with QuestPDF under its Community license, so an organisation that deploys ChaosLab and does not qualify for that license needs its own. Not built: deleting reports and retention rules.
+
+1. The user opens a finished run and selects Generate Report.
 2. Retrieve project and API information (sensitive values redacted), test configuration, results, scores, failure timeline, findings, recommendations, invariant results, limitations, and the comparison with the previous run when available.
 3. Generate the PDF, store report metadata with a storage reference, and let the user view or download it.
 

@@ -8,6 +8,19 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- PDF reports. Owners and editors generated a report for any finished run from the run
+  results page, and every project member could download it there. Each report had
+  the run's status, environment, specification and configuration, the score, evidence
+  coverage, outcome counts, category and endpoint scores, every finding with expected
+  and observed behavior, evidence, invariant results and its recommendation, the
+  failure timelines, the score change since the previous comparable run, and a
+  warnings and limitations section that also said why an unscored run had no score.
+  Generating again stored a new version and kept the old ones. Reports were built
+  only from stored results and the run's configuration snapshot, so credentials and
+  header values never appeared in them. The files were stored on a new
+  `chaoslab-backend-reports` pod volume (`Reports:Path`), and `make clean-data`
+  removed it along with the database. PDFs were rendered with QuestPDF under its
+  Community license.
 - Concurrency and runner retries for test runs. The run setup page let the user run up
   to five scenarios at once and retry runner errors up to three times, and the runner
   honored both settings instead of ignoring them. Each endpoint's scenarios still ran

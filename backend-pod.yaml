@@ -70,11 +70,16 @@ spec:
               name: chaoslab-secret
               key: credentials-key
               optional: true
+        - name: Reports__Path
+          value: /home/app/reports
       # Data Protection keys sign login cookies and refresh tokens; without a volume every pod recreation
       # (make restart) loses them and signs everyone out.
       volumeMounts:
         - name: backend-keys
           mountPath: /home/app/.aspnet/DataProtection-Keys
+        # Generated PDF reports; the database only stores their file names.
+        - name: backend-reports
+          mountPath: /home/app/reports
       ports:
         - containerPort: 8080
           hostPort: 8080
@@ -87,3 +92,6 @@ spec:
     - name: backend-keys
       persistentVolumeClaim:
         claimName: chaoslab-backend-keys
+    - name: backend-reports
+      persistentVolumeClaim:
+        claimName: chaoslab-backend-reports

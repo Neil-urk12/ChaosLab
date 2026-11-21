@@ -21,7 +21,7 @@ namespace Backend.Tests.Integration;
 public sealed class RunExecutorTests(PostgreSqlFixture postgres)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
-    private const string Token = "executor-test-token";
+    internal const string Token = "executor-test-token";
 
     private const string Spec = """
         openapi: 3.0.3
