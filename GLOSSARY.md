@@ -1,8 +1,26 @@
 # ChaosLab Community
 
-ChaosLab tests how a running API behaves under controlled failure, and turns what it observes into findings, a Resilience Score and recommendations. This glossary covers the self-hosted installation.
+ChaosLab tests how a running API behaves under controlled failure, and turns what it observes into findings, a Resilience Score and recommendations. This glossary covers a self-hosted instance.
 
 ## Language
+
+### Instances
+
+**Instance**:
+One running ChaosLab, with its own database, users and projects.
+_Avoid_: Server, deployment, tenant
+
+**Installation**:
+Getting an instance running, from the container image or from the source.
+_Avoid_: Setup, deploy
+
+**First-run setup**:
+Creating an instance's SuperAdmin through its setup link. It happens once per instance.
+_Avoid_: Install, initialization, onboarding
+
+**Setup link**:
+The secret, one-hour link an instance prints before first-run setup.
+_Avoid_: Install link, setup token, invite
 
 ### People and access
 

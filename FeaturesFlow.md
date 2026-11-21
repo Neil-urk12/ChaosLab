@@ -1,6 +1,6 @@
 # ChaosLab App Flow: Community / Self-Hosted Version
 
-**Status:** updated 13 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
+**Status:** updated 21 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
 
 Conventions used below:
 
@@ -14,9 +14,9 @@ Conventions used below:
 
 ### 1.1 Web flow (primary client)
 
-Assumes the user has already installed the app.
+Assumes the instance is already installed (see 2.0).
 
-**Instance setup and sign-in**
+**First-run setup and sign-in**
 
 1. Start the app and backend.
 2. If the instance is uninitialized, the backend prints a one-hour setup link to the terminal. Open it (it points to `/install`, with the token in the URL fragment).
@@ -76,7 +76,40 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 
 ## 2. Process details
 
-### 2.1 Instance setup (first run) [Done]
+### 2.0 Installation [Planned]
+
+Decided (PROJECT.md 26, 21 November 2026). Not built: all of it. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
+
+**Install paths**
+
+- **Release image** (primary): one image holding the backend and the built frontend, published to GHCR for amd64 and arm64. A version tag (`v0.1.0`) publishes that version and moves `latest`. A `compose.yaml` at the repository root runs it with PostgreSQL under `docker compose` or `podman compose`.
+- **From source**: clone the repository and run `make up` (`backend-pod.yaml`).
+
+**Image installation**
+
+1. Create `.env` with a generated `CREDENTIALS_KEY` (base64, 32 bytes) and `POSTGRES_PASSWORD`, by one documented command (a PowerShell variant for Windows) or by the install script. No secret is hardcoded.
+2. Start the stack. The backend applies pending migrations at startup (`Database__MigrateOnStartup=true` in `compose.yaml`; off in development).
+3. The backend serves the frontend as a single-page app on one origin (port 8080); every path outside `/api` falls back to `index.html`. The setup link's base URL defaults to `http://localhost:8080`.
+4. Read the setup link from the backend's logs and continue with first-run setup (2.1).
+5. Upgrading: pull the new image and restart; migrations apply on start.
+
+**Install script** (`install.sh`, served from the public site)
+
+1. Check for `docker` or `podman`, a compose plugin, and `openssl`; stop with a clear message if one is missing.
+2. Create a `chaoslab/` folder and download `compose.yaml` from the script's own release tag.
+3. Write `.env` only if none exists. An existing one is kept, because a new key or password would orphan the database and every stored credential.
+4. Run `compose up -d`, wait for the setup link in the backend's logs, and print it.
+5. No `sudo`, no telemetry. The site shows "read the script" and "install by hand" next to the command.
+
+**Public site** (`Website/`, SvelteKit with `adapter-static`, deployed to GitHub Pages under `/ChaosLab`)
+
+- Published only once the `LICENSE` (AGPL-3.0) is committed. No managed service is mentioned.
+- Landing page, top to bottom: hero with the install block; the non-production warning directly under it; the pipeline (Import → Discover → Generate → Execute → Observe → Evaluate → Report); the chaos primitives; screenshots of a run's results and report; footer with license, GitHub, and docs links.
+- Until `v0.1.0` exists, the install block shows the from-source steps with the note "One-command install arrives with v0.1.0. Until then, install from source."
+- Docs pages: Installation, First-run setup, Configuration, Upgrading, Safe use (non-production targets only, authorization confirmation).
+- Screenshots come from a run against a non-production target the team owns, checked for hostnames, emails, and credentials. A bundled demo API is a possible later improvement.
+
+### 2.1 First-run setup [Done]
 
 1. Start the backend against an uninitialized database.
 2. The backend creates a random 64-character token held only in memory, valid for one hour, and prints a link ending in `/install#token=...`. The base URL comes from `BootstrapSetup:PublicUrl`, which must be an absolute HTTP(S) URL.
@@ -85,7 +118,7 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 5. `POST /api/auth/setup` compares the token in constant time. A missing, invalid, or expired token returns 403.
 6. The backend takes a PostgreSQL advisory lock, then creates the SuperAdmin role and account in one transaction. A second simultaneous request cannot also initialize the instance.
 7. The new administrator is signed in immediately and is not forced to change the password just chosen.
-8. After setup the endpoint returns 409. The `SuperAdmin` role is the permanent setup marker, so deleting or disabling the administrator never reopens installation.
+8. After setup the endpoint returns 409. The `SuperAdmin` role is the permanent setup marker, so deleting or disabling the administrator never reopens first-run setup.
 9. Restarting an uninitialized backend issues a new link and invalidates the old one. Initialized instances print no setup link. Terminal output and container logs that contain setup links must stay restricted.
 
 ### 2.2 Login [Done]

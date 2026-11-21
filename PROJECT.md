@@ -507,7 +507,7 @@ PostgreSQL is sufficient for V1. Supabase is intentionally not used. A free or l
 
 # 19. Architecture Style and Backend Modules
 
-ChaosLab V1 is a **modular monolith with separately identifiable execution components**. Reasons: a four-person team, a limited implementation period, and the overhead of distributed systems. Clear boundaries still allow later extraction.
+ChaosLab V1 is a **modular monolith with separately identifiable execution components**. Reasons: a single developer, a limited implementation period, and the overhead of distributed systems. Clear boundaries still allow later extraction.
 
 Backend HTTP features are organized as **vertical slices** under `Backend/Features/`, one file per query or command, with routes grouped under `/api` in `Program.cs`. `Features/Projects` is the reference slice.
 
@@ -594,16 +594,9 @@ This replaces the earlier proposed `apps/`, `services/chaos-runner/`, `packages/
 
 # 22. Team Structure
 
-Four members: Neil Jhonreise Vallecer, Christian Dave Sayson, Kristina Cassandra Gonzaga, Jan Nino Rosalijos. Adviser: Mr. Donald M. Francisco.
+Solo: Neil Jhonreise Vallecer owns the whole project: architecture, backend and frontend, the chaos engine, tests, documentation, and the capstone presentation. Adviser: Mr. Donald M. Francisco.
 
-Confirmed: Neil is the Full Stack Engineer; one teammate is the Documentation Specialist. The remaining assignments below are **recommended ownership, not confirmed**.
-
-- **Full-stack / technical lead:** architecture, backend and frontend, integration, code review.
-- **Documentation / research lead:** capstone documentation, requirements, testing evidence, presentation.
-- **Backend / chaos engine developer:** execution engine, fault injection, OpenAPI processing, scenario execution, automated tests.
-- **Frontend / QA and UX developer:** dashboard UI, results visualization, test workflows, usability and regression testing.
-
-Roles are primary ownership, not hard boundaries.
+Plans and scope are sized for a single developer.
 
 ---
 
@@ -731,6 +724,16 @@ Decisions confirmed on 8 November 2026:
 | Mobile | Read-only viewer in V1; web is the full client. |
 | Repository layout | Documentation follows the actual repo layout (`Backend/`, `Backend.Tests/`, `Frontend/`). |
 | Instance setup | One-hour setup link with fragment token; username supplied at setup; no default credentials. |
+
+Decisions confirmed on 21 November 2026:
+
+| Topic | Decision |
+|---|---|
+| License | The community version is AGPL-3.0, so a hosted copy must publish its changes while the copyright holders keep the right to run a commercial managed service. Rejected: MIT/Apache-2.0 (lets anyone resell it as a hosted service) and BSL/FSL/ELv2 (not OSI open source). Before publishing the `LICENSE`: the school's capstone IP rules are checked (the project is solo; every commit has one author), outside contributions require a CLA, and QuestPDF's Community license limits are checked for self-hosters and the managed service. |
+| Distribution | Two install paths: a release image (backend plus built frontend) on GHCR for amd64 and arm64, run with a root `compose.yaml` and PostgreSQL; and from source with `make up`. Version tags publish the image and move `latest`. Secrets come from a generated `.env` (by a documented command or `install.sh`, which never overwrites an existing one). See FeaturesFlow 2.0. |
+| Migrations | Applied at startup when `Database__MigrateOnStartup=true` (on in `compose.yaml`, off in development), replacing "not applied at startup" so an image install needs no SDK. `make migrate` stays for development. |
+| Frontend deployment | `adapter-static` with an `index.html` fallback, served by the backend on one origin, so the HttpOnly cookie keeps working without a proxy. Vite's dev proxy is unchanged. |
+| Public site | A separate SvelteKit static site in `Website/` on GitHub Pages, not a route in the app, so instances never serve marketing. Landing page plus five docs pages; published only after the `LICENSE` is committed; may launch before the release image with from-source steps. |
 
 ---
 
