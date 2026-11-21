@@ -76,9 +76,9 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 
 ## 2. Process details
 
-### 2.0 Installation [Planned]
+### 2.0 Installation [Partial]
 
-Decided (PROJECT.md 26, 21 November 2026). Not built: all of it. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
+Decided (PROJECT.md 26, 21 November 2026). Built: the public site in `Website/`, with the landing page and the five docs pages showing the from-source steps, and its GitHub Pages workflow (`.github/workflows/website.yml`), which deploys only once `LICENSE` exists. Not built: the `LICENSE`, the release image, `compose.yaml`, startup migrations, and the install script. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
 
 **Install paths**
 

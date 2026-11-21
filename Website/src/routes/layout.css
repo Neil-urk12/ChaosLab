@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* The app's palette (Frontend/src/routes/layout.css): dark by default, light when the visitor's system asks for it. */
+@theme {
+	--color-canvas: #07090e;
+	--color-panel: #0b0e15;
+	--color-field: #0d111a;
+	--color-line-faint: #1a1f2b;
+	--color-line: #1e2433;
+	--color-line-strong: #2a3142;
+	--color-strong: #ffffff;
+	--color-accent: #7b7dfb;
+	--color-accent-hover: #8d8ffc;
+	--color-accent-ink: #a5a6fd;
+	--color-accent-ink-strong: #c3c4fe;
+	--color-accent-tint: #1b1d3a;
+	--color-on-accent: #0b0d1a;
+	--color-warn-panel: #1a140a;
+	--color-warn-line: #3d2e12;
+}
+
+:root {
+	color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+	:root {
+		color-scheme: light;
+		--color-canvas: #f3f4f8;
+		--color-panel: #ffffff;
+		--color-field: #ffffff;
+		--color-line-faint: #e4e7ee;
+		--color-line: #d7dbe5;
+		--color-line-strong: #bcc2cf;
+		--color-strong: #07090e;
+		--color-accent: #4f50d6;
+		--color-accent-hover: #4243bf;
+		--color-accent-ink: #4546c4;
+		--color-accent-ink-strong: #34359e;
+		--color-accent-tint: #e7e7fb;
+		--color-on-accent: #ffffff;
+		--color-warn-panel: #fdf8ec;
+		--color-warn-line: #f0dcae;
+
+		/* shortcut: same as the app, light mode re-points the dark-tuned slate and amber shades instead of
+		   editing every class. Move to semantic text tokens if this grows. */
+		--color-slate-100: #121624;
+		--color-slate-200: #222838;
+		--color-slate-300: #384053;
+		--color-slate-400: #4f586b;
+		--color-slate-500: #646d80;
+		--color-amber-200: #92400e;
+		--color-amber-300: #b45309;
+	}
+}
+
+body {
+	@apply bg-canvas text-slate-300 antialiased;
+	font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer components {
+	.docs {
+		/* Colors come from the tokens above, which already switch with the color scheme. */
+		@apply prose max-w-none text-[14px] leading-relaxed;
+		--tw-prose-body: var(--color-slate-300);
+		--tw-prose-captions: var(--color-slate-500);
+		--tw-prose-quotes: var(--color-slate-200);
+		--tw-prose-quote-borders: var(--color-line-strong);
+		--tw-prose-hr: var(--color-line);
+		--tw-prose-pre-code: var(--color-slate-200);
+		--tw-prose-pre-bg: var(--color-field);
+		--tw-prose-headings: var(--color-strong);
+		--tw-prose-links: var(--color-accent-ink);
+		--tw-prose-bold: var(--color-slate-100);
+		--tw-prose-code: var(--color-slate-100);
+		--tw-prose-bullets: var(--color-slate-500);
+		--tw-prose-counters: var(--color-slate-500);
+		--tw-prose-th-borders: var(--color-line-strong);
+		--tw-prose-td-borders: var(--color-line);
+	}
+	.docs :where(code):not(:where(pre *))::before,
+	.docs :where(code):not(:where(pre *))::after {
+		content: none;
+	}
+	.docs :where(code):not(:where(pre *)),
+	.docs :where(kbd) {
+		@apply rounded bg-field px-1 py-0.5 text-[12.5px] font-medium text-slate-100 shadow-none ring-1 ring-line;
+	}
+}

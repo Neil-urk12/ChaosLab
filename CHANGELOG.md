@@ -8,6 +8,12 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Public website (`Website/`). A static SvelteKit site had a landing page and five docs
+  pages: Installation, First-run setup, Configuration, Upgrading and Safe use. It showed the
+  install-from-source steps and said the one-command install arrives with v0.1.0. A
+  GitHub Actions workflow built it whenever `Website/`, the workflow or `LICENSE` changed on
+  `develop`, and deployed it to GitHub Pages under `/ChaosLab`, but only once the repository
+  had a `LICENSE` file.
 - PDF reports. Owners and editors generated a report for any finished run from the run
   results page, and every project member could download it there. Each report had
   the run's status, environment, specification and configuration, the score, evidence

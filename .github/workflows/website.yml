@@ -1,0 +1,59 @@
+name: Website
+
+on:
+  push:
+    branches: [develop]
+    # LICENSE too: committing it is what first lets the deploy job run (see the license step).
+    paths: ['Website/**', '.github/workflows/website.yml', 'LICENSE']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.license.outputs.publish }}
+    defaults:
+      run:
+        working-directory: Website
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: Website/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check
+      - run: pnpm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: Website/build
+      # The site says AGPL-3.0, so it is published only once the LICENSE file exists (PROJECT.md 26).
+      - id: license
+        run: echo "publish=$([ -f ../LICENSE ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
