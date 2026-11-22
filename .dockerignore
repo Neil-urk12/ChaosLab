@@ -22,5 +22,17 @@
 **/secrets.dev.yaml
 **/values.dev.yaml
 LICENSE
-README.md
 **/.env.*
+# Context is the repository root: send only Backend/ and Frontend/ sources.
+.crush
+.github
+**/.svelte-kit
+**/build
+**/test-results
+__pycache__
+*.md
+*.py
+Backend.Tests
+Mobile
+Website
+secret.yaml

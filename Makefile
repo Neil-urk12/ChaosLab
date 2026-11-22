@@ -7,7 +7,7 @@ POD_NAME          ?= chaoslab-stack
 
 help:
 	@echo "Available commands:"
-	@echo "  make build         - Build the backend container image (IMAGE_NAME=$(IMAGE_NAME))"
+	@echo "  make build         - Build the container image, backend and web app (IMAGE_NAME=$(IMAGE_NAME))"
 	@echo "  make up            - Start the pod stack with secrets and dynamic image substitution"
 	@echo "  make start         - Start with deployed db"
 	@echo "  make down          - Stop and remove the pod (preserves database data)"
@@ -29,7 +29,7 @@ secret-init:
 	fi
 
 build:
-	podman build -t $(IMAGE_NAME) Backend/
+	podman build -t $(IMAGE_NAME) -f Backend/Dockerfile .
 
 up: secret-init
 	(cat $(SECRET_FILE) && echo "---" && envsubst '$${IMAGE_NAME}' < $(KUBE_FILE)) | podman play kube -

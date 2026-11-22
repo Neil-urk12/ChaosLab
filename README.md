@@ -253,11 +253,14 @@ enter your name, username, email, and password to create the first SuperAdmin
 and sign in. No initial password environment variables are required, and the
 login page never publishes administrator credentials.
 
-The link defaults to `http://localhost:5173/install#token=...`. Set
+The link defaults to `http://localhost:5173/install#token=...` when the backend
+runs from source, and to `http://localhost:8080/install#token=...` in the container
+image, which serves the web app itself. Set
 `BootstrapSetup__PublicUrl` to the externally reachable frontend base URL when
 using another address; it must be an absolute HTTP(S) URL without credentials,
-query parameters, or a fragment. Production deployments must use HTTPS. The
-frontend must proxy `/api` to the backend, as the development server does.
+query parameters, or a fragment. Production deployments must use HTTPS. The web
+app and `/api` must share one origin: the image serves both, and the development
+server proxies `/api` to the backend.
 
 Treat the terminal link and container logs as secrets. The random token expires
 one hour after generation and is kept only in backend memory. Restart an
@@ -303,11 +306,10 @@ an operator responsibility, not public registration.
    make logs-backend  # Backend only
    make logs-db       # Postgres only
    ```
-6. **Run the Frontend in Development Mode**:
-   ```bash
-   make dev-fe
-   ```
-   Open [http://localhost:5173](http://localhost:5173) in your browser. The backend API is reachable at [http://localhost:8080](http://localhost:8080).
+6. **Open the Web App**: the image serves it with the API at
+   [http://localhost:8080](http://localhost:8080). To work on the frontend with live
+   reload, use `make start` instead, which runs a local backend on :5274 for the
+   development server.
 
 7. **Tear Down the Stack**:
    ```bash

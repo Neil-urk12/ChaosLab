@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
@@ -12,10 +12,9 @@ export default defineConfig({
 				runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-			// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-			adapter: adapter()
+			// A client-rendered app the backend serves on its own origin (PROJECT.md decision log, Frontend deployment):
+			// every page path gets index.html and the app routes from there.
+			adapter: adapter({ fallback: 'index.html' })
 		})
 	],
 	// Same-origin /api so the HttpOnly auth cookie works without CORS.

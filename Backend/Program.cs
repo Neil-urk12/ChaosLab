@@ -60,6 +60,11 @@ var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
+    // On for image installs (compose.yaml), which have no SDK for `make migrate`; off in development. Runs before the
+    // run executor starts with the host.
+    if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
+
     var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
     if (!await roles.RoleExistsAsync(AuthSetup.SuperAdminRole))
     {
@@ -102,6 +107,10 @@ app.Use(async (context, next) =>
         context.Response.StatusCode, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 });
 app.UseHttpsRedirection();
+// The built web app in wwwroot (only in the image; development uses Vite). Served before authentication, so no sign-in.
+// Default files serve "/", which the fallback's catch-all below does not match.
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -116,6 +125,9 @@ api.MapFindingEndpoints();
 api.MapReportEndpoints();
 api.MapMemberEndpoints();
 api.MapUserEndpoints();
+
+// Every page path outside /api gets the app's index.html, which routes in the browser; unknown /api paths stay 404.
+app.MapFallbackToFile("{*path:regex(^(?!api(/|$))):nonfile}", "index.html").AllowAnonymous();
 
 app.Run();
 

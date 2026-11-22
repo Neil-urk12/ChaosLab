@@ -34,7 +34,8 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
         }
     }
 
-    public async Task<TestDatabase> CreateDatabaseAsync()
+    // migrate: false leaves the database empty, as a fresh install finds it.
+    public async Task<TestDatabase> CreateDatabaseAsync(bool migrate = true)
     {
         var adminConnectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
         {
@@ -47,6 +48,8 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
         await command.ExecuteNonQueryAsync();
 
         var database = new TestDatabase(adminConnectionString, name);
+        if (!migrate)
+            return database;
         try
         {
             await using var context = database.CreateContext();

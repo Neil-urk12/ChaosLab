@@ -8,6 +8,17 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- The container image served the web app. `make build` built the frontend with
+  `adapter-static` and an `index.html` fallback and put it in the image, which served it
+  on port 8080 next to the API, without sign-in. Every page path outside `/api` got the
+  app's `index.html`, and `/api` paths never did. The image's first-run setup link
+  pointed to `http://localhost:8080`, and the image was built from the repository root
+  (`podman build -f Backend/Dockerfile .`). Local development with Vite was unchanged.
+- Startup migrations. With `Database__MigrateOnStartup=true`, the backend applied pending
+  database migrations when it started, before the run executor began, so an instance
+  installed from the image needed no .NET SDK or `dotnet-ef`. The setting was off by
+  default, and development kept using `make migrate`.
+
 - Public website (`Website/`). A static SvelteKit site had a landing page and five docs
   pages: Installation, First-run setup, Configuration, Upgrading and Safe use. It showed the
   install-from-source steps and said the one-command install arrives with v0.1.0. A
