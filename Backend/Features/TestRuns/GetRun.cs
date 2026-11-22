@@ -39,6 +39,8 @@ public static class GetRun
         // Previous completed, scored run on the same environment and scoring version (see ListRuns.Row.PreviousScore).
         Previous? Previous,
         List<Timeline> Timelines,
+        // Failed and skipped executions grouped by reason, most frequent first.
+        List<ExecutionProblem> Problems,
         // Set only while the run is Queued or Running.
         Live? Live);
 
@@ -61,6 +63,8 @@ public static class GetRun
     public sealed record FeedFinding(ResilienceFindingOutcome Outcome, string Summary);
 
     public sealed record Current(Guid ExecutionId, JsonElement Parameters, JsonElement Invariants, List<Event> Events);
+
+    public sealed record ExecutionProblem(ScenarioExecutionStatus Status, string? Reason, int Count);
 
     public sealed record Previous(Guid Id, int Number, decimal Score);
 
@@ -155,11 +159,19 @@ public static class GetRun
                     .ToList()))
             .ToListAsync(cancellationToken);
 
+        var problems = await db.ScenarioExecutions.AsNoTracking()
+            .Where(execution => execution.TestRunId == runId
+                && (execution.Status == ScenarioExecutionStatus.Skipped || execution.Status == ScenarioExecutionStatus.Failed))
+            .GroupBy(execution => new { execution.Status, execution.FailureReason })
+            .OrderByDescending(group => group.Count())
+            .Select(group => new ExecutionProblem(group.Key.Status, group.Key.FailureReason, group.Count()))
+            .ToListAsync(cancellationToken);
+
         return TypedResults.Ok(new Response(
             run.Id, run.Number, run.Status, run.EnvironmentName, run.RequestedBy, run.CreatedAt, run.StartedAt,
             run.CompletedAt, run.CompletedScenarios, run.TotalScenarios, run.Skipped, run.ResilienceScore,
             run.EvidenceCoverage, run.CategoryScores?.Deserialize<List<Scorer.CategoryScore>>(JsonSerializerOptions.Web), endpoints,
-            run.ScoringVersion, run.FailureMessage, previous, timelines,
+            run.ScoringVersion, run.FailureMessage, previous, timelines, problems,
             run.Status is TestRunStatus.Queued or TestRunStatus.Running ? await LiveAsync(db, runId, cancellationToken) : null));
     }
 

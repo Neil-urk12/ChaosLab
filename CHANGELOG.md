@@ -429,6 +429,13 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- The run results page said why scenarios failed. When scenarios failed, for example
+  because the spec had no example for a required parameter, the runner note gave the
+  number that failed instead of "No runner errors in this run." and listed the failed
+  and skipped scenarios grouped by reason. The run history showed the failed count next
+  to the scenario count. The run API returned the grouped reasons, and the PDF report
+  used the same list.
+
 - Re-importing an OpenAPI spec kept the project's scenarios. When the replaced spec
   had scenarios, the import re-applied the generation rules to the new endpoints in the
   same transaction, carrying edits over by path, method, and fault, so the project

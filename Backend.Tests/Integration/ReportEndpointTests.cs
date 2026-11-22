@@ -78,7 +78,7 @@ public sealed class ReportEndpointTests(PostgreSqlFixture postgres)
         var data = (await GenerateReport.LoadAsync(db, projectId, runId, admin, TimeProvider.System, CancellationToken.None))!;
         Assert.DoesNotContain(Token, JsonSerializer.Serialize(data, Json));
         Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.NoDependency, 1),
-            (Assert.Single(data.ExecutionProblems).Status, data.ExecutionProblems[0].Reason, data.ExecutionProblems[0].Count));
+            (Assert.Single(data.Run.Problems).Status, data.Run.Problems[0].Reason, data.Run.Problems[0].Count));
         Assert.NotEmpty(data.Findings);
 
         // Viewers download but cannot generate.

@@ -11,7 +11,7 @@ const runningRun = {
 	id: 'r27', number: 27, status: 'Running', environmentName: 'Staging', requestedBy: 'Maya Chen',
 	createdAt: '2026-11-08T08:12:00Z', startedAt: '2026-11-08T08:12:00Z', completedAt: null,
 	completedScenarios: 4, totalScenarios: 96, skippedScenarios: 1, score: null, evidenceCoverage: null, categories: null, endpoints: [], scoringVersion: '1.0',
-	failureMessage: null, previous: null, timelines: [],
+	failureMessage: null, previous: null, timelines: [], problems: [],
 	live: {
 		feed: [
 			row('e5', 'Latency', 'GET', '/payments/{id}', 'Running'),

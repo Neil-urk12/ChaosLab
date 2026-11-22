@@ -19,13 +19,8 @@ public sealed record ReportData(
     GetRun.Response Run,
     JsonElement RunConfig,
     List<ListFindings.Row> Findings,
-    // Skipped and runner-failed executions grouped by reason, most frequent first.
-    List<ReportData.ExecutionProblem> ExecutionProblems,
     string GeneratedBy,
-    DateTimeOffset GeneratedAt)
-{
-    public sealed record ExecutionProblem(ScenarioExecutionStatus Status, string? Reason, int Count);
-}
+    DateTimeOffset GeneratedAt);
 
 // The PDF layout. The only file that knows QuestPDF, so the library can be swapped here alone.
 public static class ReportDocument
@@ -263,7 +258,7 @@ public static class ReportDocument
             });
         if (!string.IsNullOrWhiteSpace(run.FailureMessage))
             notes.Add($"Run failure: {run.FailureMessage}");
-        foreach (var problem in data.ExecutionProblems)
+        foreach (var problem in data.Run.Problems)
             notes.Add($"{problem.Count} scenario{(problem.Count == 1 ? " was" : "s were")} " +
                 $"{(problem.Status == ScenarioExecutionStatus.Skipped ? "skipped" : "stopped by a runner error")}: " +
                 $"{problem.Reason ?? "no reason recorded"}");

@@ -32,6 +32,8 @@ public static partial class ListRuns
         TestRunStatus Status,
         int CompletedScenarios,
         int TotalScenarios,
+        // Also counted in CompletedScenarios, which counts every scenario the runner finished.
+        int FailedScenarios,
         string RequestedBy,
         DateTimeOffset CreatedAt,
         DateTimeOffset? StartedAt,
@@ -106,7 +108,9 @@ public static partial class ListRuns
             .Select(row => new
             {
                 row.Run.Id, row.Number, EnvironmentName = row.Run.Environment.Name, row.Run.Status,
-                row.Run.CompletedScenarios, row.Run.TotalScenarios, RequestedBy = row.Run.RequestedBy.DisplayName,
+                row.Run.CompletedScenarios, row.Run.TotalScenarios,
+                FailedScenarios = row.Run.ScenarioExecutions.Count(execution => execution.Status == ScenarioExecutionStatus.Failed),
+                RequestedBy = row.Run.RequestedBy.DisplayName,
                 row.Run.CreatedAt, row.Run.StartedAt, row.Run.CompletedAt, row.Run.ResilienceScore,
                 PreviousScore = row.Run.ResilienceScore == null || row.Run.CompletedAt == null
                     ? null
@@ -128,7 +132,7 @@ public static partial class ListRuns
             await runs.Select(run => run.Environment.Name).Distinct().OrderBy(name => name).ToListAsync(cancellationToken),
             await runs.Select(run => run.ScoringVersion).Distinct().OrderBy(version => version).ToListAsync(cancellationToken),
             rows.Select(run => new Row(
-                run.Id, run.Number, run.EnvironmentName, run.Status, run.CompletedScenarios, run.TotalScenarios,
+                run.Id, run.Number, run.EnvironmentName, run.Status, run.CompletedScenarios, run.TotalScenarios, run.FailedScenarios,
                 run.RequestedBy, run.CreatedAt, run.StartedAt, run.CompletedAt, run.ResilienceScore, run.PreviousScore,
                 run.ScoringVersion, run.FailureMessage,
                 // Halves round up, as the results page and Scorer round them.

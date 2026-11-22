@@ -13,7 +13,7 @@ function project(id: string) {
 function run(projectId: string, number: number) {
 	return {
 		id: `${projectId}-${number}`, number, environmentName: 'Staging', status: 'Completed',
-		completedScenarios: 1, totalScenarios: 1, requestedBy: 'Initial Administrator',
+		completedScenarios: 1, totalScenarios: 1, failedScenarios: 0, requestedBy: 'Initial Administrator',
 		createdAt: '2026-11-01T00:00:00Z', startedAt: '2026-11-01T00:00:00Z', completedAt: '2026-11-01T00:01:00Z',
 		score: 80, previousScore: null, scoringVersion: '1', failureMessage: null, evidenceCoverage: 100
 	};
@@ -111,6 +111,7 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 			...run('a', 30), skippedScenarios: 2, score: 78, previous: { id: 'a-29', number: 29, score: 70 }, evidenceCoverage: 66.67,
 			categories: [{ category: 'Idempotency', weight: 10, score: 50, findings: 2, inconclusive: 0 }],
 			endpoints: [{ httpMethod: 'POST', path: '/payments', score: 50 }],
+			problems: [{ status: 'Skipped', reason: 'The dependency simulator is not set up.', count: 2 }],
 			timelines: [{
 				executionId: 'e1', httpMethod: 'POST', path: '/payments', scenarioType: 'DuplicateRequest', outcome: 'Failed',
 				failureReason: 'record count ≤ 1 · actual 2', completedAt: '2026-11-01T00:00:06Z',
@@ -138,15 +139,33 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 	await expect(page.getByText('67%')).toBeVisible();
 	await expect(page.getByText('2 of 3 findings scored.')).toBeVisible();
 	await expect(page.getByText('Persist idempotency keys')).toBeVisible();
-	await expect(page.getByText('2 scenarios were skipped.')).toBeVisible();
+	await expect(page.getByText('No runner errors in this run. 2 scenarios were skipped.')).toBeVisible();
+	await expect(page.getByRole('listitem').filter({ hasText: '2 skipped: The dependency simulator is not set up.' })).toBeVisible();
 	await expect(page.getByText('record count ≤ 1 · actual 2')).toBeVisible();
+});
+
+test('a run whose scenarios failed before sending a request lists why', async ({ page }) => {
+	const reason = 'The required header parameter "Idempotency-Key" has no example, default or enum value in the spec.';
+	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
+		json: {
+			...run('a', 30), status: 'PartiallyCompleted', completedScenarios: 26, totalScenarios: 26, skippedScenarios: 0,
+			score: null, previous: null, evidenceCoverage: null, categories: null, endpoints: [], timelines: [],
+			problems: [{ status: 'Failed', reason, count: 17 }]
+		}
+	}));
+	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({ json: { runs: [], run: null, findings: [] } }));
+
+	await page.goto(`${origin}/projects/a/runs/a-30`);
+	await expect(page.getByText('17 scenarios failed.')).toBeVisible();
+	await expect(page.getByRole('listitem').filter({ hasText: `17 failed: ${reason}` })).toBeVisible();
+	await expect(page.getByText(/No runner errors/)).toHaveCount(0);
 });
 
 test('a completed run with nothing scored says so instead of claiming it did not finish', async ({ page }) => {
 	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
 		json: {
 			...run('a', 30), skippedScenarios: 0, score: null, previous: null, evidenceCoverage: 0,
-			categories: [{ category: 'Idempotency', weight: 10, score: null, findings: 1, inconclusive: 1 }], endpoints: [], timelines: []
+			categories: [{ category: 'Idempotency', weight: 10, score: null, findings: 1, inconclusive: 1 }], endpoints: [], timelines: [], problems: []
 		}
 	}));
 	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({ json: { runs: [], run: null, findings: [] } }));

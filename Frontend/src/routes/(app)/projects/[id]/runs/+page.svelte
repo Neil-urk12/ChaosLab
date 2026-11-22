@@ -179,7 +179,7 @@
 							<td class="px-4 py-4 text-slate-300">{run.requestedBy}</td>
 							<td class="px-4 py-4 whitespace-nowrap text-slate-300">{dateTime(run.startedAt ?? run.createdAt)}</td>
 							<td class="px-4 py-4 text-slate-300">{duration(run.startedAt, run.completedAt ?? (run.status === 'Running' ? new Date().toISOString() : null))}</td>
-							<td class="px-4 py-4 text-slate-300">{run.completedScenarios} / {run.totalScenarios}</td>
+							<td class="px-4 py-4 whitespace-nowrap text-slate-300">{run.completedScenarios} / {run.totalScenarios}{#if run.failedScenarios}<span class="text-rose-300"> · {run.failedScenarios} failed</span>{/if}</td>
 							<td class="px-4 py-4 text-slate-300">
 								{#if run.evidenceCoverage != null && !active(run)}
 									<span class="flex items-center gap-2">

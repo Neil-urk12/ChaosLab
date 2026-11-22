@@ -6,7 +6,7 @@ const completedRun = {
 	id: 'r30', number: 30, status: 'Completed', environmentName: 'Staging', requestedBy: 'Maya Chen',
 	createdAt: '2026-11-08T08:12:00Z', startedAt: '2026-11-08T08:12:00Z', completedAt: '2026-11-08T08:20:00Z',
 	completedScenarios: 2, totalScenarios: 2, skippedScenarios: 0, score: 80, evidenceCoverage: 100, categories: [],
-	endpoints: [], scoringVersion: '1.0', failureMessage: null, previous: null, timelines: [], live: null
+	endpoints: [], scoringVersion: '1.0', failureMessage: null, previous: null, timelines: [], problems: [], live: null
 };
 
 const report = (id: string, version: number) => ({

@@ -93,18 +93,11 @@ public static class GenerateReport
                 testRun.ApiSpec.OpenApiVersion, testRun.RunConfig
             })
             .SingleAsync(cancellationToken);
-        var problems = await db.ScenarioExecutions.AsNoTracking()
-            .Where(execution => execution.TestRunId == runId
-                && (execution.Status == ScenarioExecutionStatus.Skipped || execution.Status == ScenarioExecutionStatus.Failed))
-            .GroupBy(execution => new { execution.Status, execution.FailureReason })
-            .OrderByDescending(group => group.Count())
-            .Select(group => new ReportData.ExecutionProblem(group.Key.Status, group.Key.FailureReason, group.Count()))
-            .ToListAsync(cancellationToken);
         var userId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
         var generatedBy = await db.Users.Where(user => user.Id == userId).Select(user => user.DisplayName).SingleAsync(cancellationToken);
 
         return new ReportData(context.ProjectName, context.Title, context.VersionLabel, context.OpenApiVersion, run,
-            context.RunConfig.RootElement.Clone(), findings, problems, generatedBy, time.GetUtcNow());
+            context.RunConfig.RootElement.Clone(), findings, generatedBy, time.GetUtcNow());
     }
 
     // Safe for a Content-Disposition header and any file system.

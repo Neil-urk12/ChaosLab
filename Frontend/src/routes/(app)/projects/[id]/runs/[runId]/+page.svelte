@@ -45,9 +45,14 @@
 		run.score == null ? 'Not scored' : change == null ? scoreLabel(run.score) : change > 0 ? 'Improving' : change < 0 ? 'Declining' : 'Steady'
 	);
 
+	const failedScenarios = $derived(run.problems.reduce((n, p) => (p.status === 'Failed' ? n + p.count : n), 0));
 	const runnerNote = $derived.by(() => {
 		if (run.failureMessage) return run.failureMessage;
-		const parts = [run.status === 'Failed' ? 'The runner stopped this run.' : 'No runner errors in this run.'];
+		const parts = [
+			run.status === 'Failed' ? 'The runner stopped this run.'
+			: failedScenarios ? `${failedScenarios} scenario${failedScenarios === 1 ? '' : 's'} failed.`
+			: 'No runner errors in this run.'
+		];
 		if (run.skippedScenarios) parts.push(`${run.skippedScenarios} scenario${run.skippedScenarios === 1 ? ' was' : 's were'} skipped.`);
 		if (run.completedScenarios < run.totalScenarios) parts.push(`${run.completedScenarios} of ${run.totalScenarios} scenarios completed.`);
 		return parts.join(' ');
@@ -469,7 +474,16 @@
 					</div>
 				{/each}
 			</dl>
-			<p class="mt-5 rounded-md border border-line bg-panel px-4 py-3 text-xs text-slate-300">{runnerNote}</p>
+			<div class="mt-5 rounded-md border border-line bg-panel px-4 py-3 text-xs text-slate-300">
+				<p>{runnerNote}</p>
+				{#if run.problems.length}
+					<ul class="mt-2 space-y-1 text-slate-400" aria-label="Failed and skipped scenarios">
+						{#each run.problems as p (`${p.status}:${p.reason}`)}
+							<li><span class={p.status === 'Failed' ? 'text-rose-300' : 'text-slate-300'}>{p.count} {p.status === 'Failed' ? 'failed' : 'skipped'}</span>: {p.reason ?? 'No reason recorded.'}</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		</section>
 	</div>
 

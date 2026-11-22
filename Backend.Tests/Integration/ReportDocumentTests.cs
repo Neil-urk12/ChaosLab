@@ -28,7 +28,7 @@ public sealed class ReportDocumentTests
             [new("GET", "/orders/{id}", 50m)], "1.0", "One scenario hit a runner error.",
             new GetRun.Previous(Guid.NewGuid(), 11, 70m),
             [new(Guid.NewGuid(), "GET", "/orders/{id}", ScenarioType.ServerErrorStorm, ScenarioOutcome.Failed, null, at, events)],
-            null);
+            [new(ScenarioExecutionStatus.Failed, null, 1)], null);
         var evidence = JsonSerializer.SerializeToElement(new
         {
             expected = "The target recovers after the storm.",
@@ -47,7 +47,7 @@ public sealed class ReportDocumentTests
         ];
         var data = new ReportData("Orders & Billing", "Orders", "1.0", "3.0.3", run,
             JsonSerializer.SerializeToElement(new { concurrency = 2, target = new { baseUrl = "https://staging.example.test" } }),
-            findings, [new(ScenarioExecutionStatus.Failed, null, 1)], "Test User", at);
+            findings, "Test User", at);
 
         var pdf = ReportDocument.Render(data);
 

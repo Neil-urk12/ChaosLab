@@ -240,6 +240,8 @@ export type RunHistoryRow = {
 	status: TestRunStatus;
 	completedScenarios: number;
 	totalScenarios: number;
+	// Also counted in completedScenarios.
+	failedScenarios: number;
 	requestedBy: string;
 	createdAt: string;
 	startedAt: string | null;
@@ -324,6 +326,8 @@ export type RunDetail = {
 	failureMessage: string | null;
 	previous: { id: string; number: number; score: number } | null;
 	timelines: RunTimeline[];
+	// Failed and skipped executions grouped by reason, most frequent first.
+	problems: { status: 'Failed' | 'Skipped'; reason: string | null; count: number }[];
 	// Set only while the run is Queued or Running.
 	live: RunLive | null;
 };
