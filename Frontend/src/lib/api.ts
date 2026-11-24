@@ -125,6 +125,13 @@ export type SpecEndpoint = {
 	scenarioCount: number;
 	testing: EndpointTesting;
 	change: 'New' | 'Modified' | null;
+	// What the runner must fill: required path, query and header parameters (generated ones need no value) and the JSON body.
+	inputs: { key: string; in: string; name: string; example: string | null; generated: boolean }[];
+	body: { contentType: string; schema: unknown; required: boolean; hasExample: boolean } | null;
+	// Saved test values, sent ahead of the spec's examples.
+	saved: { parameters?: Record<string, string>; body?: unknown } | null;
+	// What the runner still can't fill, e.g. 'path parameter "id"' or 'request body'.
+	missing: string[];
 };
 
 export type ApiSpecDetail = {
@@ -139,6 +146,8 @@ export type ApiSpecDetail = {
 	securitySchemes: { name: string; type: string; global: boolean }[];
 	endpoints: SpecEndpoint[];
 	changes: { added: number; modified: number; removed: string[] } | null;
+	// components.schemas, which body schemas $ref.
+	schemas: Record<string, unknown> | null;
 };
 
 // Backend/Features/Scenarios

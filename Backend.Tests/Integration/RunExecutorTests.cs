@@ -413,6 +413,81 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task A_required_idempotency_key_header_needs_no_example()
+    {
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var spec = Spec.Replace(", example: spec-key", "");
+        Assert.NotEqual(Spec, spec);
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl, spec: spec);
+        var latency = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.Latency).Id;
+        await SetParametersAsync(client, projectId, latency, new { delayMs = 0 });
+        await CreateRunAsync(client, projectId, [latency]);
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        var keys = received.Where(r => r.Method == "POST").Select(r => r.IdempotencyKey).ToList();
+        Assert.Equal(2, keys.Count);
+        Assert.All(keys, key => Assert.True(Guid.TryParse(key, out _)));
+    }
+
+    [Fact]
+    public async Task Saved_test_values_fill_what_the_spec_lacks_and_the_run_keeps_its_snapshot()
+    {
+        const string spec = """
+            openapi: 3.0.3
+            info: {title: Widgets, version: "1.0"}
+            security: [{bearerAuth: []}]
+            components:
+              securitySchemes:
+                bearerAuth: {type: http, scheme: bearer}
+              schemas:
+                Widget: {type: object, required: [name], properties: {name: {type: string}}}
+            paths:
+              /items/{sku}:
+                get:
+                  parameters: [{name: sku, in: path, required: true, schema: {type: string}}]
+                  responses: {"200": {description: ok}}
+              /widgets:
+                post:
+                  requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Widget"}}}}
+                  responses: {"201": {description: created}}
+            """;
+        var received = new ConcurrentQueue<Received>();
+        using var listener = StartTarget(received, out var baseUrl);
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl, spec: spec);
+        var endpoints = (await client.GetFromJsonAsync<Backend.Features.ApiSpecs.GetSpec.Response>($"/api/projects/{projectId}/spec", Json))!.Endpoints;
+        async Task SaveAsync(string path, object values) => Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(
+            $"/api/projects/{projectId}/spec/endpoints/{endpoints.Single(e => e.Path == path).Id}/test-values", values)).StatusCode);
+        await SaveAsync("/items/{sku}", new { parameters = new Dictionary<string, string> { ["path:sku"] = "abc-1" } });
+        await SaveAsync("/widgets", new { body = new { name = "saved" } });
+        var item = scenarios.Single(s => s.Path == "/items/{sku}" && s.Type == ScenarioType.Latency).Id;
+        var widget = scenarios.Single(s => s.Path == "/widgets" && s.Type == ScenarioType.Latency).Id;
+        await SetParametersAsync(client, projectId, item, new { delayMs = 0 });
+        await SetParametersAsync(client, projectId, widget, new { delayMs = 0 });
+        await CreateRunAsync(client, projectId, [item, widget]);
+        // Edited after the run was created: the run still sends what it was created with.
+        await SaveAsync("/items/{sku}", new { parameters = new Dictionary<string, string> { ["path:sku"] = "later" } });
+
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        Assert.True(await executor.TickAsync(CancellationToken.None));
+
+        Assert.All(received.Where(r => r.Method == "GET" && r.Path.Contains("/items/")),
+            r => Assert.Equal("/v1/items/abc-1", r.Path));
+        Assert.Contains(received, r => r.Path.Contains("/items/"));
+        var posts = received.Where(r => r.Method == "POST").ToList();
+        Assert.Equal(2, posts.Count);
+        Assert.All(posts, r => Assert.Equal(("application/json", "saved"), (r.ContentType, JsonDocument.Parse(r.Body).RootElement.GetProperty("name").GetString())));
+    }
+
+    [Fact]
     public async Task A_run_whose_every_scenario_ran_is_scored()
     {
         using var listener = StartTarget(new ConcurrentQueue<Received>(), out var baseUrl);

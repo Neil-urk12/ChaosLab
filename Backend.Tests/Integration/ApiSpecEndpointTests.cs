@@ -179,6 +179,120 @@ public sealed class ApiSpecEndpointTests(PostgreSqlFixture postgres)
         Assert.Equal(["GET /health"], second.Changes.Removed);
     }
 
+    private const string Fleet = """
+        openapi: 3.0.3
+        info: {title: Fleet, version: "1.0"}
+        components:
+          schemas:
+            Vehicle: {type: object, required: [plate], properties: {plate: {type: string}}}
+        paths:
+          /vehicles:
+            post:
+              parameters: [{name: Idempotency-Key, in: header, required: true, schema: {type: string}}]
+              requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Vehicle"}}}}
+              responses: {"201": {description: ok}}
+          /vehicles/{vehicle_id}:
+            get:
+              parameters: [{name: vehicle_id, in: path, required: true, schema: {type: string}}]
+              responses: {"200": {description: ok}}
+          /health:
+            get:
+              responses: {"200": {description: ok}}
+        """;
+
+    [Fact]
+    public async Task Import_warns_about_endpoints_that_cant_be_filled_and_saved_test_values_fill_them()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var projectId = await CreateProjectAsync(client);
+
+        var import = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Fleet });
+        Assert.Equal(HttpStatusCode.Created, import.StatusCode);
+        var warnings = (await import.Content.ReadFromJsonAsync<ImportSpec.Report>(Json))!.Issues;
+        // The Idempotency-Key header needs no example: the runner sends its own key.
+        Assert.Equal(["paths./vehicles.post", "paths./vehicles/{vehicle_id}.get"], warnings.Select(w => w.Location).Order());
+        Assert.All(warnings, w => Assert.Equal(IssueSeverity.Warning, w.Severity));
+        Assert.Contains("path parameter \"vehicle_id\"", Assert.Single(warnings, w => w.Location.EndsWith(".get")).Message);
+        Assert.Contains("request body", Assert.Single(warnings, w => w.Location.EndsWith(".post")).Message);
+
+        var spec = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        var get = Assert.Single(spec!.Endpoints, e => e.Path == "/vehicles/{vehicle_id}");
+        var post = Assert.Single(spec.Endpoints, e => e.Path == "/vehicles");
+        Assert.Equal(["path parameter \"vehicle_id\""], get.Missing);
+        Assert.Equal("path:vehicle_id", Assert.Single(get.Inputs).Key);
+        Assert.True(Assert.Single(post.Inputs).Generated);
+        Assert.Equal("application/json", post.Body!.ContentType);
+        Assert.NotNull(spec.Schemas?.GetProperty("Vehicle"));
+
+        string Url(GetSpec.EndpointRow row) => $"/api/projects/{projectId}/spec/endpoints/{row.Id}/test-values";
+        async Task<HttpStatusCode> Save(GetSpec.EndpointRow row, object values) => (await client.PutAsJsonAsync(Url(row), values)).StatusCode;
+        // Only declared required parameters, a JSON object or array body on an endpoint with one, within the limits.
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(get, new { parameters = new Dictionary<string, string> { ["query:other"] = "1" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(post, new { parameters = new Dictionary<string, string> { ["header:Idempotency-Key"] = "k" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(get, new { body = new { plate = "x" } }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(post, new { body = "plate" }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(post, new { body = new { plate = new string('x', SaveTestValues.MaxBodyBytes) } }));
+        Assert.Equal(HttpStatusCode.BadRequest, await Save(get,
+            new { parameters = new Dictionary<string, string> { ["path:vehicle_id"] = new string('x', SaveTestValues.MaxValueLength + 1) } }));
+
+        Assert.Equal(HttpStatusCode.NoContent, await Save(get, new { parameters = new Dictionary<string, string> { ["path:vehicle_id"] = "v-1" } }));
+        Assert.Equal(HttpStatusCode.NoContent, await Save(post, new { body = new { plate = "ABC-123" } }));
+        spec = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        Assert.All(spec!.Endpoints, e => Assert.Empty(e.Missing));
+        Assert.Equal("v-1", Assert.Single(spec.Endpoints, e => e.Path == "/vehicles/{vehicle_id}")
+            .Saved!.Value.GetProperty("parameters").GetProperty("path:vehicle_id").GetString());
+
+        // A re-import carries the values over to the same path and method, so the new spec imports without warnings.
+        var reimport = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec",
+            new { source = "Paste", content = Fleet.Replace("title: Fleet", "title: Fleet 2") });
+        Assert.Equal(HttpStatusCode.Created, reimport.StatusCode);
+        Assert.Empty((await reimport.Content.ReadFromJsonAsync<ImportSpec.Report>(Json))!.Issues);
+        spec = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        Assert.Equal("ABC-123", Assert.Single(spec!.Endpoints, e => e.Path == "/vehicles")
+            .Saved!.Value.GetProperty("body").GetProperty("plate").GetString());
+
+        // Saving nothing clears them.
+        Assert.Equal(HttpStatusCode.NoContent, await Save(Assert.Single(spec.Endpoints, e => e.Path == "/vehicles"), new { }));
+        spec = await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json);
+        var cleared = Assert.Single(spec!.Endpoints, e => e.Path == "/vehicles");
+        Assert.Null(cleared.Saved);
+        Assert.Equal(["request body"], cleared.Missing);
+    }
+
+    [Fact]
+    public async Task A_required_body_that_isnt_json_is_reported_as_unsendable_not_as_a_missing_value()
+    {
+        const string upload = """
+            openapi: 3.0.3
+            info: {title: Upload, version: "1.0"}
+            paths:
+              /files/{id}:
+                post:
+                  parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+                  requestBody: {required: true, content: {multipart/form-data: {schema: {type: object}}}}
+                  responses: {"201": {description: ok}}
+            """;
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var projectId = await CreateProjectAsync(client);
+
+        var import = await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = upload });
+        Assert.Equal(HttpStatusCode.Created, import.StatusCode);
+        var warnings = (await import.Content.ReadFromJsonAsync<ImportSpec.Report>(Json))!.Issues.Select(w => w.Message).ToList();
+        Assert.Equal(2, warnings.Count);
+        Assert.Contains(warnings, m => m.Contains("path parameter \"id\"") && m.Contains("Enter test values"));
+        Assert.Contains(warnings, m => m.EndsWith(TestValues.NonJsonBody) && !m.Contains("Enter test values"));
+
+        var endpoint = Assert.Single((await client.GetFromJsonAsync<GetSpec.Response>($"/api/projects/{projectId}/spec", Json))!.Endpoints);
+        Assert.Null(endpoint.Body);
+        // The unsendable body comes first, so the runner reports it rather than the value the user could enter.
+        Assert.Equal([TestValues.NonJsonBodyLabel, "path parameter \"id\""], endpoint.Missing);
+        Assert.Equal(TestValues.NonJsonBody, TestValues.RunnerMessage(endpoint.Missing[0]));
+    }
+
     [Fact]
     public async Task Reimporting_the_same_document_changes_nothing()
     {
@@ -253,6 +367,8 @@ public sealed class ApiSpecEndpointTests(PostgreSqlFixture postgres)
             (await client.PostAsJsonAsync($"/api/projects/{projectId}/spec", new { source = "Paste", content = Spec })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PatchAsJsonAsync($"/api/projects/{projectId}/spec/endpoints/{endpoint.Id}", new { testing = "NeverTest" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.PutAsJsonAsync($"/api/projects/{projectId}/spec/endpoints/{endpoint.Id}/test-values", new { })).StatusCode);
         // Reads stay open to viewers.
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/projects/{projectId}/spec")).StatusCode);
     }

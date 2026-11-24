@@ -66,7 +66,7 @@ public static class CreateRun
             .Select(scenario => new
             {
                 scenario.Id, scenario.EndpointId, scenario.Endpoint.HttpMethod, scenario.ScenarioType,
-                scenario.Parameters, scenario.Invariants
+                scenario.Parameters, scenario.Invariants, scenario.Endpoint.TestValues
             })
             .ToListAsync(cancellationToken);
         if (scenarios.Count != ids.Count)
@@ -123,7 +123,8 @@ public static class CreateRun
                 SequenceNo = ++sequence,
                 ScenarioType = scenario.ScenarioType,
                 Parameters = scenario.Parameters,
-                Invariants = scenario.Invariants
+                Invariants = scenario.Invariants,
+                TestValues = scenario.TestValues
             });
         db.TestRuns.Add(run);
         await db.SaveChangesAsync(cancellationToken);

@@ -193,7 +193,7 @@ Built as the project's Team tab. Only Owners add, remove, or change the role of 
 3. The backend receives the input and detects JSON or YAML.
 4. Parse, verify the version is supported (OpenAPI 3.x; Swagger-compatible where convertible), and validate the structure.
 5. On failure, return validation errors and let the user correct and re-import.
-6. On success, extract metadata, servers, paths, methods, parameters, request and response schemas, status codes, and security schemes.
+6. On success, extract metadata, servers, paths, methods, parameters, request and response schemas, status codes, and security schemes. Warn (without blocking the import) about each included endpoint whose required parameter or request body has no example and no saved test value, since its scenarios can't run until one is entered (2.11).
 7. Save the specification and its parsed endpoint information.
 8. Display the discovered endpoints for review, then continue to authentication configuration.
 
@@ -204,6 +204,7 @@ Built as the project's Team tab. Only Owners add, remove, or change the role of 
 3. Create or update endpoint records linked to the project and spec.
 4. Display discovered endpoints.
 5. Let the user include or exclude endpoints from testing, and flag operations that must never be tested.
+6. Show which included endpoints can't run yet, and let owners and editors save **test values** for them: required path, query and header parameters, and a JSON request body (PROJECT.md 26). Viewers see them read-only. **Draft from schema** fills the body editor from the body's schema for the user to review; nothing is sent until it is saved. Runs send a saved value first, then the spec's example, default or enum value. A required `Idempotency-Key` header needs no value, because the runner sends its own key. Test values aren't credentials and are stored in plain text; authentication belongs in the environment's credentials (2.12).
 
 ### 2.12 Target API authentication configuration [Done]
 
@@ -270,7 +271,7 @@ In the runner's path, Malformed JSON, Empty Response, and 429 Throttle change on
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
 3. Apply the configured failure. Most faults are applied through direct requests or the injector in the request path. Dependency faults use the simulator in the target's outbound path.
 4. Observe the target's behavior and capture request, response, status, timing, errors, timeout information, repeated attempts, and recovery behavior.
-5. Store the scenario execution result with a snapshot of its configuration.
+5. Store the scenario execution result with a snapshot of its configuration, including the endpoint's test values when the run was created, so later edits don't change what a past run sent.
 6. Classify any problem as a target failure, a runner failure, or an unreachable target (skipped with a reason). Runner failures may be retried a limited number of times automatically.
 7. When no scenarios remain, set the run status to Completed, PartiallyCompleted, or Failed.
 8. Continue to evaluation.
@@ -376,7 +377,7 @@ Built as Re-import on the specification page. A re-import saves a new spec versi
 1. Open API specification settings and select Update / Re-import.
 2. Provide the new document. Parse and validate it. A document identical to the active spec changes nothing.
 3. Compare it with the stored spec and identify added, removed, and modified endpoints.
-4. Update endpoint records. Testing choices carry over by path and method.
+4. Update endpoint records. Testing choices and saved test values carry over by path and method.
 5. Decide which existing scenarios still apply and regenerate where needed: when the old spec had scenarios, the generation rules re-run on the new endpoints and edits carry over by path, method, and fault. Past runs keep their execution-time snapshots.
 6. Save the new specification and display the updated structure.
 

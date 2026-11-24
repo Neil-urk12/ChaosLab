@@ -102,16 +102,33 @@ public static class ImportSpec
             && await db.ChaosScenarios.AnyAsync(scenario => scenario.Endpoint.ApiSpecId == previous.Id, cancellationToken);
         if (previous is not null)
         {
-            // Never-test and excluded choices survive re-import for the same path and method.
-            var testing = await db.ApiEndpoints.AsNoTracking()
+            // Never-test and excluded choices, and saved test values, survive re-import for the same path and method.
+            var kept = await db.ApiEndpoints.AsNoTracking()
                 .Where(endpoint => endpoint.ApiSpecId == previous.Id)
-                .ToDictionaryAsync(endpoint => (endpoint.Path, endpoint.HttpMethod), endpoint => endpoint.Testing, cancellationToken);
+                .ToDictionaryAsync(endpoint => (endpoint.Path, endpoint.HttpMethod),
+                    endpoint => new { endpoint.Testing, endpoint.TestValues }, cancellationToken);
             foreach (var endpoint in parsed.Endpoints)
-                endpoint.Testing = testing.GetValueOrDefault((endpoint.Path, endpoint.HttpMethod));
+                if (kept.GetValueOrDefault((endpoint.Path, endpoint.HttpMethod)) is { } old)
+                    (endpoint.Testing, endpoint.TestValues) = (old.Testing, old.TestValues);
 
             // The one-active-spec index is checked per statement, so clear the old flag first.
             previous.IsActive = false;
             await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Warnings, not errors (NEI-58): an included endpoint the runner can't fill fails every scenario until values are saved.
+        foreach (var endpoint in parsed.Endpoints.Where(endpoint => endpoint.Testing == EndpointTesting.Included))
+        {
+            var missing = TestValues.Fill(parsed.Document.RootElement, endpoint.Parameters.RootElement,
+                endpoint.RequestBodySchema?.RootElement, endpoint.TestValues?.RootElement).Missing;
+            var fillable = missing.Where(label => label != TestValues.NonJsonBodyLabel).ToList();
+            var location = $"paths.{endpoint.Path}.{endpoint.HttpMethod.ToLowerInvariant()}";
+            if (fillable.Count > 0)
+                issues.Add(new(IssueSeverity.Warning, location,
+                    $"{endpoint.HttpMethod} {endpoint.Path} can't be run yet: the {string.Join(", ", fillable)} "
+                    + $"{(fillable.Count == 1 ? "has" : "have")} no example in the spec. Enter test values on the endpoint list."));
+            if (fillable.Count < missing.Count)
+                issues.Add(new(IssueSeverity.Warning, location, $"{endpoint.HttpMethod} {endpoint.Path} can't be run: {TestValues.NonJsonBody}"));
         }
 
         var spec = new ApiSpec

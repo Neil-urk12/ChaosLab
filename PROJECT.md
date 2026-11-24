@@ -678,7 +678,7 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 **Scenarios and data**
 
-4. How valid request bodies and test data are obtained when OpenAPI examples are incomplete.
+4. ~~How valid request bodies and test data are obtained when OpenAPI examples are incomplete.~~ Decided 24 November 2026: saved test values per endpoint (section 26).
 5. How stateful endpoints are prepared, cleaned up, and safely rerun.
 6. Final applicability rules per endpoint and fault.
 7. Exact duplicate-request behavior and safety conditions.
@@ -734,6 +734,12 @@ Decisions confirmed on 21 November 2026:
 | Migrations | Applied at startup when `Database__MigrateOnStartup=true` (on in `compose.yaml`, off in development), replacing "not applied at startup" so an image install needs no SDK. `make migrate` stays for development. |
 | Frontend deployment | `adapter-static` with an `index.html` fallback, served by the backend on one origin, so the HttpOnly cookie keeps working without a proxy. Vite's dev proxy is unchanged. |
 | Public site | A separate SvelteKit static site in `Website/` on GitHub Pages, not a route in the app, so instances never serve marketing. Landing page plus five docs pages; published only after the `LICENSE` is committed; may launch before the release image with from-source steps. |
+
+Decisions confirmed on 24 November 2026:
+
+| Topic | Decision |
+|---|---|
+| Test values (open decision 4) | Owners and editors save test values per endpoint on the endpoint list: required path, query and header parameters, and a JSON request body. Viewers can read them. A "Draft from schema" button fills the body editor from the body's schema (required properties, types, enums, formats); the user reviews and saves it, and a draft is never sent unsaved. The runner sends a saved value first, then the spec's example, default or enum value; with neither, the scenario fails as before, and the failure points to the endpoint list. Nothing is guessed at run time, because ChaosLab sends real writes. Values carry over to the same path and method on re-import, and each run keeps a snapshot of the values it was created with. They are not credentials and are stored in plain text; authentication stays in the environment's encrypted credentials. A required `Idempotency-Key` header needs no value, since the runner sends its own. Import warns about included endpoints that still can't be filled. Rejected: generating missing values at run time with no user step (guessed values often fail validation, and writes go out unreviewed), and saved values without a schema draft (too much typing for large specs). |
 
 ---
 

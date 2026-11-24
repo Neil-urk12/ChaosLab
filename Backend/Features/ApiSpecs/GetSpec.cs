@@ -22,14 +22,17 @@ public static class GetSpec
         string ImportedBy,
         List<SecurityScheme> SecuritySchemes,
         List<EndpointRow> Endpoints,
-        Changes? Changes);
+        Changes? Changes,
+        JsonElement? Schemas);
 
     public sealed record SecurityScheme(string Name, string Type, bool Global);
 
-    // Security lists the scheme names that apply (empty means the operation is public).
+    // Security lists the scheme names that apply (empty means the operation is public). Inputs and Body are what the
+    // runner must fill, Saved the saved test values, and Missing what it still can't fill (TestValues).
     public sealed record EndpointRow(
         Guid Id, string HttpMethod, string Path, string? OperationId, string? Tag, List<string> Security,
-        string? RequestBody, List<string> Responses, int ScenarioCount, EndpointTesting Testing, string? Change);
+        string? RequestBody, List<string> Responses, int ScenarioCount, EndpointTesting Testing, string? Change,
+        List<TestValues.Input> Inputs, TestValues.BodyInput? Body, JsonElement? Saved, List<string> Missing);
 
     // Differences from the previously active spec; Removed holds "METHOD /path" labels.
     public sealed record Changes(int Added, int Modified, List<string> Removed);
@@ -58,7 +61,7 @@ public static class GetSpec
             {
                 endpoint.Id, endpoint.HttpMethod, endpoint.Path, endpoint.OperationId, endpoint.Tags, endpoint.Parameters,
                 endpoint.RequestBodySchema, endpoint.Responses, endpoint.SecurityRequirements, endpoint.Testing,
-                ScenarioCount = endpoint.ChaosScenarios.Count()
+                endpoint.TestValues, ScenarioCount = endpoint.ChaosScenarios.Count()
             })
             .ToListAsync(cancellationToken);
 
@@ -96,24 +99,33 @@ public static class GetSpec
         var rows = endpoints
             .OrderBy(endpoint => endpoint.Path, StringComparer.Ordinal)
             .ThenBy(endpoint => Array.IndexOf(SpecDocument.Methods, endpoint.HttpMethod.ToLowerInvariant()))
-            .Select(endpoint => new EndpointRow(
-                endpoint.Id,
-                endpoint.HttpMethod,
-                endpoint.Path,
-                endpoint.OperationId,
-                endpoint.Tags.RootElement.ValueKind == JsonValueKind.Array && endpoint.Tags.RootElement.GetArrayLength() > 0
-                    ? endpoint.Tags.RootElement[0].GetString() : null,
-                endpoint.SecurityRequirements is null ? globalSecurity : SchemeNames(endpoint.SecurityRequirements.RootElement),
-                RequestBodyName(endpoint.RequestBodySchema?.RootElement),
-                endpoint.Responses.RootElement.ValueKind == JsonValueKind.Object
-                    ? endpoint.Responses.RootElement.EnumerateObject().Select(response => response.Name).ToList() : [],
-                endpoint.ScenarioCount,
-                endpoint.Testing,
-                !hasPrevious ? null
-                    : !before.TryGetValue((endpoint.HttpMethod, endpoint.Path), out var old) ? "New"
-                    : old != Fingerprint(endpoint.OperationId, endpoint.Tags, endpoint.Parameters, endpoint.RequestBodySchema,
-                        endpoint.Responses, endpoint.SecurityRequirements) ? "Modified"
-                    : null))
+            .Select(endpoint =>
+            {
+                var filled = TestValues.Fill(root, endpoint.Parameters.RootElement, endpoint.RequestBodySchema?.RootElement,
+                    endpoint.TestValues?.RootElement);
+                return new EndpointRow(
+                    endpoint.Id,
+                    endpoint.HttpMethod,
+                    endpoint.Path,
+                    endpoint.OperationId,
+                    endpoint.Tags.RootElement.ValueKind == JsonValueKind.Array && endpoint.Tags.RootElement.GetArrayLength() > 0
+                        ? endpoint.Tags.RootElement[0].GetString() : null,
+                    endpoint.SecurityRequirements is null ? globalSecurity : SchemeNames(endpoint.SecurityRequirements.RootElement),
+                    RequestBodyName(endpoint.RequestBodySchema?.RootElement),
+                    endpoint.Responses.RootElement.ValueKind == JsonValueKind.Object
+                        ? endpoint.Responses.RootElement.EnumerateObject().Select(response => response.Name).ToList() : [],
+                    endpoint.ScenarioCount,
+                    endpoint.Testing,
+                    !hasPrevious ? null
+                        : !before.TryGetValue((endpoint.HttpMethod, endpoint.Path), out var old) ? "New"
+                        : old != Fingerprint(endpoint.OperationId, endpoint.Tags, endpoint.Parameters, endpoint.RequestBodySchema,
+                            endpoint.Responses, endpoint.SecurityRequirements) ? "Modified"
+                        : null,
+                    filled.Inputs,
+                    filled.BodyInput,
+                    endpoint.TestValues?.RootElement,
+                    filled.Missing);
+            })
             .ToList();
 
         var current = endpoints.Select(endpoint => (endpoint.HttpMethod, endpoint.Path)).ToHashSet();
@@ -126,7 +138,9 @@ public static class GetSpec
 
         return TypedResults.Ok(new Response(
             spec.Id, spec.Title, spec.OpenApiVersion, spec.SourceFilename, spec.SourceType, spec.SourceUrl,
-            spec.CreatedAt, spec.ImportedBy, schemes, rows, changes));
+            spec.CreatedAt, spec.ImportedBy, schemes, rows, changes,
+            // For drafting a body from its schema: body schemas $ref these (#/components/schemas/Name).
+            components.ValueKind == JsonValueKind.Object && components.TryGetProperty("schemas", out var models) ? models : null));
     }
 
     internal static List<string> SchemeNames(JsonElement requirements) =>

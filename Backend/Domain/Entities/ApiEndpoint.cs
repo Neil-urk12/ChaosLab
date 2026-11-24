@@ -22,6 +22,8 @@ public class ApiEndpoint
     public bool IsDeprecated { get; set; }
     // Carried over to the matching endpoint (same path and method) when the spec is re-imported.
     public EndpointTesting Testing { get; set; }
+    // Values an owner or editor saved for the runner to send (Features/ApiSpecs/TestValues); carried over like Testing.
+    public JsonDocument? TestValues { get; set; }
 
     // Metadata
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

@@ -10,5 +10,6 @@ public static class ApiSpecEndpoints
         spec.MapPost("/", ImportSpec.Handle).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(12 * 1024 * 1024));
         spec.MapGet("/document", GetSpecDocument.Handle);
         spec.MapPatch("/endpoints/{endpointId:guid}", SetEndpointTesting.Handle);
+        spec.MapPut("/endpoints/{endpointId:guid}/test-values", SaveTestValues.Handle);
     }
 }

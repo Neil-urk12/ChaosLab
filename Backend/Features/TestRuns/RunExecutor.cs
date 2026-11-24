@@ -43,7 +43,7 @@ public sealed class RunExecutor(
     private sealed record Execution(
         Guid Id, Guid EndpointId, ScenarioType ScenarioType, JsonDocument Parameters, JsonDocument Invariants, string HttpMethod,
         string Path,
-        JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security, int RunnerAttempt);
+        JsonDocument EndpointParameters, JsonDocument? RequestBody, JsonDocument? Security, JsonDocument? TestValues, int RunnerAttempt);
 
     // The endpoint's request, ready to be sent any number of times. Authenticate applies the stored credentials, or
     // the given secret in their place. EnvironmentHeaders is the part of Headers that is not the endpoint's own.
@@ -260,7 +260,7 @@ public sealed class RunExecutor(
                 execution.Id, execution.EndpointId, execution.ScenarioType, execution.Parameters, execution.Invariants,
                 execution.Endpoint.HttpMethod,
                 execution.Endpoint.Path, execution.Endpoint.Parameters, execution.Endpoint.RequestBodySchema,
-                execution.Endpoint.SecurityRequirements, 1))
+                execution.Endpoint.SecurityRequirements, execution.TestValues, 1))
             .ToListAsync(cancellationToken);
 
         var concurrency = Math.Clamp(config.Concurrency, 1, CreateRun.MaxConcurrency);
@@ -590,7 +590,7 @@ public sealed class RunExecutor(
         return (ScenarioExecutionStatus.Completed, null);
     }
 
-    // Builds the endpoint's request from the spec's examples, the environment's global headers and the stored credential.
+    // Builds the endpoint's request from its saved test values or the spec's examples (TestValues), the environment's global headers and the stored credential.
     // An error means the request can't be built: a runner failure, never the target's.
     private (Prepared?, string?) Prepare(Context context, Execution execution)
     {
@@ -599,45 +599,22 @@ public sealed class RunExecutor(
         var path = execution.Path;
         var query = new List<string>();
         var headers = new List<KeyValuePair<string, string>>();
-        foreach (var raw in execution.EndpointParameters.RootElement.EnumerateArray())
+        // The run's snapshot of the saved values, so later edits don't change what this run sends.
+        var filled = TestValues.Fill(root, execution.EndpointParameters.RootElement, execution.RequestBody?.RootElement,
+            execution.TestValues?.RootElement);
+        if (filled.Missing.Count > 0)
+            return (null, TestValues.RunnerMessage(filled.Missing[0]));
+        foreach (var (input, value) in filled.Parameters)
         {
-            if (Deref(root, raw) is not { ValueKind: JsonValueKind.Object } parameter)
-                continue;
-            var name = Text(parameter, "name");
-            var location = Text(parameter, "in");
-            var required = location == "path"
-                || (parameter.TryGetProperty("required", out var flag) && flag.ValueKind == JsonValueKind.True);
-            // shortcut: optional and cookie parameters are never sent; add them when scenarios need them.
-            if (name is null || !required || location is not ("path" or "query" or "header"))
-                continue;
-            var value = Example(root, parameter) is { ValueKind: JsonValueKind.String or JsonValueKind.Number
-                or JsonValueKind.True or JsonValueKind.False } example
-                ? example.ValueKind == JsonValueKind.String ? example.GetString()! : example.GetRawText()
-                : null;
-            // shortcut: no example means no request (PROJECT.md 25, open decision 4); add test values when that is decided.
-            if (value is null)
-                return (null, $"The required {location} parameter \"{name}\" has no example, default or enum value in the spec.");
-            if (location == "path")
-                path = path.Replace($"{{{name}}}", Uri.EscapeDataString(value));
-            else if (location == "query")
-                query.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
+            if (input.In == "path")
+                path = path.Replace($"{{{input.Name}}}", Uri.EscapeDataString(value));
+            else if (input.In == "query")
+                query.Add($"{Uri.EscapeDataString(input.Name)}={Uri.EscapeDataString(value)}");
             else
-                headers.Add(new(name, value));
+                headers.Add(new(input.Name, value));
         }
-
-        byte[]? body = null;
-        string? contentType = null;
-        if (execution.RequestBody is { } document && Deref(root, document.RootElement) is { ValueKind: JsonValueKind.Object } requestBody)
-        {
-            var media = requestBody.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Object
-                ? content.EnumerateObject().Where(type => type.Name.Contains("json", StringComparison.OrdinalIgnoreCase))
-                    .Select(type => (JsonProperty?)type).FirstOrDefault()
-                : null;
-            if (media is { Value.ValueKind: JsonValueKind.Object } json && Example(root, json.Value) is { } example)
-                (body, contentType) = (Encoding.UTF8.GetBytes(example.GetRawText()), json.Name);
-            else if (requestBody.TryGetProperty("required", out var flag) && flag.ValueKind == JsonValueKind.True)
-                return (null, "The request body is required, but the spec has no JSON example for it.");
-        }
+        var body = filled.Body is { } sent ? Encoding.UTF8.GetBytes(sent.GetRawText()) : null;
+        var contentType = filled.ContentType;
 
         var suffix = query.Count > 0 ? $"{path}?{string.Join('&', query)}" : path;
         if (TargetClient.Combine(context.Config.Target.BaseUrl, suffix) is not { } url)
@@ -802,34 +779,6 @@ public sealed class RunExecutor(
                 await Task.Delay(pause, time, cancellationToken);
         }
     }
-
-    // An example from the spec: the object's own example, its first named example, or its schema's example, default or
-    // first enum value.
-    private static JsonElement? Example(JsonElement root, JsonElement owner)
-    {
-        if (owner.TryGetProperty("example", out var example))
-            return example;
-        if (owner.TryGetProperty("examples", out var examples) && examples.ValueKind == JsonValueKind.Object)
-            foreach (var named in examples.EnumerateObject())
-                if (Deref(root, named.Value) is { ValueKind: JsonValueKind.Object } resolved && resolved.TryGetProperty("value", out var value))
-                    return value;
-        if (owner.TryGetProperty("schema", out var raw) && Deref(root, raw) is { ValueKind: JsonValueKind.Object } schema)
-        {
-            if (schema.TryGetProperty("example", out example) || schema.TryGetProperty("default", out example))
-                return example;
-            if (schema.TryGetProperty("enum", out var values) && values.ValueKind == JsonValueKind.Array && values.GetArrayLength() > 0)
-                return values[0];
-        }
-        return null;
-    }
-
-    private static JsonElement? Deref(JsonElement root, JsonElement element) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty("$ref", out var reference)
-            ? SpecDocument.Resolve(root, reference.GetString())
-            : element;
-
-    private static string? Text(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
 
     // The request body for Timeout / Drop. hold: send the headers and never finish the body, so the target has to time
     // the request out. drop: send the whole request, then close the connection before the response.

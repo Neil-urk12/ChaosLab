@@ -70,6 +70,9 @@ namespace Backend.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<JsonDocument>("TestValues")
+                        .HasColumnType("jsonb");
+
                     b.Property<int>("Testing")
                         .HasColumnType("integer");
 
@@ -732,6 +735,9 @@ namespace Backend.Infrastructure.Data.Migrations
 
                     b.Property<Guid>("TestRunId")
                         .HasColumnType("uuid");
+
+                    b.Property<JsonDocument>("TestValues")
+                        .HasColumnType("jsonb");
 
                     b.HasKey("Id");
 

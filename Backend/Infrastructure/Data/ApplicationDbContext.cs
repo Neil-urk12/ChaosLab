@@ -80,6 +80,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.Property(x => x.RequestBodySchema).HasColumnType("jsonb");
             entity.Property(x => x.Responses).HasColumnType("jsonb");
             entity.Property(x => x.SecurityRequirements).HasColumnType("jsonb");
+            entity.Property(x => x.TestValues).HasColumnType("jsonb");
         });
 
         builder.Entity<ApiEnvironment>(entity =>
@@ -181,6 +182,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             entity.HasIndex(x => new { x.TestRunId, x.SequenceNo }).IsUnique();
             entity.Property(x => x.Parameters).HasColumnType("jsonb");
             entity.Property(x => x.Invariants).HasColumnType("jsonb");
+            entity.Property(x => x.TestValues).HasColumnType("jsonb");
             entity.Property(x => x.Score).HasPrecision(5, 2);
             entity.ToTable(table =>
             {

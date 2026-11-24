@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import type { EndpointTesting, SpecImportReport, SpecSource } from '$lib/api';
+	import type { EndpointTesting, SpecEndpoint, SpecImportReport, SpecSource } from '$lib/api';
+	import { draftFromSchema } from '$lib/draft';
 	import { dateTime } from '$lib/format';
+	import { send } from '$lib/problem';
 
 	let { data } = $props();
 	const project = $derived(data.project);
@@ -149,6 +151,46 @@
 				e instanceof Error && e.message === '403'
 					? 'Only project owners and editors can change testing.'
 					: 'Could not save the testing choice. Try again.';
+		}
+	}
+
+	// ---- Test values (PROJECT.md 26) ----
+	// One endpoint's editor is open at a time; nothing is saved until Save, so a schema draft is never sent unreviewed.
+	let editing = $state<string | null>(null);
+	let values = $state<Record<string, string>>({});
+	let bodyText = $state('');
+	let valuesError = $state('');
+	let valuesBusy = $state(false);
+	// TestValues.NonJsonBodyLabel: a required body that isn't JSON, which no test value can fix.
+	const NON_JSON_BODY = 'request body (not JSON)';
+	const fillable = (e: SpecEndpoint) => e.missing.filter((m) => m !== NON_JSON_BODY);
+	const needsValues = (e: SpecEndpoint) => e.testing === 'Included' && fillable(e).length > 0;
+	const cantSend = (e: SpecEndpoint) => e.testing === 'Included' && e.missing.includes(NON_JSON_BODY);
+	const hasInputs = (e: SpecEndpoint) => e.body !== null || e.inputs.some((i) => !i.generated);
+
+	function openValues(e: SpecEndpoint) {
+		if (editing === e.id) return void (editing = null);
+		editing = e.id;
+		values = { ...(e.saved?.parameters ?? {}) };
+		bodyText = e.saved?.body == null ? '' : JSON.stringify(e.saved.body, null, 2);
+		valuesError = '';
+	}
+
+	async function saveValues(e: SpecEndpoint) {
+		let body: unknown = null;
+		if (bodyText.trim()) {
+			try {
+				body = JSON.parse(bodyText);
+			} catch {
+				return void (valuesError = 'The body is not valid JSON.');
+			}
+		}
+		valuesBusy = true;
+		valuesError = (await send(`${api}/endpoints/${e.id}/test-values`, 'PUT', { parameters: values, body })) ?? '';
+		valuesBusy = false;
+		if (!valuesError) {
+			editing = null;
+			await invalidateAll();
 		}
 	}
 
@@ -407,10 +449,10 @@
 		{#if saveError}<p role="alert" class="px-6 pb-4 text-xs text-rose-300">{saveError}</p>{/if}
 
 		<div class="overflow-x-auto">
-			<table class="w-full min-w-[68rem] text-left text-[13px]">
+			<table class="w-full min-w-[74rem] text-left text-[13px]">
 				<thead class="border-y border-line-faint text-[10px] tracking-wider text-slate-500 uppercase">
 					<tr>
-						{#each ['Endpoint', 'Operation ID', 'Tag', 'Security', 'Request body', 'Responses', 'Scenarios', 'Testing'] as heading (heading)}
+						{#each ['Endpoint', 'Operation ID', 'Tag', 'Security', 'Request body', 'Responses', 'Scenarios', 'Testing', 'Test values'] as heading (heading)}
 							<th scope="col" class="px-6 py-3 font-semibold">{heading}</th>
 						{/each}
 					</tr>
@@ -426,6 +468,17 @@
 										<span class="rounded px-2 py-0.5 text-[10px] {endpoint.change === 'New' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}">{endpoint.change}</span>
 									{/if}
 								</span>
+								{#if needsValues(endpoint)}
+									<!-- Import warning (NEI-58), kept live: it clears once test values are saved. -->
+									<span class="mt-1 flex items-center gap-1.5 text-[11px] text-amber-300">
+										{@render svg(icon.alert, 'size-3.5 shrink-0')}Can't run yet: no value for the {fillable(endpoint).join(', ')}.
+									</span>
+								{/if}
+								{#if cantSend(endpoint)}
+									<span class="mt-1 flex items-center gap-1.5 text-[11px] text-amber-300">
+										{@render svg(icon.alert, 'size-3.5 shrink-0')}Can't run: the request body isn't JSON, and ChaosLab only sends JSON bodies.
+									</span>
+								{/if}
 							</td>
 							<td class="px-6 py-4 text-slate-300">{endpoint.operationId ?? '—'}</td>
 							<td class="px-6 py-4 text-slate-300">{endpoint.tag ?? '—'}</td>
@@ -447,9 +500,83 @@
 									{/each}
 								</select>
 							</td>
+							<td class="px-6 py-4">
+								{#if hasInputs(endpoint)}
+									<button
+										type="button"
+										onclick={() => openValues(endpoint)}
+										aria-expanded={editing === endpoint.id}
+										aria-controls="values-{endpoint.id}"
+										class="text-xs {needsValues(endpoint) ? 'text-amber-300' : 'text-accent-ink'} hover:text-accent-ink-strong"
+									>{canEdit ? (endpoint.saved ? 'Edit' : 'Add') : 'View'}{endpoint.saved ? ' · saved' : ''}</button>
+								{:else}
+									<span class="text-slate-500">—</span>
+								{/if}
+							</td>
 						</tr>
+						{#if editing === endpoint.id}
+							<tr id="values-{endpoint.id}">
+								<td colspan="9" class="bg-panel px-6 py-5">
+									<form class="max-w-3xl space-y-4" onsubmit={(e) => (e.preventDefault(), saveValues(endpoint))}>
+										<p class="flex gap-2 text-xs text-slate-400">
+											<span class="shrink-0 text-accent-ink">{@render svg(icon.info)}</span>
+											Runs send these values ahead of the spec's examples. They're stored and shown in plain text, so they aren't credentials:
+											put authentication under Settings → Credentials, which are encrypted.
+										</p>
+										{#each endpoint.inputs as input (input.key)}
+											<div class="grid items-center gap-2 sm:grid-cols-[14rem_1fr]">
+												<label for="value-{endpoint.id}-{input.key}" class="font-mono text-xs text-slate-300">
+													{input.name} <span class="text-slate-500">({input.in})</span>
+												</label>
+												{#if input.generated}
+													<span class="text-xs text-slate-500">ChaosLab sends a new key on every request.</span>
+												{:else}
+													<input
+														id="value-{endpoint.id}-{input.key}"
+														bind:value={values[input.key]}
+														readonly={!canEdit}
+														maxlength="2048"
+														placeholder={input.example ? `Spec example: ${input.example}` : 'No example in the spec'}
+														class="auth-input h-9 font-mono text-xs"
+													/>
+												{/if}
+											</div>
+										{/each}
+										{#if endpoint.body}
+											<div>
+												<div class="flex items-center justify-between gap-4">
+													<label for="body-{endpoint.id}" class="text-xs text-slate-300">
+														Request body <span class="text-slate-500">({endpoint.body.contentType}{endpoint.body.required ? ', required' : ''})</span>
+													</label>
+													{#if canEdit}
+														<button type="button" onclick={() => (bodyText = JSON.stringify(draftFromSchema(endpoint.body?.schema, spec.schemas), null, 2))} class="text-xs text-accent-ink hover:text-accent-ink-strong">Draft from schema</button>
+													{/if}
+												</div>
+												<textarea
+													id="body-{endpoint.id}"
+													bind:value={bodyText}
+													readonly={!canEdit}
+													rows="8"
+													spellcheck="false"
+													placeholder={endpoint.body.hasExample ? 'Empty: the spec example is sent.' : 'A JSON object or array. Empty: no body.'}
+													class="mt-2 block w-full rounded-md border border-line bg-field p-3 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:border-accent focus:ring-1 focus:ring-accent"
+												></textarea>
+												{#if canEdit}<p class="mt-1 text-[11px] text-slate-500">A draft is only a starting point. Review it; nothing is sent until you save.</p>{/if}
+											</div>
+										{/if}
+										{#if valuesError}<p role="alert" class="text-xs text-rose-300">{valuesError}</p>{/if}
+										<div class="flex gap-2">
+											{#if canEdit}
+												<button type="submit" disabled={valuesBusy} class="h-9 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60">{valuesBusy ? 'Saving…' : 'Save test values'}</button>
+											{/if}
+											<button type="button" onclick={() => (editing = null)} class="h-9 rounded-md border border-line-strong px-4 text-[13px] hover:bg-line-faint">{canEdit ? 'Cancel' : 'Close'}</button>
+										</div>
+									</form>
+								</td>
+							</tr>
+						{/if}
 					{:else}
-						<tr><td colspan="8" class="px-6 py-10 text-center text-xs text-slate-500">No operations match.</td></tr>
+						<tr><td colspan="9" class="px-6 py-10 text-center text-xs text-slate-500">No operations match.</td></tr>
 					{/each}
 				</tbody>
 			</table>

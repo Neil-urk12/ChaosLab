@@ -8,6 +8,20 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Test values. Owners and editors saved values for an endpoint's required path, query and
+  header parameters and its JSON request body under Test values on the specification
+  page, and viewers saw them read-only. Runs sent a saved value ahead of the spec's
+  example, default or enum value, so an endpoint whose spec had no examples, such as a
+  FastAPI app's, could run. "Draft from schema" filled the body editor from the body's
+  schema (required properties, enums, defaults and formats) for review; it was never sent
+  until saved. Saved values carried over to the same path and method on re-import, and
+  each run kept the values it was created with. The page said the values were not
+  credentials. This settled PROJECT.md open decision 4.
+- Import warnings for endpoints that couldn't run. The import report warned about each
+  included endpoint whose required parameter or request body had no example and no saved
+  test value, and the specification page marked those endpoints until values were saved.
+  The import still succeeded.
+
 - The container image served the web app. `make build` built the frontend with
   `adapter-static` and an `index.html` fallback and put it in the image, which served it
   on port 8080 next to the API, without sign-in. Every page path outside `/api` got the
@@ -429,6 +443,12 @@ released yet, so history is grouped by date.
 
 ### Changed
 
+- A required `Idempotency-Key` header no longer needed an example in the spec. The runner
+  already sent its own key on every request, so it no longer failed those scenarios.
+- When the runner couldn't fill a required parameter or request body, the failure reason
+  said the value could be entered under Test values on the endpoint list. A required
+  request body that wasn't JSON, such as a file upload, was reported instead as one
+  ChaosLab couldn't send, on import, on the specification page and in the failure reason.
 - The run results page said why scenarios failed. When scenarios failed, for example
   because the spec had no example for a required parameter, the runner note gave the
   number that failed instead of "No runner errors in this run." and listed the failed

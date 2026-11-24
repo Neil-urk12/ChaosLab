@@ -17,6 +17,8 @@ public class ScenarioExecution
     public ScenarioType ScenarioType { get; set; }
     public JsonDocument Parameters { get; set; } = null!;
     public JsonDocument Invariants { get; set; } = JsonDocument.Parse("[]");
+    // The endpoint's saved test values when the run was created; the runner sends these, not the live ones.
+    public JsonDocument? TestValues { get; set; }
     public ScenarioExecutionStatus Status { get; set; } = ScenarioExecutionStatus.Queued;
     public ScenarioOutcome? Outcome { get; set; }
     public decimal? Score { get; set; }
