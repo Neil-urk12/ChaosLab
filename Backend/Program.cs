@@ -126,7 +126,8 @@ api.MapReportEndpoints();
 api.MapMemberEndpoints();
 api.MapUserEndpoints();
 
-// Every page path outside /api gets the app's index.html, which routes in the browser; unknown /api paths stay 404.
+// Every page path outside /api gets the app's index.html, which routes in the browser. Unknown /api paths get no page:
+// 401 signed out (the fallback policy applies where no endpoint matches, so real routes don't show), 404 signed in.
 app.MapFallbackToFile("{*path:regex(^(?!api(/|$))):nonfile}", "index.html").AllowAnonymous();
 
 app.Run();

@@ -62,15 +62,19 @@ public sealed class BackendHostTests(PostgreSqlFixture postgres)
             }
             Assert.Equal("User-agent: *", await client.GetStringAsync("/robots.txt"));
 
-            // API paths never get the page: a missing one is refused, and a real one still needs sign-in.
-            foreach (var (path, status) in new[]
+            // API paths never get the page. Signed out, a missing one needs sign-in like a real one, so the routes that
+            // exist don't show; signed in, a missing one is 404.
+            using var admin = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+            foreach (var (caller, path, status) in new[]
             {
-                ("/api", System.Net.HttpStatusCode.NotFound),
-                ("/api/nope", System.Net.HttpStatusCode.NotFound),
-                ("/api/projects", System.Net.HttpStatusCode.Unauthorized)
+                (client, "/api", System.Net.HttpStatusCode.Unauthorized),
+                (client, "/api/nope", System.Net.HttpStatusCode.Unauthorized),
+                (client, "/api/projects", System.Net.HttpStatusCode.Unauthorized),
+                (admin, "/api", System.Net.HttpStatusCode.NotFound),
+                (admin, "/api/nope", System.Net.HttpStatusCode.NotFound)
             })
             {
-                var response = await client.GetAsync(path);
+                var response = await caller.GetAsync(path);
                 Assert.Equal(status, response.StatusCode);
                 Assert.DoesNotContain("ChaosLab app", await response.Content.ReadAsStringAsync());
             }

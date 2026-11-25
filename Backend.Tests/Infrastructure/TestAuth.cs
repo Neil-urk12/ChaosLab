@@ -17,14 +17,14 @@ internal static class TestAuth
         null, "installation-admin", "admin@example.test", "Initial", "Administrator",
         $"Aa1!{Convert.ToHexString(RandomNumberGenerator.GetBytes(24))}");
 
-    public static HttpClient CreateClient(BackendFactory factory) =>
+    public static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
 
-    public static string SetupToken(BackendFactory factory) =>
+    public static string SetupToken(WebApplicationFactory<Program> factory) =>
         factory.Services.GetRequiredService<BootstrapSetupToken>()
             .SetupUrl("http://localhost:5173").Split("#token=")[1];
 
-    public static async Task<HttpClient> SignedInAdminAsync(BackendFactory factory, Setup.Request admin)
+    public static async Task<HttpClient> SignedInAdminAsync(WebApplicationFactory<Program> factory, Setup.Request admin)
     {
         var client = CreateClient(factory);
         (await client.PostAsJsonAsync("/api/auth/setup", admin with { Token = SetupToken(factory) }))
