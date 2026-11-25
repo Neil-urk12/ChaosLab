@@ -15,7 +15,7 @@ public sealed class EvaluatorTests
     private static HttpObservation Observation(
         int attempt, string phase, int? status, long durationMs = 20, string body = "{}", string? error = null,
         ObservationOutcomeType outcome = ObservationOutcomeType.Forwarded, int? invariant = null, long bytes = 2,
-        string contentType = "application/json", long[]? calls = null) => new()
+        string contentType = "application/json", long[]? calls = null, bool[]? injected = null) => new()
     {
         AttemptNo = attempt, UpstreamStatusCode = status, ClientStatusCode = status, DurationMs = durationMs, ErrorType = error,
         OutcomeType = outcome, ResponseBytes = status is null ? null : bytes,
@@ -23,10 +23,12 @@ public sealed class EvaluatorTests
         {
             ["phase"] = phase, ["invariant"] = invariant, ["body"] = body,
             ["headers"] = new Dictionary<string, string> { ["ETag"] = "1", ["Content-Type"] = contentType },
-            // The simulator's call log: every call to the same dependency operation, at the given times.
+            // The simulator's call log: every call to the same dependency operation, at the given times, each changed by
+            // the fault unless `injected` says otherwise.
             ["dependencyCalls"] = calls is null ? null : new
             {
-                total = calls.Length, calls = calls.Select(atMs => new { atMs, method = "GET", path = "/rates" })
+                total = calls.Length,
+                calls = calls.Select((atMs, index) => new { atMs, method = "GET", path = "/rates", injected = injected?[index] ?? true })
             }
         })
     };
@@ -113,6 +115,75 @@ public sealed class EvaluatorTests
         // Nothing for the fault to change.
         Assert.Equal(NotApplicable, Seen(ScenarioType.EmptyResponse, new { }, bytes: 0));
         Assert.Equal(NotApplicable, Seen(ScenarioType.MalformedJson, new { variant = "truncated" }, contentType: "text/plain"));
+        // Saying so changes nothing: the runner's path is the default.
+        Assert.Equal(Inconclusive, Seen(ScenarioType.Throttle429, new { retryAfterSeconds = 2, path = "runner" }));
+    }
+
+    [Fact]
+    public void A_storm_in_the_dependency_path_yields_retry_and_fallback_findings()
+    {
+        (ScoringCategory, ResilienceFindingOutcome)[] Storm(int? status, params long[] calls) =>
+            Faulted(ScenarioType.ServerErrorStorm, new { status = 503, count = 2, probability = 1.0, path = "dependency" },
+                    Observation(2, "fault", status, calls: calls, outcome: status is null ? ObservationOutcomeType.Timeout : ObservationOutcomeType.Forwarded))
+                .Select(finding => (finding.Category, finding.Outcome)).ToArray();
+
+        // Retried with pauses until the dependency answered, then answered normally.
+        Assert.Equal([(ScoringCategory.Retry, Passed), (ScoringCategory.GracefulDegradation, Passed)], Storm(200, 0, 200, 400));
+        Assert.Equal([(ScoringCategory.Retry, Degraded), (ScoringCategory.GracefulDegradation, Degraded)], Storm(503, 0, 10, 20));
+        Assert.Equal([(ScoringCategory.Retry, Failed), (ScoringCategory.GracefulDegradation, Failed)], Storm(null, 0, 200, 400, 600, 800, 1000));
+        // Every probability draw missed, so the dependency never failed and there is nothing to judge.
+        Assert.Equal([(ScoringCategory.Retry, NotApplicable), (ScoringCategory.GracefulDegradation, NotApplicable)],
+            Faulted(ScenarioType.ServerErrorStorm, new { status = 503, count = 2, probability = 0.5, path = "dependency" },
+                    Observation(2, "fault", 200, calls: [0], injected: [false]))
+                .Select(finding => (finding.Category, finding.Outcome)));
+        // A baseline that never worked decides nothing, and leaves no fallback to judge.
+        Assert.Equal([(ScoringCategory.Retry, Inconclusive)], Evaluator.Evaluate(ScenarioType.ServerErrorStorm,
+                Parameters(new { status = 503, count = 2, probability = 1.0, path = "dependency" }), [],
+                [Observation(1, "baseline", 500), Observation(2, "fault", 200, calls: [0, 200]), Observation(3, "recovery", 500)])
+            .Select(finding => (finding.Category, finding.Outcome)));
+    }
+
+    [Fact]
+    public void A_throttled_dependency_must_be_left_alone_for_as_long_as_retry_after_asks()
+    {
+        Evaluator.Finding Throttle(int? status, params long[] calls) =>
+            Faulted(ScenarioType.Throttle429, new { retryAfterSeconds = 1, path = "dependency" },
+                Observation(2, "fault", status, calls: calls, injected: calls.Select((_, index) => index == 0).ToArray(),
+                    outcome: status is null ? ObservationOutcomeType.Timeout : ObservationOutcomeType.Forwarded)).Single();
+
+        var passed = Throttle(200, 0, 1000);
+        Assert.Equal((ResiliencePattern.RateLimit, ScoringCategory.RateLimit, Passed), (passed.Pattern, passed.Category, passed.Outcome));
+        // No second call, and a controlled answer.
+        Assert.Equal(Passed, Throttle(503, 0).Outcome);
+        Assert.Equal((Degraded, Evaluator.Problem.IgnoredRetryAfter), (Throttle(200, 0, 300).Outcome, Throttle(200, 0, 300).Problem));
+        Assert.Equal((Failed, Evaluator.Problem.DependencyNotContained), (Throttle(500, 0).Outcome, Throttle(500, 0).Problem));
+        Assert.Equal(Failed, Throttle(null, 0).Outcome);
+        Assert.Equal((Failed, Evaluator.Problem.RetryStorm), (Throttle(200, 0, 1000, 2000, 3000, 4000, 5000).Outcome,
+            Throttle(200, 0, 1000, 2000, 3000, 4000, 5000).Problem));
+        // Waited, but did not answer normally again once the dependency was back.
+        Assert.Equal(Failed, Faulted(ScenarioType.Throttle429, new { retryAfterSeconds = 1, path = "dependency" },
+            Observation(2, "fault", 200, calls: [0, 1000], injected: [true, false]), recovery: 500).Single().Outcome);
+    }
+
+    [Fact]
+    public void A_broken_answer_from_the_dependency_must_be_checked_by_the_target()
+    {
+        Evaluator.Finding Broken(ScenarioType type, int? status, bool injected = true) =>
+            Faulted(type, type == ScenarioType.MalformedJson ? new { variant = "truncated", path = "dependency" } : (object)new { path = "dependency" },
+                Observation(2, "fault", status, calls: [0], injected: [injected],
+                    outcome: status is null ? ObservationOutcomeType.Timeout : ObservationOutcomeType.Forwarded)).Single();
+
+        var checkedAnswer = Broken(ScenarioType.MalformedJson, 502);
+        Assert.Equal((ResiliencePattern.ResponseValidation, ScoringCategory.ResponseValidation, Passed),
+            (checkedAnswer.Pattern, checkedAnswer.Category, checkedAnswer.Outcome));
+        Assert.Equal(Passed, Broken(ScenarioType.EmptyResponse, 200).Outcome);
+        Assert.Equal((Degraded, Evaluator.Problem.DependencyResponseUnhandled),
+            (Broken(ScenarioType.EmptyResponse, 400).Outcome, Broken(ScenarioType.EmptyResponse, 400).Problem));
+        Assert.Equal((Failed, Evaluator.Problem.DependencyResponseUnhandled),
+            (Broken(ScenarioType.MalformedJson, 500).Outcome, Broken(ScenarioType.MalformedJson, 500).Problem));
+        Assert.Equal(Failed, Broken(ScenarioType.MalformedJson, null).Outcome);
+        // The dependency's answer was already empty: the fault changed nothing.
+        Assert.Equal(NotApplicable, Broken(ScenarioType.EmptyResponse, 200, injected: false).Outcome);
     }
 
     private static ResilienceFindingOutcome? Latency(HttpObservation? baseline, HttpObservation fault, params Invariant[] invariants) =>

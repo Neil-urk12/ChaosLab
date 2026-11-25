@@ -8,6 +8,22 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- Faults in the target's dependency path. 5xx Storm, 429 Throttle, Malformed JSON and Empty
+  Response got an "Injected in" setting on the scenario: the runner's request path, the
+  default and the only path before, or the target's dependency path. In the dependency path
+  the dependency simulator answered the target's first calls with the storm's status or a
+  429 with `Retry-After`, or passed the calls on and corrupted or emptied the dependency's
+  answer, and logged each call. The scenarios ran alone like Dependency failure and were
+  skipped when no dependency URL was set or the target made no call through the
+  simulator. They could now pass: a 5xx Storm was judged on the target's retries and its
+  fallback, a 429 Throttle on waiting out `Retry-After`, and a broken answer on the target
+  answering with a usable response or a controlled 502, 503 or 504 (PROJECT.md 12.3,
+  decisions 7 to 9). Two recommendations came with them: honour `Retry-After` from a
+  throttled dependency, and validate a dependency's response before using it. The
+  scenario table marked faults in the dependency path. Scenarios saved before kept the
+  runner's path. A dependency answer with no body (204, 205, 304, HEAD) or a compressed
+  one was passed on unchanged, so the fault was Not Applicable to it. A 5xx Storm whose probability
+  draws all missed was Not Applicable too.
 - The AGPL-3.0 `LICENSE`. ChaosLab Community was licensed under the GNU Affero General
   Public License v3.0, and the website's deploy workflow could publish the site.
 - Test values. Owners and editors saved values for an endpoint's required path, query and

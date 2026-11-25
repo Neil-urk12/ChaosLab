@@ -143,7 +143,9 @@
 
 	function select(scenario: Scenario) {
 		selectedId = scenario.id;
-		draft = { ...scenario.parameters };
+		// A choice stored before its field existed (path) shows, and saves, its first option, the backend's default.
+		const defaults = parameterFields[scenario.type].flatMap((f) => (f.kind === 'choice' ? [[f.key, f.choices[0][0]]] : []));
+		draft = { ...Object.fromEntries(defaults), ...scenario.parameters };
 		detailError = '';
 		adding = false;
 	}

@@ -16,7 +16,8 @@ namespace Backend.Features.TestRuns;
 // executions, up to the run's concurrency at once, each endpoint's in order (ExecuteRunAsync); a scenario the runner
 // itself failed is tried again up to the run's runner retries. Each scenario sends an optional baseline request, then
 // the fault. Latency, Timeout / Drop and Duplicate Request are direct requests; 5xx Storm, 429 Throttle, Malformed JSON, Empty Response, Slow Drip and Auth Expiry go
-// through the FaultInjector (PROJECT.md 10). Dependency failure arms the DependencySimulator in the target's outbound path.
+// through the FaultInjector (PROJECT.md 10). Dependency failure, and those four injector faults when their path is the
+// dependency's, arm the DependencySimulator in the target's outbound path instead.
 // Every request is stored as an HttpObservation, and each completed scenario is evaluated into its findings
 // (2.18, Evaluator). A run whose every scenario ran is then scored (2.19, Scorer).
 // shortcut: one run at a time for every project, so a long run holds up the other projects' queues; run them side by side when that hurts.
@@ -264,9 +265,10 @@ public sealed class RunExecutor(
             .ToListAsync(cancellationToken);
 
         var concurrency = Math.Clamp(config.Concurrency, 1, CreateRun.MaxConcurrency);
-        // Side by side, Dependency failures wait and then run alone: the armed simulator cuts every call through the
-        // environment's route, so a scenario running beside one would meet a fault it never asked for.
-        bool Alone(Execution execution) => concurrency > 1 && execution.ScenarioType == ScenarioType.DnsFailure;
+        // Side by side, scenarios in the dependency path wait and then run alone: the armed simulator applies its fault to
+        // every call through the environment's route, so a scenario running beside one would meet a fault it never asked for.
+        bool Alone(Execution execution) =>
+            concurrency > 1 && DependencySimulator.Applies(execution.ScenarioType, execution.Parameters.RootElement);
         // One lane per endpoint, its scenarios in sequence order, since two scenarios on one endpoint at once would count
         // each other's records. With concurrency 1, a single lane keeps the sequence order whatever it is sorted by.
         var lanes = executions.Where(execution => !Alone(execution))
@@ -347,10 +349,11 @@ public sealed class RunExecutor(
     private async Task<(ScenarioExecutionStatus, string?)> ExecuteScenarioAsync(
         ApplicationDbContext db, Context context, Execution execution, CancellationToken cancellationToken)
     {
-        // Checked before Prepare, like the forbidden credential below: it is a settings gap, not a spec problem.
-        if (execution.ScenarioType == ScenarioType.DnsFailure && context.Environment.DependencyUrl is null)
-            return (ScenarioExecutionStatus.Skipped, NoDependency);
         var parameters = execution.Parameters.RootElement;
+        var simulated = DependencySimulator.Applies(execution.ScenarioType, parameters);
+        // Checked before Prepare, like the forbidden credential below: it is a settings gap, not a spec problem.
+        if (simulated && context.Environment.DependencyUrl is null)
+            return (ScenarioExecutionStatus.Skipped, NoDependency);
         // Checked before Prepare: no fix to the spec makes it runnable, so its reason must not be a spec problem.
         if (execution.ScenarioType == ScenarioType.AuthExpiry && parameters.GetProperty("credential").GetString() == "forbidden")
             return (ScenarioExecutionStatus.Skipped, ForbiddenNeedsAccount);
@@ -392,6 +395,24 @@ public sealed class RunExecutor(
         HttpObservation[] faults = [];
         switch (execution.ScenarioType)
         {
+            case var _ when simulated:
+                // The fault is in the target's outbound path (PROJECT.md 10.2): the runner's own request is sent as
+                // usual, and the simulator applies the fault to the calls the target makes to its dependency meanwhile.
+                using (var armed = simulator.Arm(context.Environment.Id, execution.ScenarioType, parameters))
+                {
+                    // The live call log ({total, calls}): it is written into the observation when the request ends.
+                    var metadata = new Dictionary<string, object?> { ["phase"] = "fault", ["dependencyCalls"] = armed.Log };
+                    if (execution.ScenarioType == ScenarioType.DnsFailure)
+                        metadata["dependency"] = parameters.GetProperty("dependency").GetString();
+                    faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                        metadata, cancellationToken))];
+                    // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
+                    if (faults[0].OutcomeType != ObservationOutcomeType.ConnectionError && armed.Log.Total == 0)
+                        return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
+                }
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
             case ScenarioType.Latency:
                 // Runner-side delay (PROJECT.md 10.2): the request reaches the target late.
                 var delayMs = parameters.GetProperty("delayMs").GetInt32();
@@ -499,23 +520,6 @@ public sealed class RunExecutor(
                 };
                 faults = [await RecordAsync(SendAsync(context, execution, altered, altered.Create(), ++attempt, null,
                     new() { ["phase"] = "fault", ["credential"] = credential, ["sent"] = sent }, cancellationToken))];
-                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
-                    new() { ["phase"] = "recovery" }, cancellationToken));
-                break;
-            case ScenarioType.DnsFailure:
-                // The fault is in the target's outbound path (PROJECT.md 10.2): the runner's own request is sent as
-                // usual, and the calls the target makes to its dependency meanwhile are cut by the simulator.
-                var dependency = parameters.GetProperty("dependency").GetString()!;
-                using (var armed = simulator.Arm(context.Environment.Id, dependency))
-                {
-                    // The live call log ({total, calls}): it is written into the observation when the request ends.
-                    faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
-                        new() { ["phase"] = "fault", ["dependency"] = dependency, ["dependencyCalls"] = armed.Log },
-                        cancellationToken))];
-                    // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
-                    if (faults[0].OutcomeType != ObservationOutcomeType.ConnectionError && armed.Log.Total == 0)
-                        return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
-                }
                 await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
                     new() { ["phase"] = "recovery" }, cancellationToken));
                 break;

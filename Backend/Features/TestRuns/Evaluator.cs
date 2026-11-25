@@ -30,7 +30,7 @@ public static class Evaluator
         RetryStorm, RetryWithoutPause,
         DuplicatesBroke, SeparateRejected, DuplicateSideEffects,
         AnsweredWithoutCredential, AuthUnhandled, AuthWrongStatus,
-        DependencyNotContained, NoFallback,
+        DependencyNotContained, NoFallback, IgnoredRetryAfter, DependencyResponseUnhandled,
         InvariantViolated, FailedWithoutFault
     }
 
@@ -55,7 +55,7 @@ public static class Evaluator
     private sealed record Rated(ResiliencePattern Pattern, ScoringCategory Category, Verdict Verdict);
 
     // Empty when there is nothing to judge: Baseline is not a fault, and a scenario without fault requests never ran.
-    // A Dependency failure yields up to three findings, every other fault one.
+    // A Dependency failure yields up to three findings, a 5xx Storm in the dependency path up to two, every other fault one.
     public static IReadOnlyList<Finding> Evaluate(
         ScenarioType type, JsonElement parameters, IReadOnlyList<Invariant> invariants, IReadOnlyList<HttpObservation> observations)
     {
@@ -65,6 +65,8 @@ public static class Evaluator
         var probe = In("recovery").FirstOrDefault();
         if (faults.Count == 0)
             return [];
+        // Faults the target met in its own dependency calls; the others only changed what the runner received.
+        var simulated = DependencySimulator.Applies(type, parameters);
 
         List<Rated> rated;
         switch (type)
@@ -95,13 +97,24 @@ public static class Evaluator
             case ScenarioType.DnsFailure when probe is not null:
                 rated = Dependency(baseline, faults[0], probe);
                 break;
-            case ScenarioType.ServerErrorStorm:
+            case ScenarioType.ServerErrorStorm when simulated && probe is not null:
+                rated = Storm(baseline, faults[0], probe);
+                break;
+            case ScenarioType.Throttle429 when simulated && probe is not null:
+                rated = [new(ResiliencePattern.RateLimit, ScoringCategory.RateLimit,
+                    Throttled(parameters.GetProperty("retryAfterSeconds").GetInt32(), baseline, faults[0], probe))];
+                break;
+            case ScenarioType.MalformedJson or ScenarioType.EmptyResponse when simulated && probe is not null:
+                rated = [new(ResiliencePattern.ResponseValidation, ScoringCategory.ResponseValidation,
+                    BrokenAnswer(type, baseline, faults[0], probe))];
+                break;
+            case ScenarioType.ServerErrorStorm when !simulated:
                 rated = [new(ResiliencePattern.Retry, ScoringCategory.Retry, RunnerOnly(type, baseline, faults, probe))];
                 break;
-            case ScenarioType.Throttle429:
+            case ScenarioType.Throttle429 when !simulated:
                 rated = [new(ResiliencePattern.RateLimit, ScoringCategory.RateLimit, RunnerOnly(type, baseline, faults, probe))];
                 break;
-            case ScenarioType.MalformedJson or ScenarioType.EmptyResponse:
+            case ScenarioType.MalformedJson or ScenarioType.EmptyResponse when !simulated:
                 rated = [new(ResiliencePattern.ResponseValidation, ScoringCategory.ResponseValidation,
                     RunnerOnly(type, baseline, faults, probe))];
                 break;
@@ -247,35 +260,150 @@ public static class Evaluator
             return rated;
 
         rated.Add(new(ResiliencePattern.Retry, ScoringCategory.Retry, Retries(fault, seen)));
-        const string alternative = "The target offers an alternative or reduced response while its dependency is down.";
-        rated.Add(new(ResiliencePattern.Fallback, ScoringCategory.GracefulDegradation, status switch
+        rated.Add(new(ResiliencePattern.Fallback, ScoringCategory.GracefulDegradation, Fallback(what, "down", fault, seen)));
+        return rated;
+    }
+
+    // 5xx Storm in the dependency path: the target's first dependency calls failed with a 5xx and later ones were
+    // answered. How it retried is the scenario's own finding; what its caller got is the fallback one.
+    private static List<Rated> Storm(HttpObservation? baseline, HttpObservation fault, HttpObservation probe)
+    {
+        const string what = "A request sent while the target's dependency answered with server errors";
+        var seen = Seen(baseline, what, fault, probe);
+        // Each failure is a draw against `probability`, so every one can miss and leave the target nothing to handle.
+        if (!CallLog(fault).Calls.Any(call => call.Injected))
         {
-            < 400 => new Verdict(ResilienceFindingOutcome.Passed, $"The target answered {status} while its dependency was down",
+            Verdict Missed(string expected) => new(ResilienceFindingOutcome.NotApplicable,
+                "Every draw missed the scenario's probability, so none of the dependency's answers failed", expected, seen,
+                "5xx Storm changed nothing in this request.", "How the target handles a failing dependency.");
+            return [new(ResiliencePattern.Retry, ScoringCategory.Retry,
+                    Missed("A failed dependency call is retried a few times, with a pause between attempts.")),
+                new(ResiliencePattern.Fallback, ScoringCategory.GracefulDegradation,
+                    Missed("The target offers an alternative or reduced response while its dependency is failing."))];
+        }
+        var retries = Retries(fault, seen);
+        List<Rated> rated = [new(ResiliencePattern.Retry, ScoringCategory.Retry, After(retries, baseline, probe, retries.Observed))];
+        // A baseline that never worked decides nothing about fallbacks either.
+        if (baseline is not null && !Succeeded(baseline))
+            return rated;
+        rated.Add(new(ResiliencePattern.Fallback, ScoringCategory.GracefulDegradation, Fallback(what, "failing", fault, seen)));
+        return rated;
+    }
+
+    // What the caller gets while the dependency fails (PROJECT.md 12.3, decision 4). state: "down" (cut) or "failing"
+    // (answering with errors).
+    private static Verdict Fallback(string what, string state, HttpObservation fault, string seen)
+    {
+        var alternative = $"The target offers an alternative or reduced response while its dependency is {state}.";
+        var status = fault.UpstreamStatusCode;
+        return status switch
+        {
+            < 400 => new Verdict(ResilienceFindingOutcome.Passed, $"The target answered {status} while its dependency was {state}",
                 alternative, seen, "Behavior consistent with a fallback or a reduced response.",
                 "Whether the response was complete or a reduced one."),
             502 or 503 or 504 => new Verdict(ResilienceFindingOutcome.Degraded,
-                $"The target answered {status} while its dependency was down, with nothing in its place", alternative, seen,
+                $"The target answered {status} while its dependency was {state}, with nothing in its place", alternative, seen,
                 "The failure is reported in a controlled way, but no alternative is offered.", "Whether a fallback exists for other failures.",
                 Problem: Problem.NoFallback),
             _ => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", alternative, seen,
                 "The endpoint has no fallback for a failed dependency.", "Where in the target the failure comes from.",
                 Problem: Problem.NoFallback)
-        }));
-        return rated;
+        };
     }
 
-    // The calls the simulator cut, per dependency operation: their number shows retries, their spacing shows backoff.
+    // 429 Throttle in the dependency path: the target's first dependency call was answered with 429 and Retry-After, and
+    // its next call to the same operation shows whether it waited (PROJECT.md 12.3, decision 8).
+    private static Verdict Throttled(int retryAfterSeconds, HttpObservation? baseline, HttpObservation fault, HttpObservation probe)
+    {
+        const string what = "A request sent while the target's dependency answered 429 with Retry-After";
+        var expected = $"The target waits the {retryAfterSeconds} s that Retry-After asks for before calling its dependency again, and answers in a controlled way.";
+        const string notProven = "Whether the target also honours a Retry-After given as a date, and whether it slows its own callers down in turn.";
+        var (calls, total) = CallLog(fault);
+        var seen = $"{Seen(baseline, what, fault, probe)} Dependency calls during the fault: {total}.";
+        var status = fault.UpstreamStatusCode;
+        var busiest = calls.GroupBy(call => call.Operation).Select(group => (Operation: group.Key, Count: group.Count()))
+            .OrderByDescending(group => group.Count).FirstOrDefault();
+        var throttled = calls.FindIndex(call => call.Injected);
+        var again = throttled < 0 ? -1 : calls.FindIndex(throttled + 1, call => call.Operation == calls[throttled].Operation);
+        long? waited = again < 0 ? null : calls[again].AtMs - calls[throttled].AtMs;
+        Verdict verdict;
+        if (busiest.Count > MaxRetryCalls)
+            verdict = new(ResilienceFindingOutcome.Failed, $"The target called {busiest.Operation} {busiest.Count} times during one request",
+                expected, seen, "Retries are not limited enough to spare a throttled dependency.", notProven, Problem: Problem.RetryStorm);
+        else if (status is null or (>= 500 and not (502 or 503 or 504)))
+            verdict = new(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", expected, seen,
+                "The dependency's 429 became the endpoint's own failure.", "Where in the target the failure comes from.",
+                Problem: Problem.DependencyNotContained);
+        else if (waited < retryAfterSeconds * 1000L)
+            verdict = new(ResilienceFindingOutcome.Degraded,
+                $"The target called {calls[again].Operation} again {waited} ms after the 429, before the {retryAfterSeconds} s Retry-After",
+                expected, seen, "The target retries a throttled dependency without honouring Retry-After.", notProven,
+                Problem: Problem.IgnoredRetryAfter);
+        else
+            verdict = new(ResilienceFindingOutcome.Passed, waited is { } ms
+                    ? $"The target waited {ms} ms before calling {calls[again].Operation} again, as Retry-After asked"
+                    : $"The target did not call its throttled dependency again and answered {status}",
+                expected, seen, "Behavior consistent with honouring Retry-After.", notProven);
+        return After(verdict, baseline, probe, seen);
+    }
+
+    // Malformed JSON and Empty Response in the dependency path: the target had to read a broken answer from its
+    // dependency (PROJECT.md 12.3, decision 9).
+    private static Verdict BrokenAnswer(ScenarioType type, HttpObservation? baseline, HttpObservation fault, HttpObservation probe)
+    {
+        var malformed = type == ScenarioType.MalformedJson;
+        var what = $"A request sent while the target's dependency answered with {(malformed ? "a malformed body" : "an empty body")}";
+        const string expected = "The target checks its dependency's answer and responds in a controlled way: with a usable answer, or with 502, 503 or 504.";
+        const string notProven = "Whether any of the broken data reached the target's answer or its stored state.";
+        var (calls, total) = CallLog(fault);
+        var seen = $"{Seen(baseline, what, fault, probe)} Dependency calls during the fault: {total}.";
+        if (!calls.Any(call => call.Injected))
+            return new(ResilienceFindingOutcome.NotApplicable,
+                malformed ? "The dependency's answers had nothing to corrupt, so the fault changed nothing"
+                    : "The dependency's answers were already empty, so the fault changed nothing",
+                expected, seen, $"{(malformed ? "Malformed JSON" : "Empty Response")} does not apply to this dependency call.", notProven);
+        var status = fault.UpstreamStatusCode;
+        return After(status switch
+        {
+            < 300 or 502 or 503 or 504 => new Verdict(ResilienceFindingOutcome.Passed, $"{what} was answered with {status}", expected, "",
+                "Behavior consistent with checking the dependency's answer.", notProven),
+            >= 300 and < 500 => new Verdict(ResilienceFindingOutcome.Degraded, $"{what} was answered with {status}", expected, "",
+                "The endpoint answers, but not with a controlled error for a broken dependency answer.", notProven,
+                Problem: Problem.DependencyResponseUnhandled),
+            _ => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", expected, "",
+                "The broken answer became the endpoint's own failure.", "Where in the target the failure comes from.",
+                Problem: Problem.DependencyResponseUnhandled)
+        }, baseline, probe, seen);
+    }
+
+    // The simulator's log of the faulted request (DependencySimulator.CallLog): the stored calls in arrival order, and
+    // how many there were in all.
+    private static (List<(string Operation, long AtMs, bool Injected)> Calls, int Total) CallLog(HttpObservation fault)
+    {
+        if (!fault.Metadata.RootElement.TryGetProperty("dependencyCalls", out var log) || log.ValueKind != JsonValueKind.Object)
+            return ([], 0);
+        var calls = log.GetProperty("calls").EnumerateArray()
+            .Select(call => (Operation: $"{call.GetProperty("method").GetString()} {call.GetProperty("path").GetString()}",
+                AtMs: call.GetProperty("atMs").GetInt64(),
+                // Logs from before `injected` existed hold cut calls only.
+                Injected: !call.TryGetProperty("injected", out var injected) || injected.GetBoolean()))
+            .OrderBy(call => call.AtMs).ToList();
+        return (calls, log.GetProperty("total").GetInt32());
+    }
+
+    // The target's calls through the simulator during the fault, per dependency operation: their number shows retries,
+    // their spacing shows backoff.
     private static Verdict Retries(HttpObservation fault, string seen)
     {
         const string expected = "A failed dependency call is retried a few times, with a pause between attempts.";
         const string notProven = "Whether the pauses grow or carry jitter, and what the target's retry limit is.";
         // shortcut: only the first 100 calls are stored (DependencySimulator.CallLog), enough to tell a storm.
-        var worst = (fault.Metadata.RootElement.TryGetProperty("dependencyCalls", out var log)
-                ? log.GetProperty("calls").EnumerateArray().AsEnumerable() : [])
-            .GroupBy(call => $"{call.GetProperty("method").GetString()} {call.GetProperty("path").GetString()}")
+        var (calls, total) = CallLog(fault);
+        var worst = calls
+            .GroupBy(call => call.Operation)
             .Select(group =>
             {
-                var times = group.Select(call => call.GetProperty("atMs").GetInt64()).Order().ToList();
+                var times = group.Select(call => call.AtMs).ToList();
                 var gap = times.Zip(times.Skip(1), (earlier, later) => later - earlier).DefaultIfEmpty(long.MaxValue).Min();
                 var outcome = times.Count > MaxRetryCalls ? ResilienceFindingOutcome.Failed
                     : times.Count == 1 ? ResilienceFindingOutcome.Inconclusive
@@ -288,7 +416,7 @@ public static class Evaluator
                 ResilienceFindingOutcome.Failed => 0, ResilienceFindingOutcome.Degraded => 1, ResilienceFindingOutcome.Passed => 2, _ => 3
             })
             .ThenByDescending(group => group.Count).FirstOrDefault();
-        var observed = $"{seen} Dependency calls during the fault: {(log.ValueKind == JsonValueKind.Object ? log.GetProperty("total").GetInt32() : 0)}.";
+        var observed = $"{seen} Dependency calls during the fault: {total}.";
         return worst.Outcome switch
         {
             ResilienceFindingOutcome.Failed => new(worst.Outcome, $"The target called {worst.Operation} {worst.Count} times during one request",

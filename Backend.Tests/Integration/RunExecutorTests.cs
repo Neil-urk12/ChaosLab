@@ -343,10 +343,177 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
     }
 
     [Fact]
+    public async Task Faults_in_the_dependency_path_reach_the_target_through_the_simulator()
+    {
+        var received = new ConcurrentQueue<Received>();
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        // On GET /orders the target reads {"id": n} from its dependency (its own GET /7) through the simulator. It tries
+        // a 5xx or 429 again up to three times, waiting as long as Retry-After asks or else 150 ms, and answers 502 when
+        // the dependency's body is not the JSON it expects.
+        using var outbound = factory.CreateClient();
+        string? simulatorUrl = null;
+        using var listener = StartTarget(received, out var baseUrl, async () =>
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                using var response = await outbound.GetAsync($"{simulatorUrl}/7");
+                if ((int)response.StatusCode is 429 or >= 500)
+                {
+                    if (attempt == 4)
+                        return 503;
+                    await Task.Delay(response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMilliseconds(150));
+                    continue;
+                }
+                try
+                {
+                    using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    return body.RootElement.TryGetProperty("id", out _) ? 200 : 502;
+                }
+                catch (JsonException) { return 502; }
+            }
+        });
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl, spec: """
+            openapi: 3.0.3
+            info: {title: Orders, version: "1.0"}
+            security: [{bearerAuth: []}]
+            components:
+              securitySchemes:
+                bearerAuth: {type: http, scheme: bearer}
+            paths:
+              /orders:
+                get:
+                  responses: {"200": {description: ok, content: {application/json: {schema: {type: object}}}}}
+            """);
+        var environmentUrl = $"/api/projects/{projectId}/environment";
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(environmentUrl, new
+            { baseUrl, kind = "Staging", requestTimeoutSeconds = 5, verifyTls = true, authorized = true, dependencyUrl = baseUrl })).StatusCode);
+        simulatorUrl = $"/api/simulator/{(await client.GetFromJsonAsync<GetEnvironment.Response>(environmentUrl, Json))!.Target!.SimulatorToken}";
+
+        Guid Pick(ScenarioType type) => scenarios.Single(s => s.Type == type).Id;
+        var storm = Pick(ScenarioType.ServerErrorStorm);
+        var throttle = Pick(ScenarioType.Throttle429);
+        var malformed = Pick(ScenarioType.MalformedJson);
+        var empty = Pick(ScenarioType.EmptyResponse);
+        await SetParametersAsync(client, projectId, storm, new { status = 503, count = 2, probability = 1.0, path = "dependency" });
+        await SetParametersAsync(client, projectId, throttle, new { retryAfterSeconds = 1, path = "dependency" });
+        await SetParametersAsync(client, projectId, malformed, new { variant = "invalidSyntax", path = "dependency" });
+        await SetParametersAsync(client, projectId, empty, new { path = "dependency" });
+        // Side by side, each of them waits and then runs alone, so none meets another's fault.
+        var runId = await CreateRunAsync(client, projectId, [storm, throttle, malformed, empty], concurrency: 4);
+        Assert.True(await ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services).TickAsync(CancellationToken.None));
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(TestRunStatus.Completed, (await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId)).Status);
+        var executions = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations)
+            .Where(e => e.TestRunId == runId).ToDictionaryAsync(e => e.ScenarioId);
+        var findings = await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToListAsync();
+        // The target's answer to the faulted request, which of its dependency calls the fault changed, and the findings.
+        List<long> Check(Guid scenario, int status, bool[] injected, params (ScoringCategory?, ResilienceFindingOutcome)[] expected)
+        {
+            var execution = executions[scenario];
+            Assert.Equal(ScenarioExecutionStatus.Completed, execution.Status);
+            var rows = execution.Observations.OrderBy(o => o.AttemptNo).ToList();
+            Assert.Equal(["baseline", "fault", "recovery"], rows.Select(o => o.Metadata.RootElement.GetProperty("phase").GetString()));
+            // The runner's own requests are left alone: the fault was met by the target, not the runner.
+            Assert.All(rows, o => Assert.Equal(ObservationOutcomeType.Forwarded, o.OutcomeType));
+            Assert.Equal(status, rows[1].UpstreamStatusCode);
+            var calls = rows[1].Metadata.RootElement.GetProperty("dependencyCalls").GetProperty("calls").EnumerateArray().ToList();
+            Assert.All(calls, call => Assert.Equal(("GET", "/7"), (call.GetProperty("method").GetString(), call.GetProperty("path").GetString())));
+            Assert.Equal(injected, calls.Select(call => call.GetProperty("injected").GetBoolean()));
+            Assert.Equal(expected, findings.Where(f => f.ScenarioExecutionId == execution.Id).OrderBy(f => f.Category).Select(f => (f.Category, f.Outcome)));
+            return calls.Select(call => call.GetProperty("atMs").GetInt64()).ToList();
+        }
+
+        // Two 503s, then the dependency's own answer: retried with pauses, and the caller got its answer.
+        Check(storm, 200, [true, true, false],
+            (ScoringCategory.Retry, ResilienceFindingOutcome.Passed), (ScoringCategory.GracefulDegradation, ResilienceFindingOutcome.Passed));
+        // One 429 with Retry-After: 1, waited out before the call the dependency answered.
+        var throttled = Check(throttle, 200, [true, false], (ScoringCategory.RateLimit, ResilienceFindingOutcome.Passed));
+        Assert.True(throttled[1] - throttled[0] >= 1000, $"The second call came {throttled[1] - throttled[0]} ms after the 429.");
+        // A body the target could not read, answered with a controlled 502.
+        Check(malformed, 502, [true], (ScoringCategory.ResponseValidation, ResilienceFindingOutcome.Passed));
+        Check(empty, 502, [true], (ScoringCategory.ResponseValidation, ResilienceFindingOutcome.Passed));
+    }
+
+    [Fact]
+    public async Task A_forwarded_dependency_call_is_logged_on_arrival_and_an_answer_without_a_body_is_left_alone()
+    {
+        var received = new ConcurrentQueue<Received>();
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        // On GET /orders the target calls its dependency (itself) through the simulator, and answers 503 after 300 ms
+        // without cancelling the call, like a timeout that only stops waiting.
+        using var outbound = factory.CreateClient();
+        string? simulatorUrl = null;
+        var dependencyPath = "slow";
+        using var listener = StartTarget(received, out var baseUrl, async () =>
+        {
+            var call = outbound.GetAsync($"{simulatorUrl}/{dependencyPath}");
+            if (await Task.WhenAny(call, Task.Delay(300)) != call)
+                return 503;
+            using var response = await call;
+            return response.IsSuccessStatusCode ? 200 : 502;
+        });
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var (projectId, scenarios) = await SetUpAsync(client, baseUrl, spec: """
+            openapi: 3.0.3
+            info: {title: Orders, version: "1.0"}
+            security: [{bearerAuth: []}]
+            components:
+              securitySchemes:
+                bearerAuth: {type: http, scheme: bearer}
+            paths:
+              /orders:
+                get:
+                  responses: {"200": {description: ok, content: {application/json: {schema: {type: object}}}}}
+            """);
+        var environmentUrl = $"/api/projects/{projectId}/environment";
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PutAsJsonAsync(environmentUrl, new
+            { baseUrl, kind = "Staging", requestTimeoutSeconds = 5, verifyTls = true, authorized = true, dependencyUrl = baseUrl })).StatusCode);
+        simulatorUrl = $"/api/simulator/{(await client.GetFromJsonAsync<GetEnvironment.Response>(environmentUrl, Json))!.Target!.SimulatorToken}";
+        var empty = scenarios.Single(s => s.Type == ScenarioType.EmptyResponse).Id;
+        var malformed = scenarios.Single(s => s.Type == ScenarioType.MalformedJson).Id;
+        await SetParametersAsync(client, projectId, empty, new { path = "dependency" });
+        await SetParametersAsync(client, projectId, malformed, new { variant = "invalidSyntax", path = "dependency" });
+        var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
+        async Task<(Backend.Domain.Entities.ScenarioExecution, JsonElement Log, List<ResilienceFindingOutcome>)> RunAsync(Guid scenario)
+        {
+            var runId = await CreateRunAsync(client, projectId, [scenario]);
+            Assert.True(await executor.TickAsync(CancellationToken.None));
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var execution = await db.ScenarioExecutions.AsNoTracking().Include(e => e.Observations).SingleAsync(e => e.TestRunId == runId);
+            var log = execution.Observations.Single(o => o.Metadata.RootElement.GetProperty("phase").GetString() == "fault")
+                .Metadata.RootElement.GetProperty("dependencyCalls");
+            return (execution, log, await db.ResilienceFindings.AsNoTracking().Where(f => f.ScenarioExecutionId == execution.Id)
+                .Select(f => f.Outcome).ToListAsync());
+        }
+
+        // The dependency was still answering when the target gave up: the call counts, so the fault was met, but the
+        // target never got the emptied answer.
+        var (slow, slowLog, _) = await RunAsync(empty);
+        Assert.Equal(ScenarioExecutionStatus.Completed, slow.Status);
+        Assert.Equal(1, slowLog.GetProperty("total").GetInt32());
+        Assert.False(Assert.Single(slowLog.GetProperty("calls").EnumerateArray().ToList()).GetProperty("injected").GetBoolean());
+
+        // A 204 can carry no body, so none is made up for it (Kestrel would throw; TestServer would not): it is passed
+        // on as it is, and the fault changed nothing.
+        dependencyPath = "nocontent";
+        var (noContent, noContentLog, findings) = await RunAsync(malformed);
+        Assert.Equal(ScenarioExecutionStatus.Completed, noContent.Status);
+        Assert.Equal(200, noContent.Observations.Single(o => o.Metadata.RootElement.GetProperty("phase").GetString() == "fault").UpstreamStatusCode);
+        Assert.False(Assert.Single(noContentLog.GetProperty("calls").EnumerateArray().ToList()).GetProperty("injected").GetBoolean());
+        Assert.Equal([ResilienceFindingOutcome.NotApplicable], findings);
+    }
+
+    [Fact]
     public void Dependency_call_log_keeps_the_first_calls_with_short_paths_and_counts_every_one()
     {
         var log = new DependencySimulator.CallLog();
-        Parallel.For(0, DependencySimulator.CallLog.MaxCalls + 50, i => log.Add(i, "GET", "/" + new string('a', 10_000)));
+        Parallel.For(0, DependencySimulator.CallLog.MaxCalls + 50, i => log.Add(i, "GET", "/" + new string('a', 10_000), injected: true));
 
         Assert.Equal(DependencySimulator.CallLog.MaxCalls + 50, log.Total);
         Assert.Equal(DependencySimulator.CallLog.MaxCalls, log.Calls.Count());
@@ -1123,6 +1290,14 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
                             request.Headers["Cookie"], request.Url!.Query));
                         context.Response.Headers.Add("Set-Cookie", "session=leaked; Path=/");
                         var last = request.Url.Segments[^1];
+                        if (last == "nocontent")
+                        {
+                            context.Response.StatusCode = 204;
+                            context.Response.Close();
+                            return;
+                        }
+                        if (last == "slow")
+                            await Task.Delay(1500);
                         if (last == "stream")
                         {
                             context.Response.ContentLength64 = 100;

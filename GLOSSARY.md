@@ -61,7 +61,7 @@ A service the target API calls. An environment names at most one, by its depende
 _Avoid_: Downstream, upstream service
 
 **Dependency simulator**:
-ChaosLab's stand-in for the dependency. The target is configured to call it instead. It passes calls through to the dependency, and cuts them while a dependency failure is being injected.
+ChaosLab's stand-in for the dependency. The target is configured to call it instead. It passes calls through to the dependency, and applies the fault while a dependency-path fault is being injected: it cuts the calls for a dependency failure, answers them itself for a 5xx storm or 429 throttle, and corrupts or empties the dependency's answer for malformed JSON or an empty response.
 _Avoid_: Proxy, mock
 
 ### Specs and endpoints

@@ -11,6 +11,12 @@ describe('scenarios', () => {
 		expect(describeParameters('EmptyResponse', {})).toBe('Empty body');
 	});
 
+	it('marks faults applied in the dependency path, and only those', () => {
+		expect(describeParameters('Throttle429', { retryAfterSeconds: 2, path: 'dependency' })).toBe('Retry-After: 2 · dependency path');
+		expect(describeParameters('MalformedJson', { variant: 'truncated', path: 'dependency' })).toBe('Truncated body · dependency path');
+		expect(describeParameters('EmptyResponse', { path: 'runner' })).toBe('Empty body');
+	});
+
 	it('describes invariants with their read-back request', () => {
 		expect(
 			describeInvariant({

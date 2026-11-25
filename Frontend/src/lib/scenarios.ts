@@ -49,20 +49,34 @@ export type Field =
 	| { key: string; label: string; kind: 'number'; min: number; max: number; step?: number; unit?: string; hint?: string }
 	| { key: string; label: string; kind: 'choice'; choices: [string, string][]; hint?: string };
 
+// Where the fault is applied. Stored parameters without it mean the runner's path, the first choice.
+const path: Field = {
+	key: 'path',
+	label: 'Injected in',
+	kind: 'choice',
+	choices: [
+		['runner', "Runner's request path"],
+		['dependency', "Target's dependency path"]
+	],
+	hint: "The dependency path needs the target's dependency URL pointed at the simulator (Settings)."
+};
+
 export const parameterFields: Record<ScenarioType, Field[]> = {
 	Baseline: [],
 	Latency: [{ key: 'delayMs', label: 'Added delay', kind: 'number', min: 0, max: 120000, unit: 'ms' }],
 	ServerErrorStorm: [
 		{ key: 'status', label: 'Status code', kind: 'number', min: 500, max: 599 },
 		{ key: 'count', label: 'Failures in a row', kind: 'number', min: 1, max: 20 },
-		{ key: 'probability', label: 'Probability', kind: 'number', min: 0, max: 1, step: 0.1, hint: '1.0 fails every attempt.' }
+		{ key: 'probability', label: 'Probability', kind: 'number', min: 0, max: 1, step: 0.1, hint: '1.0 fails every attempt.' },
+		path
 	],
-	Throttle429: [{ key: 'retryAfterSeconds', label: 'Retry-After', kind: 'number', min: 0, max: 3600, unit: 's' }],
+	Throttle429: [{ key: 'retryAfterSeconds', label: 'Retry-After', kind: 'number', min: 0, max: 3600, unit: 's' }, path],
 	TimeoutDrop: [{ key: 'mode', label: 'Behavior', kind: 'choice', choices: [['drop', 'Drop connection'], ['hold', 'Hold until timeout']] }],
 	MalformedJson: [
-		{ key: 'variant', label: 'Corruption', kind: 'choice', choices: [['truncated', 'Truncated body'], ['invalidSyntax', 'Invalid syntax'], ['wrongTypes', 'Wrong field types']] }
+		{ key: 'variant', label: 'Corruption', kind: 'choice', choices: [['truncated', 'Truncated body'], ['invalidSyntax', 'Invalid syntax'], ['wrongTypes', 'Wrong field types']] },
+		path
 	],
-	EmptyResponse: [],
+	EmptyResponse: [path],
 	SlowDrip: [
 		{ key: 'bytes', label: 'Bytes per chunk', kind: 'number', min: 1, max: 65536, unit: 'B' },
 		{ key: 'intervalMs', label: 'Interval', kind: 'number', min: 1, max: 10000, unit: 'ms' }
@@ -85,8 +99,13 @@ const choice = (type: ScenarioType, key: string, value: unknown) => {
 	return field?.kind === 'choice' ? (field.choices.find(([v]) => v === value)?.[1] ?? String(value)) : String(value);
 };
 
-// Short table summary, e.g. "503 × 3, p=1.0" or "2 copies, same key".
+// Short table summary, e.g. "503 × 3, p=1.0" or "2 copies, same key", marked when the fault is in the dependency path.
 export function describeParameters(type: ScenarioType, p: Record<string, string | number>): string {
+	const summary = summarize(type, p);
+	return p.path === 'dependency' ? `${summary} · dependency path` : summary;
+}
+
+function summarize(type: ScenarioType, p: Record<string, string | number>): string {
 	switch (type) {
 		case 'Latency':
 			return `+${p.delayMs} ms`;

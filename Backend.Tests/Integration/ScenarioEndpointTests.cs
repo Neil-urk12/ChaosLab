@@ -110,6 +110,17 @@ public sealed class ScenarioEndpointTests(PostgreSqlFixture postgres)
             new { invariants = new[] { new { type = "MaxRecordsAfterDuplicates", @params = new { max = 1 } } } })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PatchAsJsonAsync($"/api/projects/{projectId}/scenarios/{scenarios.First(s => s.Type == ScenarioType.Latency).Id}",
             new { invariants = new[] { new { type = "MaxRecordsAfterDuplicates", @params = new { max = 1 }, readBack = new { method = "GET", path = "/payments" } } } })).StatusCode);
+        // Where the fault is applied is optional on the faults the simulator can also apply, and only those.
+        var throttle = $"/api/projects/{projectId}/scenarios/{scenarios.First(s => s.Type == ScenarioType.Throttle429).Id}";
+        Assert.Equal(HttpStatusCode.NoContent, (await client.PatchAsJsonAsync(throttle, new { parameters = new { retryAfterSeconds = 2 } })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await client.PatchAsJsonAsync(throttle, new { parameters = new { retryAfterSeconds = 2, path = "dependency" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PatchAsJsonAsync(throttle, new { parameters = new { retryAfterSeconds = 2, path = "proxy" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PatchAsJsonAsync(throttle, new { parameters = new { path = "dependency" } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PatchAsJsonAsync(url, new { parameters = new { copies = 2, key = "same", delayMs = 0, path = "dependency" } })).StatusCode);
 
         var update = await client.PatchAsJsonAsync(url, new
         {

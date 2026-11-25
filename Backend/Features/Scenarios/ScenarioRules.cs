@@ -27,16 +27,21 @@ public sealed record Invariant(InvariantType? Type, InvariantParams? Params, Rea
 // Validation for user-edited scenario parameters and invariants.
 public static class ScenarioRules
 {
-    private sealed record Field(string Key, double Min = 0, double Max = 0, bool Integer = true, string[]? Choices = null);
+    // Optional: may be left out, as in parameters stored before the field existed.
+    private sealed record Field(
+        string Key, double Min = 0, double Max = 0, bool Integer = true, string[]? Choices = null, bool Optional = false);
+
+    // Where the fault is applied (DependencySimulator.Applies): the runner's request path, or the target's dependency path.
+    private static readonly Field Path = new("path", Choices: ["runner", "dependency"], Optional: true);
 
     private static readonly Dictionary<ScenarioType, Field[]> Fields = new()
     {
         [ScenarioType.Latency] = [new("delayMs", 0, 120_000)],
-        [ScenarioType.ServerErrorStorm] = [new("status", 500, 599), new("count", 1, 20), new("probability", 0, 1, Integer: false)],
-        [ScenarioType.Throttle429] = [new("retryAfterSeconds", 0, 3600)],
+        [ScenarioType.ServerErrorStorm] = [new("status", 500, 599), new("count", 1, 20), new("probability", 0, 1, Integer: false), Path],
+        [ScenarioType.Throttle429] = [new("retryAfterSeconds", 0, 3600), Path],
         [ScenarioType.TimeoutDrop] = [new("mode", Choices: ["drop", "hold"])],
-        [ScenarioType.MalformedJson] = [new("variant", Choices: ["truncated", "invalidSyntax", "wrongTypes"])],
-        [ScenarioType.EmptyResponse] = [],
+        [ScenarioType.MalformedJson] = [new("variant", Choices: ["truncated", "invalidSyntax", "wrongTypes"]), Path],
+        [ScenarioType.EmptyResponse] = [Path],
         [ScenarioType.SlowDrip] = [new("bytes", 1, 65_536), new("intervalMs", 1, 10_000)],
         [ScenarioType.AuthExpiry] = [new("credential", Choices: ["expired", "missing", "invalid", "forbidden"])],
         [ScenarioType.DnsFailure] = [new("dependency", Choices: ["unreachable", "unresolvable"])],
@@ -49,7 +54,7 @@ public static class ScenarioRules
         Converters = { new JsonStringEnumConverter() }
     };
 
-    // The parameters must be an object with exactly the fields of the scenario type.
+    // The parameters must be an object with exactly the fields of the scenario type, less any optional ones left out.
     public static string? ValidateParameters(ScenarioType type, JsonElement parameters)
     {
         if (!Fields.TryGetValue(type, out var fields))
@@ -57,11 +62,16 @@ public static class ScenarioRules
         if (parameters.ValueKind != JsonValueKind.Object)
             return "Parameters must be an object.";
         var keys = parameters.EnumerateObject().Select(p => p.Name).ToList();
-        if (keys.Count != fields.Length || keys.Except(fields.Select(f => f.Key)).Any())
-            return $"Parameters must be exactly: {(fields.Length == 0 ? "none" : string.Join(", ", fields.Select(f => f.Key)))}.";
+        var required = fields.Where(f => !f.Optional).Select(f => f.Key).ToList();
+        var optional = string.Join(", ", fields.Where(f => f.Optional).Select(f => f.Key));
+        if (keys.Count != keys.Distinct().Count() || keys.Except(fields.Select(f => f.Key)).Any() || required.Except(keys).Any())
+            return required.Count > 0
+                ? $"Parameters must be exactly: {string.Join(", ", required)}{(optional.Length > 0 ? $", and optionally {optional}" : "")}."
+                : optional.Length > 0 ? $"Parameters may only be: {optional}." : "Parameters must be empty.";
         foreach (var field in fields)
         {
-            var value = parameters.GetProperty(field.Key);
+            if (!parameters.TryGetProperty(field.Key, out var value))
+                continue;
             if (field.Choices is not null)
             {
                 if (value.ValueKind != JsonValueKind.String || !field.Choices.Contains(value.GetString()))
