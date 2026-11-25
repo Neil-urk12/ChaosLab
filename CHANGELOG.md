@@ -8,6 +8,8 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- The AGPL-3.0 `LICENSE`. ChaosLab Community was licensed under the GNU Affero General
+  Public License v3.0, and the website's deploy workflow could publish the site.
 - Test values. Owners and editors saved values for an endpoint's required path, query and
   header parameters and its JSON request body under Test values on the specification
   page, and viewers saw them read-only. Runs sent a saved value ahead of the spec's
