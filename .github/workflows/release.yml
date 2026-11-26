@@ -5,6 +5,7 @@ name: Release image
 # The image is published only after the backend tests and the frontend check and unit tests pass.
 # GHCR makes a new package private: after the first release, set its visibility to Public once in the package
 # settings, or `docker compose pull` fails for everyone else.
+# After tagging, bump `release` in Website/src/lib/site.ts, so the site installs the new compose.yaml.
 on:
   push:
     tags: ['v*.*.*']

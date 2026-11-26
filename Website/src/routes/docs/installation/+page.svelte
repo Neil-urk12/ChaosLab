@@ -24,7 +24,8 @@
 <ul>
 	<li>
 		<a href="https://docs.docker.com/compose/install/">Docker with the Compose plugin</a>, or
-		<a href="https://podman.io/">Podman</a> with <code>podman compose</code>
+		<a href="https://podman.io/">Podman</a> with <code>podman-compose</code> or
+		<code>docker-compose</code> installed, which <code>podman compose</code> runs
 	</li>
 	<li><code>curl</code> and <code>openssl</code>, or PowerShell on Windows</li>
 </ul>

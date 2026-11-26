@@ -16,6 +16,12 @@
 	<li>
 		Pull the new image and restart. The backend applies pending database migrations when it starts.
 		<CodeBlock code="docker compose pull && docker compose up -d" />
+		<code>pull</code> updates the images, not <code>compose.yaml</code>. If the changelog says a release
+		changed <code>compose.yaml</code>, download it from that release's tag first, keep <code>.env</code>,
+		and make your own changes to <code>compose.yaml</code> again:
+		<CodeBlock
+			code="curl -fsSLO https://raw.githubusercontent.com/Neil-urk12/ChaosLab/vX.Y.Z/compose.yaml"
+		/>
 	</li>
 </ol>
 

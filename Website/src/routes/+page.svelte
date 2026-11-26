@@ -69,7 +69,8 @@
 		<CodeBlock code={imageInstall} label="Copy the install commands" />
 		<p class="mt-3 text-[12px] text-slate-500">
 			Needs Docker or Podman with Compose, <code>curl</code> and <code>openssl</code>. With Podman, write
-			<code>podman compose</code>. Open the setup link from the logs at
+			<code>podman compose</code>, which needs <code>podman-compose</code> or
+			<code>docker-compose</code> installed. Open the setup link from the logs at
 			<code>http://localhost:8080</code>; <kbd>Ctrl</kbd>+<kbd>C</kbd> stops following the logs and
 			leaves ChaosLab running. Windows and from-source steps are in the installation guide.
 		</p>

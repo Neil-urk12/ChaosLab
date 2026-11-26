@@ -15,7 +15,9 @@ const composeUrl = `https://raw.githubusercontent.com/Neil-urk12/ChaosLab/${rele
 
 // The image install, in the hero and on the Installation page (FeaturesFlow 2.0). One && chain: mkdir
 // fails on an existing chaoslab/ folder, so a pasted copy never replaces a kept .env and its credentials key.
-export const imageInstall = `mkdir chaoslab && cd chaoslab &&
+// hash comes first and names a missing tool: without openssl, $(openssl …) is empty and .env would get empty
+// secrets; without curl, an empty chaoslab/ folder would block the next try.
+export const imageInstall = `hash curl openssl && mkdir chaoslab && cd chaoslab &&
 curl -fsSLO ${composeUrl} &&
 printf 'CREDENTIALS_KEY=%s\\nPOSTGRES_PASSWORD=%s\\n' "$(openssl rand -base64 32)" "$(openssl rand -hex 24)" > .env &&
 docker compose up -d && docker compose logs -f chaoslab`;

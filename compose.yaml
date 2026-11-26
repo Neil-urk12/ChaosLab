@@ -10,7 +10,8 @@
 # 2. docker compose up -d
 # 3. docker compose logs chaoslab   # prints the one-hour first-run setup link (http://localhost:8080/install#...)
 #
-# Upgrading: docker compose pull && docker compose up -d. Pending migrations apply on start.
+# Upgrading: docker compose pull && docker compose up -d. Pending migrations apply on start. pull does not update
+# this file: when the changelog says a release changed it, download it from that release's tag first and keep .env.
 # Chaos tests must only ever target non-production APIs.
 
 name: chaoslab
