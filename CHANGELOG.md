@@ -1,10 +1,22 @@
 # Changelog
 
 All notable changes to ChaosLab are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No versions have been
-released yet, so history is grouped by date.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow
+[Semantic Versioning](https://semver.org/) from 0.1.0. History before 0.1.0 is grouped
+by date.
 
 ## [Unreleased]
+
+### Changed
+
+- The public site installs the release image. The landing page's install block and the
+  Installation page download the v0.1.0 `compose.yaml`, create `.env` with generated
+  secrets and start the stack, with a PowerShell variant for Windows; the from-source steps
+  moved below them. First-run setup, Configuration and Upgrading cover the image: where its
+  setup link is, the `compose.yaml` settings and volumes, and backing up, upgrading and
+  rolling back with `docker compose`.
+
+## [0.1.0] - 2026-11-26
 
 ### Added
 
@@ -648,3 +660,6 @@ released yet, so history is grouped by date.
 - Podman `kube play` dev stack (`backend-pod.yaml`, `Makefile`, `secret.yaml.example`).
 - Makefile target to run the frontend dev server.
 - EF Core dependency.
+
+[Unreleased]: https://github.com/Neil-urk12/ChaosLab/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Neil-urk12/ChaosLab/tree/v0.1.0

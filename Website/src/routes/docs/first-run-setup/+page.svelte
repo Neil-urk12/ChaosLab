@@ -12,10 +12,14 @@
 
 <h2>Find the setup link</h2>
 <p>
-	On an instance that has not been set up, the backend prints a setup link when it starts. When you
-	install from source, it is in the <code>make start</code> terminal and looks like this:
+	On an instance that has not been set up, the backend prints a setup link when it starts. With the
+	release image, read it with <code>docker compose logs chaoslab</code>. It looks like this:
 </p>
-<pre><code>http://localhost:5173/install#token=…</code></pre>
+<pre><code>http://localhost:8080/install#token=…</code></pre>
+<p>
+	When you install from source, it is in the <code>make start</code> terminal and points to
+	<code>http://localhost:5173</code>.
+</p>
 <p>
 	The pod's backend container prints a link too (<code>make logs-backend</code>), but with the
 	from-source setup use the one from <code>make start</code>: the web app on <code>:5173</code> talks
@@ -35,7 +39,8 @@
 
 <h2>If the link expired</h2>
 <p>
-	Restart the backend to get a new link. The old link stops working. Once setup is done, no link is
+	Restart the backend to get a new link: <code>docker compose restart chaoslab</code> with the release
+	image. The old link stops working. Once setup is done, no link is
 	printed again, and deleting or disabling the SuperAdmin does not reopen setup.
 </p>
 
@@ -47,7 +52,8 @@
 
 <h2>Another address</h2>
 <p>
-	The link points to <code>http://localhost:5173</code>. If people reach the instance at another
-	address, set <code>BootstrapSetup__PublicUrl</code> (see
+	The link points to <code>http://localhost:8080</code> with the release image, and to
+	<code>http://localhost:5173</code> from source. If people reach the instance at another address, set
+	<code>BootstrapSetup__PublicUrl</code> (see
 	<a href={resolve('/docs/configuration')}>Configuration</a>).
 </p>

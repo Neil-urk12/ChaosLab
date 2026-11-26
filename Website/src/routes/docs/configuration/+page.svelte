@@ -1,7 +1,10 @@
 <h1>Configuration</h1>
 
 <p>
-	The backend reads its settings from environment variables. When you install from source, the local
+	The backend reads its settings from environment variables. With the release image,
+	<code>compose.yaml</code> sets them; it takes the credentials key and the database password from
+	<code>.env</code> next to it. Change a setting in <code>compose.yaml</code>, then run
+	<code>docker compose up -d</code> to apply it. When you install from source, the local
 	backend reads them from <code>Backend/.env.local</code>, and variables exported in your shell take
 	precedence over that file. The pod reads only the database password, the connection string and the
 	credentials key from <code>secret.yaml</code>; its other settings are fixed in
@@ -22,20 +25,29 @@
 
 	<dt><code>BootstrapSetup__PublicUrl</code></dt>
 	<dd>
-		The web app's address, used to build the setup link. Defaults to
-		<code>http://localhost:5173</code>. Must be an absolute HTTP or HTTPS URL without a query, fragment
+		The web app's address, used to build the setup link. <code>http://localhost:8080</code> in the
+		release image and the pod; <code>http://localhost:5173</code> for <code>make start</code>. Must be an absolute HTTP or HTTPS URL without a query, fragment
 		or credentials.
 	</dd>
 
 	<dt><code>Reports__Path</code></dt>
 	<dd>
 		The folder for generated PDF reports. Defaults to <code>reports</code> next to the backend, which is
-		<code>Backend/reports/</code> for <code>make start</code>; the pod uses <code>/home/app/reports</code>
-		on a volume.
+		<code>Backend/reports/</code> for <code>make start</code>; <code>compose.yaml</code> and the pod use
+		<code>/home/app/reports</code> on a volume.
+	</dd>
+
+	<dt><code>Database__MigrateOnStartup</code></dt>
+	<dd>
+		<code>true</code> applies pending database migrations when the backend starts. On in
+		<code>compose.yaml</code>; off from source, where <code>make migrate</code> applies them.
 	</dd>
 
 	<dt><code>ASPNETCORE_ENVIRONMENT</code></dt>
-	<dd><code>Development</code> in the pod. API reference pages are only served in Development.</dd>
+	<dd>
+		<code>Production</code> in <code>compose.yaml</code>, <code>Development</code> in the pod. API
+		reference pages are only served in Development.
+	</dd>
 </dl>
 
 <h2>Keep these safe</h2>
@@ -46,6 +58,12 @@
 </ul>
 
 <h2>Data volumes</h2>
+<p>
+	<code>compose.yaml</code> keeps its data in three volumes, which survive
+	<code>docker compose down</code>: <code>chaoslab_postgres-data</code> (the database),
+	<code>chaoslab_backend-keys</code> (the sign-in keys) and <code>chaoslab_backend-reports</code> (PDF
+	reports).
+</p>
 <p>The pod keeps its data in three volumes, which survive <code>make down</code>:</p>
 <ul>
 	<li><code>chaoslab-postgres-data</code>: the database.</li>

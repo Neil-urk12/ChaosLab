@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import CodeBlock from '$lib/CodeBlock.svelte';
-	import { fromSourceSetup, fromSourceStart, repoUrl } from '$lib/site';
+	import { imageInstall, release, repoUrl } from '$lib/site';
 
 	const pipeline = [
 		['Import', 'Paste, upload or fetch an OpenAPI 3.x spec.'],
@@ -64,17 +64,14 @@
 		<p
 			class="mb-3 inline-flex rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-slate-300"
 		>
-			One-command install arrives with v0.1.0. Until then, install from source.
+			Install {release} with Docker or Podman
 		</p>
-		<CodeBlock code={fromSourceSetup} label="Copy the setup commands" />
-		<p class="my-3 text-[13px] text-slate-300">
-			Set the same database password and credentials key in <code>secret.yaml</code> and
-			<code>Backend/.env.local</code>, then build and start:
-		</p>
-		<CodeBlock code={fromSourceStart} label="Copy the build and start commands" />
+		<CodeBlock code={imageInstall} label="Copy the install commands" />
 		<p class="mt-3 text-[12px] text-slate-500">
-			Needs Podman, <code>envsubst</code>, Make, the .NET 10 SDK with <code>dotnet-ef</code>, Node.js,
-			pnpm and <code>openssl</code>.
+			Needs Docker or Podman with Compose, <code>curl</code> and <code>openssl</code>. With Podman, write
+			<code>podman compose</code>. Open the setup link from the logs at
+			<code>http://localhost:8080</code>; <kbd>Ctrl</kbd>+<kbd>C</kbd> stops following the logs and
+			leaves ChaosLab running. Windows and from-source steps are in the installation guide.
 		</p>
 		<div class="mt-5 flex flex-wrap gap-3 text-[13px]">
 			<a

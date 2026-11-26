@@ -78,7 +78,7 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 
 ### 2.0 Installation [Partial]
 
-Decided (PROJECT.md 26, 21 November 2026). Built: the AGPL-3.0 `LICENSE`; the public site in `Website/`, with the landing page and the five docs pages showing the from-source steps, and its GitHub Pages workflow (`.github/workflows/website.yml`), which deploys now that `LICENSE` exists; startup migrations (`Database__MigrateOnStartup`); and the image build (`make build`), which holds the built frontend and serves it on port 8080; the release workflow (`.github/workflows/release.yml`), which publishes the image to GHCR for amd64 and arm64 on a version tag; and `compose.yaml`, with the documented `.env` commands in its header. Not built: the install script, and the site's switch to the image steps, which waits for `v0.1.0`. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
+Decided (PROJECT.md 26, 21 November 2026). Built: the AGPL-3.0 `LICENSE`; the public site in `Website/`, with the landing page and the five docs pages showing the image steps first and the from-source steps after them, and its GitHub Pages workflow (`.github/workflows/website.yml`), which deploys to https://neil-urk12.github.io/ChaosLab/; startup migrations (`Database__MigrateOnStartup`); and the image build (`make build`), which holds the built frontend and serves it on port 8080; the release workflow (`.github/workflows/release.yml`), which publishes the image to GHCR for amd64 and arm64 on a version tag; and `compose.yaml`, with the documented `.env` commands in its header. `v0.1.0` was released on 26 November 2026. Not built: the install script. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
 
 **Install paths**
 
@@ -105,7 +105,7 @@ Decided (PROJECT.md 26, 21 November 2026). Built: the AGPL-3.0 `LICENSE`; the pu
 
 - Published only once the `LICENSE` (AGPL-3.0) is committed. No managed service is mentioned.
 - Landing page, top to bottom: hero with the install block; the non-production warning directly under it; the pipeline (Import → Discover → Generate → Execute → Observe → Evaluate → Report); the chaos primitives; screenshots of a run's results and report; footer with license, GitHub, and docs links.
-- Until `v0.1.0` exists, the install block shows the from-source steps with the note "One-command install arrives with v0.1.0. Until then, install from source."
+- The install block shows the image steps: download the release's `compose.yaml`, create `.env`, start the stack and follow the logs for the setup link. The Installation page adds a PowerShell variant and keeps the from-source steps. The install script's one command replaces the block once it is built. (Before `v0.1.0`, the block showed the from-source steps.)
 - Docs pages: Installation, First-run setup, Configuration, Upgrading, Safe use (non-production targets only, authorization confirmation).
 - Screenshots come from a run against a non-production target the team owns, checked for hostnames, emails, and credentials. A bundled demo API is a possible later improvement.
 

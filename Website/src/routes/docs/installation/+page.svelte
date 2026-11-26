@@ -1,15 +1,81 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import CodeBlock from '$lib/CodeBlock.svelte';
-	import { fromSourceSetup, fromSourceStart, repoUrl } from '$lib/site';
+	import {
+		fromSourceSetup,
+		fromSourceStart,
+		imageInstall,
+		imageInstallPowerShell,
+		release,
+		repoUrl
+	} from '$lib/site';
 </script>
 
 <h1>Installation</h1>
 
 <p>
-	There will be two ways to install a ChaosLab instance: from the release image, and from source.
-	The release image, with a one-command install, arrives with v0.1.0. Until then, install from
-	source.
+	There are two ways to install a ChaosLab instance. The release image needs only Docker or Podman.
+	Installing from source builds everything yourself, for working on ChaosLab.
+</p>
+
+<h2>From the release image</h2>
+
+<h3>Prerequisites</h3>
+<ul>
+	<li>
+		<a href="https://docs.docker.com/compose/install/">Docker with the Compose plugin</a>, or
+		<a href="https://podman.io/">Podman</a> with <code>podman compose</code>
+	</li>
+	<li><code>curl</code> and <code>openssl</code>, or PowerShell on Windows</li>
+</ul>
+
+<h3>Quick version</h3>
+<CodeBlock code={imageInstall} label="Copy the install commands" />
+<p>On Windows, in PowerShell:</p>
+<CodeBlock code={imageInstallPowerShell} label="Copy the PowerShell install commands" />
+<p>
+	With Podman, write <code>podman compose</code> instead of <code>docker compose</code>. Once the setup
+	link appears, open it and continue with
+	<a href={resolve('/docs/first-run-setup')}>First-run setup</a>. <kbd>Ctrl</kbd>+<kbd>C</kbd> stops
+	following the logs and leaves ChaosLab running.
+</p>
+
+<h3>Step by step</h3>
+<ol>
+	<li>
+		Create a folder for the instance and download the {release} <code>compose.yaml</code> into it. The
+		quick version stops if a <code>chaoslab</code> folder already exists.
+	</li>
+	<li>
+		Create <code>.env</code> next to it, once, with a generated credentials key and database password.
+		The header of <code>compose.yaml</code> has the same commands. Keep this file and back it up: a new
+		key or password cuts ChaosLab off from its database and from every stored target credential.
+	</li>
+	<li>
+		Start the stack. It pulls the ChaosLab image and PostgreSQL 17, applies the database migrations and
+		serves the web app on <code>http://localhost:8080</code>:
+		<CodeBlock code="docker compose up -d" />
+	</li>
+	<li>
+		Read the setup link from the logs and continue with
+		<a href={resolve('/docs/first-run-setup')}>First-run setup</a>:
+		<CodeBlock code="docker compose logs chaoslab" />
+	</li>
+</ol>
+
+<h3>Browsers and other machines</h3>
+<p>
+	<code>compose.yaml</code> listens on <code>localhost</code> only. Sign-in cookies are Secure: Chrome,
+	Edge and Firefox accept them over plain HTTP on <code>localhost</code>, but Safari does not. To use
+	Safari, or to reach ChaosLab from other machines, put an HTTPS reverse proxy in front of port 8080
+	and set <code>BootstrapSetup__PublicUrl</code> in <code>compose.yaml</code> to its address (see
+	<a href={resolve('/docs/configuration')}>Configuration</a>).
+</p>
+
+<h3>Stopping</h3>
+<p>
+	<code>docker compose down</code> stops ChaosLab and keeps the database, sign-in keys and reports in
+	their volumes. <code>docker compose down -v</code> deletes them for good.
 </p>
 
 <h2>From source</h2>
@@ -76,11 +142,4 @@
 	the pod. <code>make down</code> keeps the database, sign-in keys and reports in their volumes.
 	<code>make clean-data</code> deletes the database and the reports volume for good. Reports generated
 	through <code>make start</code> are in <code>Backend/reports/</code>; delete that folder yourself.
-</p>
-
-<h2>From the release image</h2>
-<p>
-	Coming with v0.1.0: one image with the backend and the web app, a <code>compose.yaml</code> that runs
-	it with PostgreSQL under Docker or Podman, and an install script that generates the secrets for you.
-	No .NET SDK or Node.js needed.
 </p>
