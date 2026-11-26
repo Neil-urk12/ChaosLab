@@ -1,0 +1,61 @@
+# ChaosLab from the release image, with PostgreSQL (FeaturesFlow 2.0). Runs under `docker compose` or `podman compose`.
+#
+# 1. Create .env next to this file, once. Keep it: a new key or password orphans the database and every stored
+#    target credential.
+#      printf 'CREDENTIALS_KEY=%s\nPOSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 32)" "$(openssl rand -hex 24)" > .env
+#    PowerShell:
+#      $b = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+#      "CREDENTIALS_KEY=$([Convert]::ToBase64String($b))`nPOSTGRES_PASSWORD=$((New-Guid).ToString('N'))" | Set-Content .env
+#    The password goes into a connection string, so use letters and digits only.
+# 2. docker compose up -d
+# 3. docker compose logs chaoslab   # prints the one-hour first-run setup link (http://localhost:8080/install#...)
+#
+# Upgrading: docker compose pull && docker compose up -d. Pending migrations apply on start.
+# Chaos tests must only ever target non-production APIs.
+
+name: chaoslab
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    environment:
+      POSTGRES_DB: chaos_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see the top of compose.yaml)}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chaos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  chaoslab:
+    image: ghcr.io/neil-urk12/chaoslab:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=chaos_db;Username=postgres;Password=${POSTGRES_PASSWORD}
+      Credentials__Key: ${CREDENTIALS_KEY:?Set CREDENTIALS_KEY in .env (see the top of compose.yaml)}
+      Database__MigrateOnStartup: "true"
+      Reports__Path: /home/app/reports
+      # Change it when users reach ChaosLab at another address, so the setup link points there.
+      BootstrapSetup__PublicUrl: http://localhost:8080
+    volumes:
+      # Sign-in keys: without them every recreation signs everyone out.
+      - backend-keys:/home/app/.aspnet/DataProtection-Keys
+      # Generated PDF reports; the database stores only their file names.
+      - backend-reports:/home/app/reports
+    ports:
+      # Loopback only. Sign-in cookies are Secure: Chrome, Edge and Firefox accept them over plain HTTP on localhost,
+      # Safari never does (WebKit bug 232088). For Safari or other machines, put an HTTPS reverse proxy in front.
+      - 127.0.0.1:8080:8080
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  backend-keys:
+  backend-reports:

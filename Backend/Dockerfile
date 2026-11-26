@@ -10,7 +10,9 @@ ENV BootstrapSetup__PublicUrl=http://localhost:8080
 EXPOSE 8080
 EXPOSE 8081
 
-FROM node:24-alpine AS frontend
+# The frontend and .NET stages run on the build machine's platform: their output is platform-neutral (static files,
+# portable IL), so an arm64 release image needs no emulated SDK. Only the final stage is per platform.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 RUN npm install -g pnpm@12
 WORKDIR /src
 COPY ["Frontend/package.json", "Frontend/pnpm-lock.yaml", "Frontend/pnpm-workspace.yaml", "./"]
@@ -18,7 +20,7 @@ RUN pnpm install --frozen-lockfile
 COPY Frontend/ .
 RUN pnpm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Backend/Backend.csproj", "./"]

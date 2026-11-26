@@ -78,7 +78,7 @@ The mobile app is a **viewer only**. It cannot configure targets, import specifi
 
 ### 2.0 Installation [Partial]
 
-Decided (PROJECT.md 26, 21 November 2026). Built: the AGPL-3.0 `LICENSE`; the public site in `Website/`, with the landing page and the five docs pages showing the from-source steps, and its GitHub Pages workflow (`.github/workflows/website.yml`), which deploys now that `LICENSE` exists; startup migrations (`Database__MigrateOnStartup`); and the image build (`make build`), which holds the built frontend and serves it on port 8080. Not built: publishing the release image, `compose.yaml`, and the install script. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
+Decided (PROJECT.md 26, 21 November 2026). Built: the AGPL-3.0 `LICENSE`; the public site in `Website/`, with the landing page and the five docs pages showing the from-source steps, and its GitHub Pages workflow (`.github/workflows/website.yml`), which deploys now that `LICENSE` exists; startup migrations (`Database__MigrateOnStartup`); and the image build (`make build`), which holds the built frontend and serves it on port 8080; the release workflow (`.github/workflows/release.yml`), which publishes the image to GHCR for amd64 and arm64 on a version tag; and `compose.yaml`, with the documented `.env` commands in its header. Not built: the install script, and the site's switch to the image steps, which waits for `v0.1.0`. Build order: the `LICENSE` file, then the public site, then the release image, then the install script. The site launches before the image exists.
 
 **Install paths**
 

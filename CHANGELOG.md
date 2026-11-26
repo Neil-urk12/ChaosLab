@@ -8,6 +8,18 @@ released yet, so history is grouped by date.
 
 ### Added
 
+- The release image and `compose.yaml`. A version tag (`v0.1.0`) published
+  `ghcr.io/neil-urk12/chaoslab` for amd64 and arm64 and moved `latest`; a pre-release tag
+  did not move it. The image was published only after the backend tests and the frontend
+  check and unit tests passed. `compose.yaml` at the repository root ran the image with
+  PostgreSQL 17 under `docker compose` or `podman compose`, applied migrations on start, kept the
+  database, sign-in keys and reports in volumes, and listened on `localhost:8080` only.
+  Safari could not sign in there, because it rejects Secure cookies over plain HTTP even
+  on localhost; it needed an HTTPS reverse proxy.
+  Its header gave the commands that create `.env` with a generated credentials key and
+  database password, for a POSIX shell and for PowerShell. The image's frontend and .NET
+  build stages ran on the build machine's platform, so the arm64 image built without an
+  emulated SDK.
 - Faults in the target's dependency path. 5xx Storm, 429 Throttle, Malformed JSON and Empty
   Response got an "Injected in" setting on the scenario: the runner's request path, the
   default and the only path before, or the target's dependency path. In the dependency path
