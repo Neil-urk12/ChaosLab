@@ -1,0 +1,2423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChaosLab Build Walkthrough</title>
+<meta name="description" content="How each ChaosLab V1 feature was approached and implemented, with the code beside the explanation.">
+<style>
+/* Palette from Frontend/src/routes/layout.css. Light here; dark under the media query and [data-theme='dark']. */
+:root {
+  color-scheme: light;
+  --canvas: #f3f4f8; --panel: #ffffff; --field: #f7f8fb;
+  --line-faint: #e4e7ee; --line: #d7dbe5; --line-strong: #bcc2cf;
+  --text: #121624; --text-2: #384053; --muted: #646d80; --strong: #07090e;
+  --accent: #4f50d6; --accent-ink: #4546c4; --accent-tint: #e7e7fb;
+  --ok: #047857; --ok-tint: #ddf3e8; --warn: #b45309; --warn-tint: #fdf0dc;
+  --bad: #be123c; --bad-tint: #fbe3e9; --inf: #a21caf; --inf-tint: #f6e2f6;
+  --sky: #0369a1; --sky-tint: #e0f1f9;
+  --tk-kw: #4546c4; --tk-type: #0369a1; --tk-str: #047857; --tk-num: #b45309; --tk-com: #7b8496; --tk-key: #a21caf;
+  --hl: #eeeefc;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --canvas: #07090e; --panel: #0b0e15; --field: #0d111a;
+    --line-faint: #1a1f2b; --line: #1e2433; --line-strong: #2a3142;
+    --text: #e2e8f0; --text-2: #cbd5e1; --muted: #94a3b8; --strong: #ffffff;
+    --accent: #7b7dfb; --accent-ink: #a5a6fd; --accent-tint: #1b1d3a;
+    --ok: #6ee7b7; --ok-tint: #0f2a20; --warn: #fcd34d; --warn-tint: #2a2210; --bad: #fda4af; --bad-tint: #2a1520;
+    --inf: #f0abfc; --inf-tint: #2a1a2a; --sky: #7dd3fc; --sky-tint: #0f2a33;
+    --tk-kw: #a5a6fd; --tk-type: #7dd3fc; --tk-str: #86efac; --tk-num: #fcd34d; --tk-com: #64748b; --tk-key: #f0abfc;
+    --hl: #161936;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #07090e; --panel: #0b0e15; --field: #0d111a;
+  --line-faint: #1a1f2b; --line: #1e2433; --line-strong: #2a3142;
+  --text: #e2e8f0; --text-2: #cbd5e1; --muted: #94a3b8; --strong: #ffffff;
+  --accent: #7b7dfb; --accent-ink: #a5a6fd; --accent-tint: #1b1d3a;
+  --ok: #6ee7b7; --ok-tint: #0f2a20; --warn: #fcd34d; --warn-tint: #2a2210; --bad: #fda4af; --bad-tint: #2a1520;
+  --inf: #f0abfc; --inf-tint: #2a1a2a; --sky: #7dd3fc; --sky-tint: #0f2a33;
+  --tk-kw: #a5a6fd; --tk-type: #7dd3fc; --tk-str: #86efac; --tk-num: #fcd34d; --tk-com: #64748b; --tk-key: #f0abfc;
+  --hl: #161936;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0; background: var(--canvas); color: var(--text);
+  font: 15px/1.65 "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono { font-family: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace; }
+:not(pre) > code { font-size: .86em; background: var(--field); border: 1px solid var(--line-faint); border-radius: 4px; padding: .05em .35em; overflow-wrap: anywhere; }
+a { color: var(--accent-ink); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+h1, h2, h3 { color: var(--strong); line-height: 1.25; letter-spacing: -.01em; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 0 16px; }
+
+/* Header */
+header.top { border-bottom: 1px solid var(--line); background: var(--panel); }
+header.top .wrap { padding-top: 40px; padding-bottom: 32px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); margin: 0 0 8px; }
+h1 { font-size: clamp(28px, 4vw, 40px); margin: 0 0 12px; }
+.lede { font-size: 17px; color: var(--text-2); max-width: 70ch; margin: 0 0 20px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); align-items: center; }
+.meta .stamp { background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+.theme-btn { margin-left: auto; font: inherit; font-size: 13px; color: var(--text-2); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.theme-btn:hover { border-color: var(--line-strong); }
+
+/* Reading guide + legend */
+.guide { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 28px 0 8px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.card h2 { font-size: 14px; margin: 0 0 8px; }
+.card p, .card ul { margin: 0; font-size: 14px; color: var(--text-2); }
+.card ul { padding-left: 18px; }
+
+/* Chips */
+.chip { display: inline-block; font-size: 11.5px; font-weight: 600; line-height: 1.5; border-radius: 999px; padding: 1px 8px; vertical-align: 1px; white-space: nowrap; }
+.done { background: var(--ok-tint); color: var(--ok); }
+.partial { background: var(--warn-tint); color: var(--warn); }
+.src { background: transparent; color: var(--muted); border: 1px solid var(--line-strong); font-weight: 500; }
+.inf { background: var(--inf-tint); color: var(--inf); }
+
+/* Pipeline */
+.pipeline { list-style: none; padding: 0; margin: 24px 0 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.pipeline li { display: flex; align-items: center; gap: 8px; }
+.pipeline li + li::before { content: "→"; color: var(--muted); font-size: 18px; }
+.pipeline a { display: block; text-decoration: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; color: var(--text); min-width: 0; }
+.pipeline a:hover { border-color: var(--accent); }
+.pipeline b { display: block; font-size: 14px; color: var(--strong); }
+.pipeline small { color: var(--muted); font-size: 12px; }
+
+.toc { columns: 2 260px; column-gap: 32px; padding-left: 0; list-style: none; margin: 16px 0 0; font-size: 14px; }
+.toc li { break-inside: avoid; padding: 3px 0; }
+.toc .n { display: inline-block; width: 2.4ch; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Chapters */
+section.chapter { border-top: 1px solid var(--line); padding: 48px 0 24px; scroll-margin-top: 8px; }
+.ch-head { margin-bottom: 20px; max-width: 80ch; }
+.ch-head .num { font-size: 13px; font-weight: 600; color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.ch-head h2 { font-size: clamp(22px, 3vw, 28px); margin: 4px 0 8px; }
+.ch-head .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.grid { display: block; }
+.prose { min-width: 0; }
+.prose h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 26px 0 8px; }
+.prose p, .prose li { color: var(--text-2); }
+.prose p { margin: 0 0 12px; }
+.prose ul { padding-left: 20px; margin: 0 0 12px; }
+.prose li { margin-bottom: 6px; }
+.prose strong { color: var(--text); }
+.step { border-left: 2px solid var(--line); padding: 4px 0 4px 16px; margin: 0 0 20px; transition: border-color .15s; }
+.step.active { border-left-color: var(--accent); }
+.step h4 { margin: 0 0 6px; font-size: 15.5px; color: var(--strong); }
+.status-box { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 8px; background: var(--panel); padding: 12px 14px; margin: 0 0 16px; font-size: 14px; }
+.status-box p { margin: 0 0 6px; }
+.status-box p:last-child { margin: 0; }
+.trade li::marker { color: var(--muted); }
+
+/* Code */
+figure.snip { margin: 12px 0 0; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.snip-head { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--field); font-size: 12px; }
+.snip-head .file { color: var(--text); overflow-wrap: anywhere; }
+.snip-head .range { color: var(--muted); white-space: nowrap; }
+.snip pre { margin: 0; padding: 10px 0; overflow-x: auto; font-size: 12.5px; line-height: 1.6; tab-size: 4; }
+.snip .row { display: block; padding: 0 14px 0 0; white-space: pre; min-width: max-content; border-left: 3px solid transparent; }
+.snip .row.hl { background: var(--hl); border-left-color: var(--accent); }
+.snip .ln { display: inline-block; width: 5ch; padding-right: 1.5ch; text-align: right; color: var(--tk-com); user-select: none; }
+.snip .gap { display: block; color: var(--muted); padding-left: 2.5ch; user-select: none; font-size: 11px; }
+.tk-kw { color: var(--tk-kw); }
+.tk-type { color: var(--tk-type); }
+.tk-str { color: var(--tk-str); }
+.tk-num { color: var(--tk-num); }
+.tk-com { color: var(--tk-com); font-style: italic; }
+.tk-key { color: var(--tk-key); }
+.codecol { display: none; }
+
+@media (min-width: 1000px) {
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr); gap: 32px; align-items: start; }
+  .js .codecol { display: block; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+  .js .codecol figure.snip { display: none; margin: 0; }
+  .js .codecol figure.snip.active { display: block; }
+  .js .codecol .hint { font-size: 12px; color: var(--muted); margin: 0 0 8px; }
+  .js .step { cursor: pointer; }
+}
+
+/* Diagram */
+.diagram { margin: 8px 0 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 560px; height: auto; font-family: inherit; }
+.d-box { fill: var(--field); stroke: var(--line-strong); stroke-width: 1.2; }
+.d-box.accent { stroke: var(--accent); fill: var(--accent-tint); }
+.d-label { fill: var(--strong); font-size: 14px; font-weight: 600; }
+.d-sub { fill: var(--muted); font-size: 12px; }
+.d-row { fill: var(--accent-ink); font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.d-arrow { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.d-arrow.accent { stroke: var(--accent); }
+.d-head { fill: var(--muted); }
+.d-head.accent { fill: var(--accent); }
+.d-note { fill: var(--text-2); font-size: 12px; }
+.d-sep { stroke: var(--line); stroke-dasharray: 4 4; }
+
+footer { border-top: 1px solid var(--line); padding: 24px 0 48px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">ChaosLab · internal walkthrough</p>
+    <h1>How ChaosLab is built</h1>
+    <p class="lede">Each V1 feature from import to report: the problem it solves, the approach taken, the code that does it, and what was given up. Code sits beside the explanation, and the highlighted lines are the ones the text is about.</p>
+    <div class="meta">
+      <span class="stamp mono">Snapshot: df67bed + working tree · 27 Nov 2026</span>
+      <span>80 commits, 13 Sep – 26 Nov 2026</span>
+      <span>Line numbers drift as the code changes</span>
+      <button class="theme-btn" id="theme" type="button" aria-label="Switch colour theme">Theme: auto</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="guide">
+    <div class="card">
+      <h2>Where the claims come from</h2>
+      <p>The code and its comments, <code>PROJECT.md</code> (design and decision log), <code>FeaturesFlow.md</code> (feature status) and <code>CLAUDE.md</code>. A source chip like <span class="chip src">PROJECT.md §12.3</span> points to where a decision is written down.</p>
+    </div>
+    <div class="card">
+      <h2>When nothing is written down</h2>
+      <p>Text marked <span class="chip inf">Inferred</span> is my reading of the code: a likely reason, not a recorded decision. Treat it as a hypothesis.</p>
+    </div>
+    <div class="card">
+      <h2>Status</h2>
+      <p><span class="chip done">Done</span> and <span class="chip partial">Partial</span> follow the tags in <code>FeaturesFlow.md</code>. Partial chapters list what is built and what is not.</p>
+    </div>
+  </div>
+
+  <ol class="pipeline" aria-label="The V1 pipeline">
+    <li><a href="#s2"><b>Import</b><small>§2</small></a></li>
+    <li><a href="#s3"><b>Discover</b><small>§3</small></a></li>
+    <li><a href="#s4"><b>Generate</b><small>§4–5</small></a></li>
+    <li><a href="#s7"><b>Execute</b><small>§6–9</small></a></li>
+    <li><a href="#s8"><b>Observe</b><small>§8</small></a></li>
+    <li><a href="#s10"><b>Evaluate</b><small>§10–12</small></a></li>
+    <li><a href="#s14"><b>Report</b><small>§13–14</small></a></li>
+  </ol>
+
+  <ol class="toc">
+    <li><span class="n">0</span><a href="#s0">Foundations</a></li>
+    <li><span class="n">1</span><a href="#s1">Target and credentials</a></li>
+    <li><span class="n">2</span><a href="#s2">OpenAPI import and re-import</a></li>
+    <li><span class="n">3</span><a href="#s3">Endpoint discovery and selection</a></li>
+    <li><span class="n">4</span><a href="#s4">Scenario generation</a></li>
+    <li><span class="n">5</span><a href="#s5">Developer invariants</a></li>
+    <li><span class="n">6</span><a href="#s6">Run configuration and preflight</a></li>
+    <li><span class="n">7</span><a href="#s7">Execution</a></li>
+    <li><span class="n">8</span><a href="#s8">Fault placement</a></li>
+    <li><span class="n">9</span><a href="#s9">Cancelling a run</a></li>
+    <li><span class="n">10</span><a href="#s10">Evaluation</a></li>
+    <li><span class="n">11</span><a href="#s11">Scoring v1.0</a></li>
+    <li><span class="n">12</span><a href="#s12">Recommendations</a></li>
+    <li><span class="n">13</span><a href="#s13">Results, failure timeline, history</a></li>
+    <li><span class="n">14</span><a href="#s14">PDF report</a></li>
+    <li><span class="n">15</span><a href="#s15">Shipping it</a></li>
+  </ol>
+
+<!-- ============================================================ 0 -->
+<section class="chapter" id="s0">
+  <div class="ch-head">
+    <div class="num">§0</div>
+    <h2>Foundations</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.1–2.8, 2.27</span><span class="chip src">PROJECT.md §9</span><span class="chip src">CLAUDE.md</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Every feature needs the same plumbing: where its code lives, who may call it, how a session is recognised, how the first administrator gets created, and how two writers avoid overwriting each other. If that is settled once, each feature handler stays short and reads the same way.</p>
+      <h3>Approach</h3>
+      <p>A single ASP.NET Core project organised as vertical slices. Access, authentication and persistence rules live in a few shared places, and each handler calls them the same way. Dashboard, projects, members and user accounts (2.5–2.8, 2.27) are ordinary slices built on these pieces. They aren't covered separately.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>One folder per area, one class per use case</h4>
+        <p><code>Features/&lt;Area&gt;/</code> holds a static class per use case with a <code>Handle</code> method, plus an <code>&lt;Area&gt;Endpoints.cs</code> that maps them under <code>/api</code>. <code>Program.cs</code> registers each area with one line (<code>api.MapTestRunEndpoints()</code>). Handlers return <code>TypedResults</code> inside a <code>Results&lt;…&gt;</code> union.</p>
+        <p><span class="chip inf">Inferred</span> The union puts every possible answer (404, 403, 409) in the method signature, so the OpenAPI document and a reader see them without reading the body. Slices keep a feature's files together, which fits a solo developer who moves between features often.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/TestRunEndpoints.cs" data-start="8" data-hl="10-15">
+    public static void MapTestRunEndpoints(this IEndpointRouteBuilder api)
+    {
+        var runs = api.MapGroup("/projects/{id:guid}/runs").WithTags("Test runs");
+        runs.MapGet("/", ListRuns.Handle);
+        runs.MapPost("/", CreateRun.Handle);
+        runs.MapGet("/preflight", GetPreflight.Handle);
+        runs.MapGet("/{runId:guid}", GetRun.Handle);
+        runs.MapPost("/{runId:guid}/cancel", CancelRun.Handle);
+
+        // Called by the target, which cannot sign in: the environment's simulator token in the path is the only key,
+        // and the route only forwards to that environment's dependency URL.
+        api.Map(DependencySimulator.Route,
+                (HttpContext context, string token, string? path, DependencySimulator simulator, ApplicationDbContext db,
+                        IHttpForwarder forwarder, IHttpMessageHandlerFactory handlers) =>
+                    simulator.HandleAsync(context, token, path, db, forwarder, handlers))
+            .AllowAnonymous().ExcludeFromDescription();
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>404 for outsiders, 403 for Viewers</h4>
+        <p>Every project-scoped handler starts with <code>ProjectAccess.RoleAsync</code>. It returns the caller's role, or null when they aren't an active member. Null becomes 404, never 403, so a project's existence doesn't leak. A Viewer who tries a mutation gets 403. The query also ignores removed members and archived projects, so neither has to be checked again in each handler.</p>
+        <script type="text/x-code" data-file="Backend/Features/Projects/ProjectAccess.cs" data-start="8" data-hl="15-19">
+public static class ProjectAccess
+{
+    // The caller's role on an active project, or null when they are not an active member (callers answer 404).
+    public static Task<ProjectRole?> RoleAsync(
+        ApplicationDbContext db, Guid projectId, ClaimsPrincipal principal, CancellationToken cancellationToken)
+    {
+        var userId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        return db.ProjectMembers.AsNoTracking()
+            .Where(member => member.ProjectId == projectId && member.UserId == userId
+                && member.RemovedAt == null && member.Project.ArchivedAt == null)
+            .Select(member => (ProjectRole?)member.Role)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>A cookie for the browser, a bearer token for API clients</h4>
+        <p>A policy scheme reads the <code>Authorization</code> header. <code>Bearer </code> (ordinal match) goes to Identity bearer tokens, which last 15 minutes and are meant for the planned mobile viewer. Anything else goes to the HttpOnly, Secure, SameSite=Lax cookie <span class="chip src">PROJECT.md §9.2</span>.</p>
+        <p>The <strong>fallback policy</strong> requires a signed-in user without a pending password change. Every endpoint is protected unless it opts out with <code>AllowAnonymous</code> or <code>AllowPendingPasswordChange</code>, so forgetting an attribute fails closed. The cookie answers 401 and 403 instead of redirecting to a login page the API doesn't have. The security stamp is re-checked every minute, so a password change ends other sessions quickly.</p>
+        <script type="text/x-code" data-file="Backend/Infrastructure/Identity/AuthSetup.cs" data-start="22" data-hl="25-28,51">
+        services.AddAuthentication(CookieOrBearerScheme)
+            .AddPolicyScheme(CookieOrBearerScheme, CookieOrBearerScheme, options =>
+                // Ordinal to match BearerTokenHandler, which only accepts "Bearer " with that exact casing.
+                options.ForwardDefaultSelector = context =>
+                    context.Request.Headers.Authorization.ToString().StartsWith("Bearer ", StringComparison.Ordinal)
+                        ? IdentityConstants.BearerScheme
+                        : IdentityConstants.ApplicationScheme)
+            .AddBearerToken(IdentityConstants.BearerScheme, options =>
+                options.BearerTokenExpiration = TimeSpan.FromMinutes(15))
+            .AddIdentityCookies();
+@@ 46
+        var passwordChanged = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context => !context.User.HasClaim(MustChangePasswordClaim, "true"))
+            .Build();
+        services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(passwordChanged)
+            .SetDefaultPolicy(passwordChanged)
+            .AddPolicy(AllowPendingPasswordChangePolicy, policy => policy.RequireAuthenticatedUser())
+            .AddPolicy(SuperAdminPolicy, policy => policy.Combine(passwordChanged).RequireRole(SuperAdminRole));
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>No default credentials: a one-hour setup link</h4>
+        <p>The first SuperAdmin is created through a "PocketBase-style" link rather than a seeded account <span class="chip src">PROJECT.md §9.1</span>. While no <code>SuperAdmin</code> role exists, startup prints a link holding 32 random bytes as hex. The token lives only in memory and expires after an hour. It travels in the URL <em>fragment</em> (<code>/install#token=…</code>), which browsers never send to a server, so it stays out of request logs. The comparison runs in constant time.</p>
+        <script type="text/x-code" data-file="Backend/Infrastructure/Identity/BootstrapSetupToken.cs" data-start="6" data-hl="8-9,11,16">
+public sealed class BootstrapSetupToken(TimeProvider timeProvider)
+{
+    private readonly string _token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private readonly DateTimeOffset _expiresAt = timeProvider.GetUtcNow().AddHours(1);
+
+    public string SetupUrl(string publicUrl) => $"{publicUrl.TrimEnd('/')}/install#token={_token}";
+
+    public bool IsValid(string? token) =>
+        token is { Length: 64 }
+        && timeProvider.GetUtcNow() < _expiresAt
+        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(_token), Encoding.UTF8.GetBytes(token));
+}
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Setup can only happen once</h4>
+        <p>Two people could open the link at the same moment. The handler checks the role and the token, then takes a PostgreSQL transaction-level advisory lock and checks both again inside it. This is a double-checked lock: the cheap check turns most requests away early, and the locked check is the one that decides. The <code>SuperAdmin</code> role is the permanent marker, so deleting or disabling the administrator never reopens setup.</p>
+        <script type="text/x-code" data-file="Backend/Features/Auth/Setup.cs" data-start="17" data-hl="27-28,30-33">
+    public static async Task<Results<NoContent, Conflict, StatusCodeHttpResult, ValidationProblem>> Handle(
+        Request request, ApplicationDbContext db, UserManager<User> users, RoleManager<IdentityRole<Guid>> roles,
+        SignInManager<User> signIn, BootstrapSetupToken token, CancellationToken cancellationToken)
+    {
+        if (await roles.RoleExistsAsync(AuthSetup.SuperAdminRole))
+            return TypedResults.Conflict();
+        if (!token.IsValid(request.Token))
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
+
+        // Identity stores share this context; the transaction lock also serializes setup across backend instances.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({SetupLock})", cancellationToken);
+
+        if (await roles.RoleExistsAsync(AuthSetup.SuperAdminRole))
+            return TypedResults.Conflict();
+        if (!token.IsValid(request.Token))
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
+@@ 64
+        await transaction.CommitAsync(cancellationToken);
+        signIn.AuthenticationScheme = IdentityConstants.ApplicationScheme;
+        await signIn.SignInAsync(user, isPersistent: false);
+        return TypedResults.NoContent();
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>A deletion policy that protects history</h4>
+        <p>Every relationship is configured in <code>OnModelCreating</code>. Catalog references (endpoint, spec, project) use <code>Restrict</code>, so a past run's evidence can't vanish because its endpoint was deleted. Only data a <code>TestRun</code> owns cascades. Links between those owned rows use <code>NoAction</code> "to avoid multiple cascade paths": a finding is owned by its run and also points at its execution, and only the run's cascade should delete it. JSON payloads are <code>jsonb</code>.</p>
+        <p>Project members are soft-removed (<code>RemovedAt</code>). Re-adding someone reactivates the same row, keeping <code>JoinedAt</code> <span class="chip src">PROJECT.md §9.3</span>.</p>
+        <script type="text/x-code" data-file="Backend/Infrastructure/Data/ApplicationDbContext.cs" data-start="223" data-hl="226,228,230">
+        builder.Entity<ResilienceFinding>(entity =>
+        {
+            entity.HasOne(x => x.TestRun).WithMany(x => x.ResilienceFindings)
+                .HasForeignKey(x => x.TestRunId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Endpoint).WithMany(x => x.ResilienceFindings)
+                .HasForeignKey(x => x.EndpointId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ScenarioExecution).WithMany()
+                .HasForeignKey(x => x.ScenarioExecutionId).OnDelete(DeleteBehavior.NoAction);
+            entity.Property(x => x.Evidence).HasColumnType("jsonb");
+            entity.HasIndex(x => new { x.TestRunId, x.CreatedAt });
+            entity.HasIndex(x => x.EndpointId);
+            entity.HasIndex(x => x.ScenarioExecutionId);
+        });
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Logs that keep secrets out</h4>
+        <p>One summary line per request, with the path only. A query string can carry an API key. Simulator paths are cut short because their token is the route's only key (§8).</p>
+        <script type="text/x-code" data-file="Backend/Program.cs" data-start="99" data-hl="105">
+// One summary line per request. The path only: a query string can carry tokens, and a simulator path is cut short
+// because its token is the route's only key.
+app.Use(async (context, next) =>
+{
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    await next(context);
+    var path = context.Request.Path.StartsWithSegments("/api/simulator") ? "/api/simulator/…" : context.Request.Path.Value;
+    app.Logger.LogInformation("{Method} {Path} {StatusCode} {ElapsedMs:0}ms", context.Request.Method, path,
+        context.Response.StatusCode, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+});
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>The frontend shell loads in the browser only</h4>
+        <p>The <code>(app)</code> route group turns off server-side rendering. The HttpOnly cookie reaches <code>/api</code> only through the browser, so a server-side load would arrive signed out. The layout sends signed-out users to <code>/login</code> and users with a pending password change to <code>/setup</code>. That mirrors the backend's fallback policy, but the backend still enforces it.</p>
+        <script type="text/x-code" data-lang="ts" data-file="Frontend/src/routes/(app)/+layout.ts" data-start="4" data-hl="5,19,22">
+// The auth cookie only reaches /api through the browser (dev proxy), so load client-side.
+export const ssr = false;
+@@ 17
+export async function load({ fetch }) {
+	const [meRes, overviewRes] = await Promise.all([fetch('/api/auth/me'), fetch('/api/projects/overview')]);
+	if (meRes.status === 401 || meRes.status === 403) redirect(307, '/login');
+	if (!meRes.ok) error(meRes.status, 'Could not load your profile.');
+	const me: CurrentUser = await meRes.json();
+	if (me.mustChangePassword) redirect(307, '/setup');
+	if (!overviewRes.ok) error(overviewRes.status, 'Could not load your workspace.');
+	const overview: Overview = await overviewRes.json();
+	return { me, overview };
+}
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>The permission matrix (what each role may do beyond Viewer = read-only) is still <strong>[Open]</strong> <span class="chip src">FeaturesFlow 2.8</span>.</li>
+        <li><code>Results&lt;…&gt;</code> takes at most six types, so <code>ImportSpec</code> folds its refusals into one slot (comment at <code>ImportSpec.cs:13</code>).</li>
+        <li>Identity failures are reported by error code, never by description (<code>CLAUDE.md</code>). <span class="chip inf">Inferred</span> Descriptions can echo user input or internals; codes are stable for the frontend to translate.</li>
+        <li>Scalar and the OpenAPI document are mapped only in Development.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 1 -->
+<section class="chapter" id="s1">
+  <div class="ch-head">
+    <div class="num">§1</div>
+    <h2>Target and credentials</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.9, 2.12</span><span class="chip src">PROJECT.md §9.0</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>ChaosLab sends real requests, writes included, to someone's API using their credentials. It must only hit a target the user says they may test. Nobody should be able to point it at cloud metadata endpoints or other hosts. And the secret must never show up again: not in the UI, logs, reports, or a request to a different host.</p>
+      <h3>Approach</h3>
+      <ul>
+        <li><strong>An explicit authorization step.</strong> Saving a target requires confirming that you own it or may test it, and that it is not production. The confirmation is recorded again whenever the base URL changes. The preflight refuses to start a run without it (§6).</li>
+        <li><strong>Encrypted at rest, tied to its row.</strong> Bearer, API key and Basic credentials are stored with AES-256-GCM. The key comes from configuration, not the ASP.NET Data Protection key ring, because it must survive restarts and container recreation. Only the last four characters are ever shown.</li>
+        <li><strong>One address guard for every outbound request</strong>: spec fetches, connection checks, runs and the simulator's forwarding.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>The row id is part of the encryption</h4>
+        <p>The owning row's id is passed as GCM <em>associated data</em>. A ciphertext copied onto another row (another project's environment, say) fails authentication and won't decrypt. A missing key fails only when a secret is touched, so endpoints that never handle one keep working.</p>
+        <script type="text/x-code" data-file="Backend/Infrastructure/Security/CredentialProtector.cs" data-start="6" data-hl="8-9,42">
+// Encrypts target credentials and secret header values with AES-256-GCM.
+// The key comes from Credentials:Key (base64, 32 bytes) and must survive restarts, so it is configuration
+// rather than the ephemeral ASP.NET Data Protection key ring. The owning row's id is the associated data,
+// so a ciphertext copied onto another row does not decrypt.
+// A missing or invalid key fails only when a secret is encrypted or decrypted, so endpoints that never touch a
+// secret (plain headers, AuthType None) keep working and still run their access checks first.
+public sealed class CredentialProtector
+@@ 35
+    public byte[] Protect(string plaintext, Guid owner)
+    {
+        var data = Encoding.UTF8.GetBytes(plaintext);
+        var output = new byte[NonceSize + TagSize + data.Length];
+        var nonce = output.AsSpan(0, NonceSize);
+        RandomNumberGenerator.Fill(nonce);
+        using var aes = new AesGcm(Key, TagSize);
+        aes.Encrypt(nonce, data, output.AsSpan(NonceSize + TagSize), output.AsSpan(NonceSize, TagSize), owner.ToByteArray());
+        return output;
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Check the address at connect time, not at validation time</h4>
+        <p>Checking a URL when it's saved isn't enough. A redirect or a DNS answer that changes between check and connect (DNS rebinding) would slip past. The guard runs inside <code>ConnectCallback</code> on every resolved address of every connection. Proxies are ignored, because the callback would only see the proxy's address. There's no cookie jar, because the handler is shared across projects and would replay one target's session into another's requests.</p>
+        <p>Blocked addresses are link-local (including <code>169.254.169.254</code>), known cloud metadata hosts, and NAT64-wrapped versions of them. Private and loopback addresses are <em>allowed</em> on purpose, because test targets are usually internal (comment at <code>ImportSpec.cs:52</code>).</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/ImportSpec.cs" data-start="170" data-hl="174,177,179-183">
+    // Checks every resolved address at connect time, so redirects and DNS rebinding cannot bypass it.
+    public static SocketsHttpHandler CreateFetchHandler() => new()
+    {
+        // Through a proxy the callback would only see the proxy's address, so HTTP(S)_PROXY is ignored.
+        UseProxy = false,
+        // The factory shares a handler across projects and runs, so a cookie jar would replay one target's session
+        // into another's requests. Cookies the caller sets on a request (an apiKey in a cookie) are still sent.
+        UseCookies = false,
+        MaxAutomaticRedirections = 3,
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken);
+            if (addresses.Length == 0 || addresses.Any(IsBlocked))
+                throw new HttpRequestException("Destination not allowed.");
+            var socket = new System.Net.Sockets.Socket(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, cancellationToken);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        }
+    };
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Credentials never leave the target's origin</h4>
+        <p>The runner's clients reuse the same guarded handler with redirects turned off, so a <code>302</code> can't carry an <code>Authorization</code> header to another host. Paths come from the spec, which the user doesn't fully control. <code>Combine</code> refuses any joined URL whose scheme, host or port differs from the base URL.</p>
+        <script type="text/x-code" data-file="Backend/Features/Environments/TargetClient.cs" data-start="29" data-hl="32,80">
+    private static SocketsHttpHandler Handler(bool verifyTls)
+    {
+        var handler = ImportSpec.CreateFetchHandler();
+        handler.AllowAutoRedirect = false;
+        if (!verifyTls)
+            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+        return handler;
+    }
+@@ 75
+    // Joins the base URL and an operation path: "https://h/v1" + "/payments" -> "https://h/v1/payments".
+    // Null when the result would not be on the base URL's scheme, host, and port, so credentials stay with the target.
+    public static Uri? Combine(string baseUrl, string path) =>
+        Uri.TryCreate(baseUrl, UriKind.Absolute, out var root)
+        && Uri.TryCreate(baseUrl.TrimEnd('/') + path, UriKind.Absolute, out var url)
+        && url.GetLeftPart(UriPartial.Authority) == root.GetLeftPart(UriPartial.Authority)
+            ? url : null;
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>Changing <code>Credentials:Key</code> makes every stored credential undecryptable. <code>TryUnprotect</code> returns null and users re-enter them. The install script must never overwrite an existing <code>.env</code> for this reason (§15).</li>
+        <li>Allowing private and loopback hosts means anyone who can configure a target can make ChaosLab call an internal service. That's accepted, because that's where test targets live.</li>
+        <li>TLS verification can be turned off per environment for self-signed test servers.</li>
+        <li>Secret redaction, retention and telemetry sanitisation are still an open decision <span class="chip src">PROJECT.md §25 item 16</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="chapter" id="s2">
+  <div class="ch-head">
+    <div class="num">§2</div>
+    <h2>OpenAPI import and re-import</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.10, 2.25</span><span class="chip src">PROJECT.md §5.1</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>The spec is ChaosLab's only description of the API. Import has to accept pasted text, an uploaded file or a URL, in JSON or YAML, as OpenAPI 3.x (Swagger 2.0 is converted). It must reject a broken document with errors that point to the place in the document. When the API changes, a re-import must not throw away the user's choices, test values or scenario edits.</p>
+      <h3>Approach</h3>
+      <p><code>SpecDocument</code> wraps the <code>Microsoft.OpenApi</code> reader with its YAML extension and a 5 MB cap. It reports issues with dotted locations such as <code>paths./refunds.post.requestBody</code>. The spec row keeps the original text, the parsed document as <code>jsonb</code>, and a SHA-256 hash. Endpoints whose required inputs can't be filled are reported as <em>warnings</em>, not errors (NEI-58), so an imperfect spec still imports.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Only real paths become endpoints</h4>
+        <p>Keys under <code>paths</code> that don't start with <code>/</code> are extensions, not operations. Treated as a path, <code>x-@evil.test</code> would turn <code>https://api.test</code> + path into a request to another host. Path length is capped too.</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/SpecDocument.cs" data-start="124" data-hl="126-128">
+        foreach (var path in paths.EnumerateObject())
+        {
+            // Other keys are x- extensions, not operations; as a path, "x-@evil.test" would move requests to another host.
+            if (!path.Name.StartsWith('/'))
+                continue;
+            if (path.Name.Length > 1024)
+            {
+                issues.Add(new(IssueSeverity.Error, $"paths.{path.Name[..64]}…", "Paths longer than 1024 characters are not supported."));
+                continue;
+            }
+
+            var pathParameters = path.Value.TryGetProperty("parameters", out var p) ? Parameters(root, p) : [];
+            foreach (var method in Methods)
+            {
+                if (!path.Value.TryGetProperty(method, out var operation) || operation.ValueKind != JsonValueKind.Object)
+                    continue;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>A re-import carries the user's work over</h4>
+        <p>The same document again is a no-op, since a new version would change nothing and drop the scenarios. Otherwise, each endpoint's testing choice and saved test values are copied from the old spec by <code>(path, method)</code>. The old spec is retired before the new one is inserted, because a unique index allows only one active spec per project and PostgreSQL checks it per statement.</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/ImportSpec.cs" data-start="95" data-hl="99,106-112,115">
+        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var previous = await db.ApiSpecs.SingleOrDefaultAsync(spec => spec.ProjectId == id && spec.IsActive, cancellationToken);
+        // The same document again is a no-op: a new version would change nothing but drop the scenarios.
+        if (previous?.SpecHash == hash)
+            return TypedResults.Ok(new Report(filename, parsed.OpenApiVersion, parsed.Endpoints.Count, issues));
+        var resync = previous is not null
+            && await db.ChaosScenarios.AnyAsync(scenario => scenario.Endpoint.ApiSpecId == previous.Id, cancellationToken);
+        if (previous is not null)
+        {
+            // Never-test and excluded choices, and saved test values, survive re-import for the same path and method.
+            var kept = await db.ApiEndpoints.AsNoTracking()
+                .Where(endpoint => endpoint.ApiSpecId == previous.Id)
+                .ToDictionaryAsync(endpoint => (endpoint.Path, endpoint.HttpMethod),
+                    endpoint => new { endpoint.Testing, endpoint.TestValues }, cancellationToken);
+            foreach (var endpoint in parsed.Endpoints)
+                if (kept.GetValueOrDefault((endpoint.Path, endpoint.HttpMethod)) is { } old)
+                    (endpoint.Testing, endpoint.TestValues) = (old.Testing, old.TestValues);
+
+            // The one-active-spec index is checked per statement, so clear the old flag first.
+            previous.IsActive = false;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Let the database settle races, and re-sync scenarios in the same transaction</h4>
+        <p>Two imports at once can't both win: the loser hits the unique index and gets 409. A first import generates no scenarios; the user starts generation from the Scenarios page. A re-import of a spec that already had scenarios runs the generation rules on the new endpoints, carrying edits over (§4), inside the same transaction. The project is runnable as soon as the import commits.</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/ImportSpec.cs" data-start="151" data-hl="156,163">
+        db.ApiSpecs.Add(spec);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            // Another import for this project committed first.
+            return (Refused)TypedResults.Conflict();
+        }
+        // A first import generates nothing: the user starts generation from the Scenarios page (FeaturesFlow §2.13).
+        // A re-import keeps the project runnable by carrying the replaced spec's scenarios and edits over (§2.25).
+        int? scenarios = resync ? (await ScenarioGenerator.SyncAsync(db, spec.Id, previous!.Id, cancellationToken)).Added : null;
+        await transaction.CommitAsync(cancellationToken);
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>There is no preview or diff before a re-import is saved. Re-importing the old document undoes it <span class="chip src">FeaturesFlow 2.25</span>.</li>
+        <li>Only local <code>$ref</code>s are resolved; external references are not followed.</li>
+        <li>A URL import has a 15-second timeout and the same 5 MB cap. Only parse issues are returned, never the fetched body.</li>
+        <li>Past runs are unaffected by a re-import: each execution keeps a snapshot of what it ran (§6).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="chapter" id="s3">
+  <div class="ch-head">
+    <div class="num">§3</div>
+    <h2>Endpoint discovery and selection</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.11</span><span class="chip src">PROJECT.md §26 (24 Nov)</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Not every operation should be hit. Some must never be tested, such as "delete account" or "charge card". The ones that are tested need valid requests: required path, query and header values and a body. Specs often don't include examples.</p>
+      <h3>Approach</h3>
+      <p>Each endpoint has a <code>Testing</code> state: <code>Included</code>, <code>Excluded</code> or <code>NeverTest</code>. For missing inputs, the decision of 24 November 2026 introduced <strong>test values</strong>. Owners and editors save them per endpoint. The runner sends a saved value first, then the spec's example, default or enum value. Nothing is guessed at run time, "because ChaosLab sends real writes".</p>
+      <p>Rejected alternatives <span class="chip src">PROJECT.md §26</span>:</p>
+      <ul>
+        <li>Generating missing values at run time with no user step. Guessed values often fail validation, and writes go out unreviewed.</li>
+        <li>Saved values without a schema draft. That's too much typing for large specs.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>A complete handler, start to finish</h4>
+        <p>This is the shape of most mutations: access check (404 or 403), input validation, a lookup scoped to the project's <em>active</em> spec (an old endpoint id from a stale page answers 404), then the change.</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/SetEndpointTesting.cs" data-start="15" data-hl="19-23,28-29,33">
+    public static async Task<Results<NoContent, ValidationProblem, NotFound, ForbidHttpResult>> Handle(
+        Guid id, Guid endpointId, Request request, ClaimsPrincipal principal, ApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var role = await ProjectAccess.RoleAsync(db, id, principal, cancellationToken);
+        if (role is null)
+            return TypedResults.NotFound();
+        if (role == ProjectRole.Viewer)
+            return TypedResults.Forbid();
+        if (request.Testing is null)
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                { ["testing"] = ["Testing must be Included, Excluded, or NeverTest."] });
+
+        var endpoint = await db.ApiEndpoints.SingleOrDefaultAsync(endpoint => endpoint.Id == endpointId
+            && endpoint.ApiSpec.ProjectId == id && endpoint.ApiSpec.IsActive, cancellationToken);
+        if (endpoint is null)
+            return TypedResults.NotFound();
+
+        endpoint.Testing = request.Testing.Value;
+        await db.SaveChangesAsync(cancellationToken);
+        return TypedResults.NoContent();
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>One function decides what gets sent</h4>
+        <p><code>TestValues.Fill</code> is shared by the runner, the import warnings and the spec page, "so the three can't drift apart". A saved value wins over the example. An <code>Idempotency-Key</code> header needs no value, because the runner sends a fresh one on every request. Whatever is still missing is reported by label, and the scenario fails as a runner problem that points to the endpoint list.</p>
+        <script type="text/x-code" data-file="Backend/Features/ApiSpecs/TestValues.cs" data-start="6" data-hl="81-82,84-87">
+// What the runner sends for an endpoint's required path, query and header parameters and its JSON body: the value an
+// owner or editor saved (ApiEndpoint.TestValues), then the spec's example, default or enum value (PROJECT.md 26).
+// Shared by the runner, the import warnings and the spec page, so the three can't drift apart.
+// Saved shape: { "parameters": { "path:vehicle_id": "42", "header:X-Tenant": "a" }, "body": { ... } }.
+public static class TestValues
+@@ 71
+    // The values to send. A body is sent when one is saved or the spec has an example, even if it is optional.
+    public static Filled Fill(JsonElement root, JsonElement parameters, JsonElement? requestBody, JsonElement? saved)
+    {
+        var (inputs, bodyInput, bodyRequired) = Inputs(root, parameters, requestBody);
+        var savedParameters = saved is { ValueKind: JsonValueKind.Object } values
+            && values.TryGetProperty("parameters", out var list) && list.ValueKind == JsonValueKind.Object ? list : default;
+        var filled = new List<(Input, string)>();
+        var missing = new List<string>();
+        foreach (var input in inputs)
+        {
+            var value = savedParameters.ValueKind == JsonValueKind.Object && savedParameters.TryGetProperty(input.Key, out var own)
+                && own.ValueKind == JsonValueKind.String ? own.GetString() : input.Example;
+            // The runner replaces it on every request (RunExecutor.Prepared.Create), so a placeholder is enough.
+            if (value is null && input.Generated)
+                value = "";
+            if (value is null)
+                missing.Add($"{input.In} parameter \"{input.Name}\"");
+            else
+                filled.Add((input, value));
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Draft from schema, but never send a draft</h4>
+        <p>The frontend's <strong>Draft from schema</strong> fills the body editor from the body's schema (required properties, types, enums, formats). The user reviews and saves it; nothing is sent until it is saved. Self-referencing schemas stop at <code>null</code> instead of recursing forever.</p>
+        <script type="text/x-code" data-lang="ts" data-file="Frontend/src/lib/draft.ts" data-start="35" data-hl="43-45">
+export function draftFromSchema(schema: unknown, schemas: Record<string, unknown> | null = null): unknown {
+	return draft(schema as Schema, schemas ?? {}, []);
+}
+
+function draft(schema: Schema | undefined, schemas: Record<string, unknown>, seen: string[]): unknown {
+	if (!schema || typeof schema !== 'object') return null;
+	if (schema.$ref) {
+		const name = schema.$ref.startsWith('#/components/schemas/') ? schema.$ref.split('/').pop()! : null;
+		// A schema that contains itself stops at null instead of recursing forever.
+		if (!name || seen.includes(name) || !(name in schemas)) return null;
+		return draft(schemas[name] as Schema, schemas, [...seen, name]);
+	}
+	if (schema.example !== undefined) return schema.example;
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>Optional and cookie parameters are never sent (<code>// shortcut:</code> at <code>TestValues.cs:47</code>).</li>
+        <li>Test values are not credentials and are stored in plain text. Authentication belongs in the environment's encrypted credentials (§1).</li>
+        <li>A required body with no JSON media type (multipart, form) can't be sent, and no test value fixes that.</li>
+        <li>How stateful endpoints are prepared, cleaned up and safely re-run is still open <span class="chip src">PROJECT.md §25 item 5</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="chapter" id="s4">
+  <div class="ch-head">
+    <div class="num">§4</div>
+    <h2>Scenario generation</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.13</span><span class="chip src">PROJECT.md §8</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Applying all nine chaos primitives to every endpoint produces noise: a malformed-JSON test on an endpoint with no body, or a retry storm against a non-idempotent POST. Each scenario should exist for a reason drawn from the spec, and the user's edits should survive regeneration and re-import.</p>
+      <h3>Approach</h3>
+      <p>The conceptual model is <code>Scenario = Endpoint × Applicable Fault × Parameters × Auth state × Expected behavior</code> <span class="chip src">PROJECT.md §8</span>. <code>ScenarioGenerator.For</code> is a pure function of one endpoint and the spec. It reads the method, declared responses, response media type, an <code>Idempotency-Key</code> header, and security. It returns plans: one per applicable fault type, each with default parameters, a recorded <strong>reason</strong> and a default on/off. Small APIs aren't padded; large specs can reach the 100+ design target.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Rules that follow from HTTP semantics</h4>
+        <p>Latency and Timeout / Drop apply everywhere. A 5xx storm is only generated where retrying is safe: idempotent methods, or a POST or PATCH that declares an <code>Idempotency-Key</code>. Every operation can be throttled, but 429 is only <em>on by default</em> where the spec declares it.</p>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioGenerator.cs" data-start="36" data-hl="42-47,50-52">
+        var read = method is "GET" or "HEAD";
+
+        plans.Add(new(ScenarioType.Latency, new { delayMs = 3000 },
+            read ? "Read endpoint; tests the timeout budget." : $"State-changing {method}; tests the timeout budget without a duplicate write.",
+            true));
+
+        if (Idempotent.Contains(method))
+            plans.Add(new(ScenarioType.ServerErrorStorm, new { status = 503, count = 3, probability = 1.0 },
+                $"Idempotent {method}; safe to retry, so retry limits and backoff are observable.", true));
+        else if (idempotencyKey)
+            plans.Add(new(ScenarioType.ServerErrorStorm, new { status = 503, count = 3, probability = 1.0 },
+                $"{method} with an Idempotency-Key header; retries are safe, so retry limits and backoff are observable.", true));
+
+        // Every operation can be throttled; it is only on by default where the spec says so.
+        plans.Add(declared.Contains("429")
+            ? new(ScenarioType.Throttle429, new { retryAfterSeconds = 2 }, "Spec declares 429 for this operation.", true)
+            : new(ScenarioType.Throttle429, new { retryAfterSeconds = 2 }, "Any operation can be rate-limited; the spec does not declare 429.", false));
+
+        plans.Add(new(ScenarioType.TimeoutDrop, new { mode = "drop" },
+            "Checks that callers end the request and clean up when the connection drops.", true));
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Rules that read the spec's shape</h4>
+        <p>Body faults need a 2xx response with a body. Malformed JSON also needs a JSON media type. Auth Expiry needs a security requirement. Declaring 502, 503 or 504 suggests the endpoint calls a dependency, which is where Dependency failure applies. Slow Drip and Dependency failure start <em>off</em>, because they need a large body or the simulator in the target's path. Duplicate Request applies to POST, PUT and PATCH, with the same key when the spec declares one.</p>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioGenerator.cs" data-start="57" data-hl="64-66,73-76,78-83">
+        if (body is ({ } media, var schema))
+        {
+            if (media.Contains("json", StringComparison.OrdinalIgnoreCase))
+                plans.Add(new(ScenarioType.MalformedJson, new { variant = "truncated" },
+                    $"Returns a JSON body{(schema is null ? "" : $" ({schema})")} that callers parse.", true));
+            plans.Add(new(ScenarioType.EmptyResponse, new { },
+                "Returns a body; checks handling of a missing payload.", true));
+            // Slow drip and dependency failure need injector support that is still a proof of concept.
+            plans.Add(new(ScenarioType.SlowDrip, new { bytes = 1, intervalMs = 200 },
+                "Returns a body; checks complete-operation deadlines.", false));
+        }
+
+        if (security.Count > 0)
+            plans.Add(new(ScenarioType.AuthExpiry, new { credential = "expired" },
+                $"Operation requires {string.Join(" or ", security)}.", true));
+
+        var upstream = new[] { "502", "503", "504" }.Where(declared.Contains).ToList();
+        if (upstream.Count > 0)
+            plans.Add(new(ScenarioType.DnsFailure, new { dependency = "unreachable", requests = 5 },
+                $"Declares {string.Join("/", upstream)}, so it calls a dependency; needs the simulator in its outbound path.", false));
+
+        if (method is "POST" or "PUT" or "PATCH")
+            plans.Add(idempotencyKey
+                ? new(ScenarioType.DuplicateRequest, new { copies = 2, key = "same", delayMs = 0 },
+                    $"State-changing {method} with an Idempotency-Key header in the spec.", true)
+                : new(ScenarioType.DuplicateRequest, new { copies = 2, key = "none", delayMs = 0 },
+                    $"State-changing {method}; a repeated request should not create a second record.", true));
+
+        return plans;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Sync, don't regenerate</h4>
+        <p><code>SyncAsync</code> brings stored scenarios in line with the rules without wiping them. An existing scenario only gets its reason refreshed. A new one takes the parameters, default and invariants of the matching scenario in the <em>previous</em> spec, if there was one. A scenario the rules no longer produce is removed, unless a run already used it; history keeps it.</p>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioGenerator.cs" data-start="110" data-hl="115-119,121,128-130,135">
+        foreach (var endpoint in endpoints)
+        {
+            var plans = For(endpoint, root.RootElement);
+            foreach (var plan in plans)
+            {
+                var existing = endpoint.ChaosScenarios.FirstOrDefault(scenario => scenario.ScenarioType == plan.Type);
+                if (existing is not null)
+                {
+                    existing.Reason = plan.Reason;
+                    continue;
+                }
+                var old = previous.GetValueOrDefault((endpoint.HttpMethod, endpoint.Path, plan.Type));
+                db.ChaosScenarios.Add(new ChaosScenario
+                {
+                    Id = Guid.NewGuid(),
+                    EndpointId = endpoint.Id,
+                    ScenarioType = plan.Type,
+                    Reason = plan.Reason,
+                    Parameters = old?.Parameters ?? JsonSerializer.SerializeToDocument(plan.Parameters),
+                    IsDefaultEnabled = old?.IsDefaultEnabled ?? plan.Enabled,
+                    Invariants = old?.Invariants ?? JsonDocument.Parse("[]")
+                });
+                added++;
+            }
+            foreach (var stale in endpoint.ChaosScenarios
+                .Where(scenario => plans.All(plan => plan.Type != scenario.ScenarioType) && !used.Contains(scenario.Id)).ToList())
+            {
+                db.ChaosScenarios.Remove(stale);
+                removed++;
+            }
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>One table of allowed parameters</h4>
+        <p>Users can tune parameters, so the server validates them against one table per fault type. Optional fields like <code>path</code> and <code>requests</code> were added later. Left out, as in every scenario stored before them, they keep the old behavior, so existing projects and past runs are unchanged. The frontend's field ranges mirror this table (<code>scenarios.ts</code>, line 1).</p>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioRules.cs" data-start="34" data-hl="35,40-41,47-48">
+    // Where the fault is applied (DependencySimulator.Applies): the runner's request path, or the target's dependency path.
+    private static readonly Field Path = new("path", Choices: ["runner", "dependency"], Optional: true);
+
+    private static readonly Dictionary<ScenarioType, Field[]> Fields = new()
+    {
+        [ScenarioType.Latency] = [new("delayMs", 0, 120_000)],
+        [ScenarioType.ServerErrorStorm] = [new("status", 500, 599), new("count", 1, 20), new("probability", 0, 1, Integer: false), Path],
+        [ScenarioType.Throttle429] = [new("retryAfterSeconds", 0, 3600), Path],
+        [ScenarioType.TimeoutDrop] = [new("mode", Choices: ["drop", "hold"])],
+        [ScenarioType.MalformedJson] = [new("variant", Choices: ["truncated", "invalidSyntax", "wrongTypes"]), Path],
+        [ScenarioType.EmptyResponse] = [Path],
+        [ScenarioType.SlowDrip] = [new("bytes", 1, 65_536), new("intervalMs", 1, 10_000)],
+        [ScenarioType.AuthExpiry] = [new("credential", Choices: ["expired", "missing", "invalid", "forbidden"])],
+        // requests: sent one after another while the dependency is down, to look for a circuit breaker; left out, one.
+        [ScenarioType.DnsFailure] = [new("dependency", Choices: ["unreachable", "unresolvable"]), new("requests", 1, 20, Optional: true)],
+        [ScenarioType.DuplicateRequest] = [new("copies", 2, 10), new("key", Choices: ["same", "different", "none"]), new("delayMs", 0, 60_000)]
+    };
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>Moving four faults into the dependency path was done with an optional <code>path</code> parameter. Four new scenario types, generator rules and labels for the same faults were rejected <span class="chip src">PROJECT.md §26 (25 Nov)</span>.</li>
+        <li>The default Auth Expiry credential is <code>expired</code>, which can't be minted from outside. The runner sends an invalid one in its place (§8).</li>
+        <li>The final applicability rules and the duplicate-request safety conditions are still open <span class="chip src">PROJECT.md §25 items 6, 7</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 5 -->
+<section class="chapter" id="s5">
+  <div class="ch-head">
+    <div class="num">§5</div>
+    <h2>Developer invariants</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.14</span><span class="chip src">PROJECT.md §13</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Built-in rules can't know business rules. "Two identical <code>POST /orders</code> create at most one order" or "inventory never goes negative" can only come from the developer.</p>
+      <h3>Approach</h3>
+      <p>Invariants are <strong>structured assertions</strong>, a type plus params configured in the UI. They are not free text and not an expression language <span class="chip src">PROJECT.md §26 (8 Nov)</span>. There are six types. An optional read-back <code>GET</code> checks the resulting state; its path can use <code>{{request.body.&lt;field&gt;}}</code> to reach the record just written. Invariants are saved on the scenario and snapshotted per execution. A violated invariant makes the finding Fail. One that can't be checked is reported as <em>not evaluated</em> and doesn't change the outcome.</p>
+      <p><span class="chip inf">Inferred</span> A closed set of types keeps evaluation deterministic and each failure explainable in a sentence. It also keeps user-written code from running inside the runner.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>The shape: six types, flat params, optional read-back</h4>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioRules.cs" data-start="7" data-hl="9-14,22-23">
+public enum InvariantType
+{
+    StatusCodeIn,
+    FieldEquals,
+    FieldNotBelow,
+    MaxRecordsAfterDuplicates,
+    MaxDurationMs,
+    HeaderPresent
+}
+
+// Flat params: each invariant type uses only its own fields (see Validate).
+public sealed record InvariantParams(
+    List<int>? Codes = null, string? Path = null, string? Value = null, decimal? Min = null, int? Max = null,
+    int? Ms = null, string? Name = null);
+
+// Optional GET request that reads resulting state after the scenario; Path may contain {{request.*}} templates.
+public sealed record ReadBack(string? Method, string? Path);
+
+public sealed record Invariant(InvariantType? Type, InvariantParams? Params, ReadBack? ReadBack);
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Validation tied to the scenario</h4>
+        <p>Some rules only make sense in context. A record count after duplicates applies only to Duplicate Request scenarios and needs a read-back to count with. A read-back is always a <code>GET</code> to a path starting with <code>/</code>, so it can't become a second write or leave the target.</p>
+        <script type="text/x-code" data-file="Backend/Features/Scenarios/ScenarioRules.cs" data-start="106" data-hl="106-109,116-118">
+                InvariantType.MaxRecordsAfterDuplicates => type != ScenarioType.DuplicateRequest
+                    ? "Record count after duplicates only applies to duplicate-request scenarios."
+                    : p.Max is not (>= 1 and <= 100) ? "Record count after duplicates needs a maximum from 1 to 100."
+                    : invariant.ReadBack is null ? "Record count after duplicates needs a read-back request to count records." : null,
+@@ 116
+            if (error is null && invariant.ReadBack is { } readBack
+                && (readBack.Method != "GET" || readBack.Path is not { Length: <= 1024 } path || !path.StartsWith('/') || path.Any(char.IsWhiteSpace)))
+                error = "The read-back request must be a GET to a path starting with /.";
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Which response an invariant is checked against</h4>
+        <p>With a read-back, the read-back's response is checked; otherwise, every faulted request is. Timeout / Drop is the exception: the runner ended that request itself, so there's nothing to check. A violation anywhere wins, then "not evaluated", then the first result.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Evaluator.cs" data-start="604" data-hl="609-616,620-621">
+    // An invariant with a read-back is checked on the read-back's response, any other on every faulted request.
+    private static (Check State, string Detail) CheckInvariant(
+        ScenarioType type, Invariant invariant, int index, IReadOnlyList<HttpObservation> observations, List<HttpObservation> faults)
+    {
+        List<HttpObservation> subjects;
+        if (invariant.ReadBack is not null)
+        {
+            subjects = observations.Where(o => Phase(o) == "readBack" && o.Metadata.RootElement.GetProperty("invariant").GetInt32() == index).ToList();
+            if (subjects.Count == 0)
+                return (Check.NotEvaluated, "the read-back request could not be built from the request that was sent");
+        }
+        else if (type == ScenarioType.TimeoutDrop)
+            return (Check.NotEvaluated, "the runner ended the faulted request itself, so there is no response to check; add a read-back request");
+        else
+            subjects = faults;
+        var results = subjects.Select(o => CheckOne(invariant, o)).ToList();
+        return results.FirstOrDefault(result => result.State == Check.Violated,
+            results.FirstOrDefault(result => result.State == Check.NotEvaluated, results[0]));
+    }
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>The read-back is sent right after the last response, so a target that writes asynchronously may not show the record yet (<code>// shortcut:</code> in <code>RunExecutor.cs</code>).</li>
+        <li>Only the first 16 KB of a body are stored, so a longer one doesn't parse for field invariants.</li>
+        <li>The record count reads a top-level array, or the only array inside a top-level object. Deeper nesting needs a records path that doesn't exist yet.</li>
+        <li>The final list of types is still open <span class="chip src">PROJECT.md §25 item 11</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section class="chapter" id="s6">
+  <div class="ch-head">
+    <div class="num">§6</div>
+    <h2>Run configuration and preflight</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.15</span><span class="chip src">PROJECT.md §26 (8 Nov)</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>A run sends real traffic, possibly writes, to someone's system. Before anything is queued, ChaosLab needs to know: is there a spec with included endpoints, an authorized target, a reachable server? Has the user agreed to state-changing requests? And a past run must keep meaning the same thing after the scenarios, test values or environment are edited.</p>
+      <h3>Approach</h3>
+      <p>The New Run page calls <strong>preflight</strong>, which lists blockers. Credential problems are only warnings, since a stored validation can be stale and some operations need no credential. <strong>CreateRun</strong> then re-checks everything on the server, so the page's checks are advisory. Concurrency is 1 to 5, one at a time by default <span class="chip src">PROJECT.md §26 (8 Nov)</span>. Runner retries are 0 to 3. The run stores scoring version <code>1.0</code> and a configuration snapshot, then waits as <code>Queued</code> for the runner.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Blockers as plain sentences</h4>
+        <p>Each blocker is the sentence the page shows, telling the user what to do next.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/GetPreflight.cs" data-start="76" data-hl="85-88">
+    public static List<string> Blockers(ApiEnvironment? environment, Reachability? reachability, bool hasSpec, bool hasIncluded)
+    {
+        var blockers = new List<string>();
+        if (!hasSpec)
+            blockers.Add("Import an OpenAPI specification first.");
+        else if (!hasIncluded)
+            blockers.Add("No endpoints are included. Include some on the API specification tab.");
+        if (environment is null)
+            blockers.Add("Configure a target environment in Settings first.");
+        else if (environment.AuthorizationConfirmedAt is null)
+            blockers.Add("Confirm in Settings that you may test this target and that it is not production.");
+        else if (reachability is { Reachable: false })
+            blockers.Add($"The target is unreachable: {reachability.Error ?? "no response"}");
+        return blockers;
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Confirm writes, and probe the target last</h4>
+        <p>Scenarios that call POST, PUT, PATCH or DELETE, or that send duplicates, need <code>confirmStateChanging</code>. The frontend has the same rule (<code>needsConfirmation</code> in <code>runs.ts</code>), but only the server's check counts. The reachability probe runs right before the insert, "so nothing runs against a target that is down".</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/CreateRun.cs" data-start="78" data-hl="78-80,86-89">
+        var stateChanging = scenarios.Count(scenario =>
+            IsStateChanging(scenario.HttpMethod) || scenario.ScenarioType == ScenarioType.DuplicateRequest);
+        if (stateChanging > 0 && request.ConfirmStateChanging != true)
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["confirmStateChanging"] = ["Confirm the state-changing scenarios before starting the run."]
+            });
+
+        // Checked last, right before creating, so nothing runs against a target that is down.
+        var reachability = await GetPreflight.ProbeAsync(environment!, httpClientFactory, cancellationToken);
+        if (!reachability.Reachable)
+            return TypedResults.UnprocessableEntity($"The target is unreachable: {reachability.Error ?? "no response"}");
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Snapshot everything a run depends on</h4>
+        <p>The run stores its target, options and selection in <code>RunConfig</code>. Each execution copies its scenario's parameters, invariants and the endpoint's test values. Later edits, a regeneration or a re-import can't change what a past run sent or how it is read. The run is created <code>Queued</code>; nothing executes inside this request.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/CreateRun.cs" data-start="92" data-hl="97-98,101,108-111,125-127">
+        var run = new TestRun
+        {
+            ProjectId = id,
+            ApiSpecId = specId!.Value,
+            EnvironmentId = environment!.Id,
+            Status = TestRunStatus.Queued,
+            ScoringVersion = ScoringVersion,
+            TotalScenarios = scenarios.Count,
+            RequestedById = userId,
+            RunConfig = JsonSerializer.SerializeToDocument(new
+            {
+                concurrency,
+                baselineRequests = request.BaselineRequests ?? true,
+                runnerRetries = retries,
+                stateChangingScenarios = stateChanging,
+                stateChangingConfirmed = stateChanging > 0,
+                target = new
+                {
+                    environment.Name, environment.BaseUrl, Kind = environment.Kind.ToString(), environment.VerifyTls,
+                    environment.RequestTimeoutSeconds
+                },
+@@ 117
+        var sequence = 0;
+        foreach (var scenario in scenarios)
+            run.ScenarioExecutions.Add(new ScenarioExecution
+            {
+                EndpointId = scenario.EndpointId,
+                ScenarioId = scenario.Id,
+                SequenceNo = ++sequence,
+                ScenarioType = scenario.ScenarioType,
+                Parameters = scenario.Parameters,
+                Invariants = scenario.Invariants,
+                TestValues = scenario.TestValues
+            });
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>A selection that no longer matches the included endpoints (a stale page) is rejected with "Reload and try again" rather than silently trimmed.</li>
+        <li>Runs always target the project's default environment.</li>
+        <li>Headers and credentials are <em>not</em> snapshotted. The runner reads them live, because after a move to another host they belong to that host (comment in <code>RunExecutor.cs</code>).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="chapter" id="s7">
+  <div class="ch-head">
+    <div class="num">§7</div>
+    <h2>Execution</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.16</span><span class="chip src">PROJECT.md §10.3</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>A run takes minutes and can't live inside an HTTP request. Execution must survive a database that isn't up yet and never start a run twice. It must keep ChaosLab's own bugs apart from the target's failures, and run scenarios side by side without them interfering.</p>
+      <h3>Approach</h3>
+      <p><code>RunExecutor</code> is a hosted service that polls for <code>Queued</code> runs every two seconds, oldest first. It keeps <strong>three kinds of failure</strong> distinct everywhere <span class="chip src">PROJECT.md §10.3</span>:</p>
+      <ul>
+        <li>The <strong>target failed</strong>: a legitimate result, evaluated and scored.</li>
+        <li>The <strong>runner failed</strong>: never counted against the target, and retried a limited number of times.</li>
+        <li>The <strong>target was unreachable</strong>: the scenario is skipped with a reason and left out of the score.</li>
+      </ul>
+      <p>Every request is stored as an <code>HttpObservation</code> as it finishes, so the live view shows progress. Each one carries its <code>runnerAttempt</code>.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>A loop that survives outages</h4>
+        <p>On first start, and after any failed tick, <code>RecoverAsync</code> fails runs left <code>Running</code> by a dead process; nothing else will ever finish them. An outage is logged as an error once, then at debug level, so a database that's down doesn't flood the log. A tick that took a run loops immediately instead of sleeping.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="83" data-hl="91-93,96-97,101-105">
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var recovered = false;
+        var failing = false;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (!recovered)
+                    await RecoverAsync(stoppingToken);
+                recovered = true;
+                var taken = await TickAsync(stoppingToken);
+                failing = false;
+                if (taken)
+                    continue;
+            }
+            catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
+            {
+                // For example the database is not up yet; the next tick tries again. An outage is an error once, not every poll.
+                logger.Log(failing ? LogLevel.Debug : LogLevel.Error, exception, "The run executor could not poll for runs.");
+                failing = true;
+                // No run executes between ticks, so a run a failed tick left Running is orphaned: recovery fails it.
+                recovered = false;
+            }
+            await Task.Delay(PollInterval, time, stoppingToken);
+        }
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Claim a run with a conditional update</h4>
+        <p>Read the oldest queued id, then flip it <code>Queued → Running</code> <em>only if it is still Queued</em>. If the user cancelled in between, zero rows change and the run is never started. This "compare-and-set in SQL" pattern (<code>ExecuteUpdateAsync</code> with the expected state in the <code>WHERE</code>) replaces read-then-write everywhere state can change concurrently.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="149" data-hl="155-161">
+    private async Task<bool> RunNextAsync(ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var next = await db.TestRuns.Where(run => run.Status == TestRunStatus.Queued).OrderBy(run => run.CreatedAt)
+            .Select(run => (Guid?)run.Id).FirstOrDefaultAsync(cancellationToken);
+        if (next is not { } runId)
+            return false;
+        // Conditional, so a run cancelled since the query above is never started.
+        var startedAt = time.GetUtcNow();
+        if (await db.TestRuns.Where(run => run.Id == runId && run.Status == TestRunStatus.Queued)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(run => run.Status, TestRunStatus.Running)
+                    .SetProperty(run => run.StartedAt, startedAt), cancellationToken) == 0)
+            return true;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Lanes: concurrent, but never on the same endpoint</h4>
+        <p>With concurrency above 1, each endpoint becomes a lane whose scenarios run in sequence order, and up to <em>concurrency</em> lanes run at once. Two scenarios on one endpoint never overlap, because they would count each other's records. Scenarios in the dependency path wait until every lane is done and then run alone, because an armed simulator affects every call through the environment's route (§8).</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="270" data-hl="273-274,277-279,286-288">
+        var concurrency = Math.Clamp(config.Concurrency, 1, CreateRun.MaxConcurrency);
+        // Side by side, scenarios in the dependency path wait and then run alone: the armed simulator applies its fault to
+        // every call through the environment's route, so a scenario running beside one would meet a fault it never asked for.
+        bool Alone(Execution execution) =>
+            concurrency > 1 && DependencySimulator.Applies(execution.ScenarioType, execution.Parameters.RootElement);
+        // One lane per endpoint, its scenarios in sequence order, since two scenarios on one endpoint at once would count
+        // each other's records. With concurrency 1, a single lane keeps the sequence order whatever it is sorted by.
+        var lanes = executions.Where(execution => !Alone(execution))
+            .GroupBy(execution => concurrency == 1 ? Guid.Empty : execution.EndpointId).ToList();
+        await Parallel.ForEachAsync(lanes, new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancellationToken },
+            async (lane, token) =>
+            {
+                foreach (var execution in lane)
+                    if (!await RunScenarioAsync(context, execution, token))
+                        return;
+            });
+        foreach (var execution in executions.Where(Alone))
+            if (!await RunScenarioAsync(context, execution, cancellationToken))
+                break;
+        return null;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Runner retries apply to runner failures only</h4>
+        <p>An exception inside the runner is ChaosLab's problem. The scenario is tried again after one second, up to the run's limit, unless the run was cancelled. Target failures, unreachable targets and requests the spec can't fill are results, so they are never retried. Requests from a failed try stay on record, and the evaluator judges the last try only.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="311" data-hl="321,325-327,334">
+        for (var runnerAttempt = 1; ; runnerAttempt++)
+        {
+            try
+            {
+                (status, reason) = await ExecuteScenarioAsync(db, context, execution with { RunnerAttempt = runnerAttempt },
+                    cancellationToken);
+                break;
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // A runner failure in one scenario is never the target's, and the run goes on. A cancelled run is not retried.
+                logger.LogError(exception, "Scenario execution {ExecutionId} stopped on a runner error (try {Try}).", execution.Id,
+                    runnerAttempt);
+                db.ChangeTracker.Clear();
+                if (runnerAttempt > context.Config.RunnerRetries
+                    || !await db.TestRuns.AnyAsync(run => run.Id == context.RunId && run.Status == TestRunStatus.Running,
+                        cancellationToken))
+                {
+                    (status, reason) = (ScenarioExecutionStatus.Failed, runnerAttempt == 1
+                        ? "The runner hit an internal error during this scenario."
+                        : $"The runner hit an internal error during this scenario on each of {runnerAttempt} tries.");
+                    break;
+                }
+                await Task.Delay(RetryPause, time, cancellationToken);
+            }
+        }
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li><code>// shortcut:</code> one run at a time for every project, so a long run holds up other projects' queues.</li>
+        <li><code>// shortcut:</code> recovery assumes a single backend instance; with several, runs would need a lease.</li>
+        <li>Side by side, the target carries more load, so timings can read slower than they would alone <span class="chip src">FeaturesFlow 2.16</span>.</li>
+        <li>The final status is Completed when every scenario ran, PartiallyCompleted when some did, and Failed when none did. Only Completed runs are scored (§11).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 8 -->
+<section class="chapter" id="s8">
+  <div class="ch-head">
+    <div class="num">§8</div>
+    <h2>Fault placement</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.16</span><span class="chip src">PROJECT.md §10.1, §10.2</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>A fault only tests the target if the target meets it. A 503 swapped into the runner's own response shows that the fault was reproduced, not how the API handles a failing dependency. <em>Where</em> each fault is applied decides what a result can prove, and this is the least obvious part of the design.</p>
+      <h3>Approach</h3>
+      <p>The baseline is "direct-first, with a supporting proxy or simulator" <span class="chip src">PROJECT.md §10.1</span>. There are three mechanisms:</p>
+      <div class="diagram" role="img" aria-label="Three fault placements. Direct requests: the runner sends a late, stalled, duplicated or unauthenticated request straight to the target. Fault injector: the runner calls the target for real and an in-process injector rewrites the answer before the runner sees it. Dependency simulator: the runner calls the target, the target calls ChaosLab's simulator route in place of its dependency, and the armed simulator cuts, answers or corrupts those calls while forwarding the rest to the real dependency.">
+        <svg viewBox="0 0 720 430" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="ahA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head accent" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+          <!-- Row 1 -->
+          <text class="d-row" x="10" y="22">1 · DIRECT REQUESTS</text>
+          <rect class="d-box" x="10" y="34" width="140" height="48" rx="8"/><text class="d-label" x="80" y="63" text-anchor="middle">Runner</text>
+          <rect class="d-box" x="560" y="34" width="150" height="48" rx="8"/><text class="d-label" x="635" y="63" text-anchor="middle">Target API</text>
+          <line class="d-arrow accent" x1="152" y1="58" x2="556" y2="58" marker-end="url(#ahA)"/>
+          <text class="d-note" x="354" y="50" text-anchor="middle">late · stalled · duplicated · bad credential</text>
+          <text class="d-sub" x="354" y="76" text-anchor="middle">Latency, Timeout / Drop, Duplicate Request, Auth Expiry</text>
+          <line class="d-sep" x1="10" y1="104" x2="710" y2="104"/>
+          <!-- Row 2 -->
+          <text class="d-row" x="10" y="132">2 · FAULTINJECTOR, IN THE RUNNER'S PATH (IN PROCESS)</text>
+          <rect class="d-box" x="10" y="148" width="140" height="56" rx="8"/><text class="d-label" x="80" y="181" text-anchor="middle">Runner</text>
+          <rect class="d-box accent" x="250" y="148" width="210" height="56" rx="8"/><text class="d-label" x="355" y="172" text-anchor="middle">FaultInjector</text><text class="d-sub" x="355" y="191" text-anchor="middle">rewrites the answer</text>
+          <rect class="d-box" x="560" y="148" width="150" height="56" rx="8"/><text class="d-label" x="635" y="181" text-anchor="middle">Target API</text>
+          <line class="d-arrow" x1="152" y1="160" x2="556" y2="160" marker-end="url(#ah)"/>
+          <text class="d-note" x="505" y="154" text-anchor="middle">real request</text>
+          <line class="d-arrow" x1="558" y1="192" x2="464" y2="192" marker-end="url(#ah)"/>
+          <line class="d-arrow accent" x1="248" y1="192" x2="154" y2="192" marker-end="url(#ahA)"/>
+          <text class="d-sub" x="355" y="226" text-anchor="middle">5xx Storm · 429 · Malformed JSON · Empty Response · Slow Drip (runner sees the fault)</text>
+          <line class="d-sep" x1="10" y1="246" x2="710" y2="246"/>
+          <!-- Row 3 -->
+          <text class="d-row" x="10" y="274">3 · DEPENDENCYSIMULATOR, IN THE TARGET'S OUTBOUND PATH</text>
+          <rect class="d-box" x="10" y="292" width="110" height="56" rx="8"/><text class="d-label" x="65" y="325" text-anchor="middle">Runner</text>
+          <rect class="d-box" x="170" y="292" width="140" height="56" rx="8"/><text class="d-label" x="240" y="325" text-anchor="middle">Target API</text>
+          <rect class="d-box accent" x="360" y="292" width="200" height="56" rx="8"/><text class="d-label" x="460" y="316" text-anchor="middle">Simulator route</text><text class="d-sub" x="460" y="335" text-anchor="middle">/api/simulator/{token}/…</text>
+          <rect class="d-box" x="600" y="292" width="110" height="56" rx="8"/><text class="d-label" x="655" y="316" text-anchor="middle">Real</text><text class="d-label" x="655" y="334" text-anchor="middle">dependency</text>
+          <line class="d-arrow" x1="122" y1="320" x2="166" y2="320" marker-end="url(#ah)"/>
+          <line class="d-arrow accent" x1="312" y1="320" x2="356" y2="320" marker-end="url(#ahA)"/>
+          <line class="d-arrow" x1="562" y1="320" x2="596" y2="320" marker-end="url(#ah)"/>
+          <text class="d-note" x="460" y="372" text-anchor="middle">armed: cut · answer 5xx / 429 · corrupt or empty the answer</text>
+          <text class="d-sub" x="460" y="390" text-anchor="middle">every call logged: dependencyCalls { total, calls[≤100] }</text>
+          <text class="d-sub" x="240" y="372" text-anchor="middle">dependency URL points</text>
+          <text class="d-sub" x="240" y="388" text-anchor="middle">at the simulator</text>
+          <text class="d-sub" x="360" y="416" text-anchor="middle">Dependency failure always; 5xx Storm, 429, Malformed JSON, Empty Response when path = "dependency"</text>
+        </svg>
+      </div>
+      <p>Decisions of 15 November 2026 about the simulator <span class="chip src">PROJECT.md §10.2</span>:</p>
+      <ul>
+        <li><strong>A backend route, not its own listener.</strong> Nothing new is deployed, and arming is a memory write. Given up: a refused TCP connection, which only a separate listener could produce.</li>
+        <li><strong>YARP's <code>IHttpForwarder</code></strong> does the forwarding, for its handling of hop-by-hop headers and streaming.</li>
+        <li><strong>Fenced off from browsers</strong>, because the route sits on ChaosLab's origin.</li>
+        <li><strong>The key is a revocable 64-character token</strong>, not the environment id. It is rotated when the dependency URL changes or an owner or editor is removed or made a Viewer.</li>
+        <li><strong>A capped call log</strong>, so a retry loop can't grow memory without bound.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Direct faults are the runner's own behavior</h4>
+        <p>Latency waits before sending. Timeout / Drop sends a body that stalls, then a normal <em>recovery</em> request, which is the actual evidence: did the target get over the abandoned request? Duplicate Request fires copies with staggered starts, like a double submit, and the same, different or no idempotency key.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="446" data-hl="449,456,458-461,469,474-477">
+            case ScenarioType.Latency:
+                // Runner-side delay (PROJECT.md 10.2): the request reaches the target late.
+                var delayMs = parameters.GetProperty("delayMs").GetInt32();
+                await Task.Delay(TimeSpan.FromMilliseconds(delayMs), time, cancellationToken);
+                faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "fault", ["delayMs"] = delayMs }, cancellationToken))];
+                break;
+            case ScenarioType.TimeoutDrop:
+                var mode = parameters.GetProperty("mode").GetString();
+                faults = [await RecordAsync(SendAsync(context, execution, prepared,
+                    prepared.Create(new StalledContent(prepared.Body ?? [], hold: mode == "hold")), ++attempt, null,
+                    new() { ["phase"] = "fault", ["mode"] = mode }, cancellationToken))];
+                // The runner ended that request itself, so it shows nothing about the target. A normal request
+                // afterwards is the evidence: did the target get over the abandoned one?
+                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                break;
+            case ScenarioType.DuplicateRequest:
+                var copies = parameters.GetProperty("copies").GetInt32();
+                var key = parameters.GetProperty("key").GetString();
+                var gapMs = parameters.GetProperty("delayMs").GetInt32();
+                var shared = Guid.NewGuid();
+                var first = attempt;
+                // Staggered starts: with no gap the copies race each other, like a double submit.
+                faults = await Task.WhenAll(Enumerable.Range(1, copies).Select(async copy =>
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds((copy - 1) * gapMs), time, cancellationToken);
+                    var request = prepared.Create();
+                    Guid? idempotencyKey = key switch { "same" => shared, "different" => Guid.NewGuid(), _ => null };
+                    request.Headers.Remove(IdempotencyHeader);
+                    if (idempotencyKey is { } value)
+                        request.Headers.TryAddWithoutValidation(IdempotencyHeader, value.ToString());
+                    return await SendAsync(context, execution, prepared, request, first + copy, idempotencyKey,
+                        new() { ["phase"] = "fault", ["copy"] = copy, ["key"] = key }, cancellationToken);
+                }));
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>The injector: a pure function, no proxy</h4>
+        <p>The proposal was YARP as an HTTP proxy. What got built is simpler: the injector runs <em>in process</em> with no listening port, and it's a pure function. The target is called for real; the injector decides what the runner is shown instead. A listening proxy is only needed once something other than the runner must reach it, and that's the simulator.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/FaultInjector.cs" data-start="7" data-hl="22-28">
+// The fault injector (PROJECT.md 10): sits in the runner's request path, in process. The target is called for real;
+// the injector decides what the runner is made to see instead of the target's answer. Pure: no database, no requests.
+// The runner applies the faults that are about the request or the timing itself (Auth Expiry's credential, Slow Drip's
+// read pace), since those happen on the connection.
+// No listener, so only the runner can be put behind it. The DependencySimulator is the route the target can reach, and
+// it calls Apply for these faults in the dependency path.
+public static class FaultInjector
+{
+    // Sent in place of the stored secret by Auth Expiry.
+    public const string InvalidCredential = "chaoslab-invalid-credential";
+
+    // Body null: the target's own body is delivered (Slow Drip only changes how fast).
+    public sealed record Injected(int Status, string? Body, int? RetryAfterSeconds = null);
+
+    // What the runner receives for a response the target completed, or null when this fault leaves responses alone.
+    public static Injected? Apply(ScenarioType type, JsonElement parameters, int upstreamStatus, string upstreamBody) => type switch
+    {
+        ScenarioType.ServerErrorStorm => new(parameters.GetProperty("status").GetInt32(), ""),
+        ScenarioType.Throttle429 => new(429, "", parameters.GetProperty("retryAfterSeconds").GetInt32()),
+        ScenarioType.MalformedJson => new(upstreamStatus, Corrupt(parameters.GetProperty("variant").GetString(), upstreamBody)),
+        ScenarioType.EmptyResponse => new(upstreamStatus, ""),
+        ScenarioType.SlowDrip => new(upstreamStatus, null),
+        _ => null
+    };
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Keep both truths on the observation</h4>
+        <p>The upstream status and body stay the target's own. The client status and <code>clientBody</code> are what the runner was made to see, marked <code>ModifiedResponse</code>. The evaluator always judges the <em>target's</em> status, and the timeline can show both. The fault works on the redacted body, so cutting it can't leave half a secret behind.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="778" data-hl="782-786">
+        // Only an answer the target completed can be replaced. The upstream columns and "body" stay the target's own;
+        // the client status and "clientBody" are what the runner was made to see. The fault works on the redacted
+        // body, so cutting it can't leave half a secret behind.
+        // shortcut: only the stored first 16 KB of a body are corrupted; corrupt the stream when larger bodies matter.
+        if (inject && observation is { ErrorType: null, UpstreamStatusCode: { } status } && body is not null
+            && FaultInjector.Apply(execution.ScenarioType, parameters, status, body) is { } injected)
+        {
+            observation.ClientStatusCode = injected.Status;
+            observation.OutcomeType = ObservationOutcomeType.ModifiedResponse;
+            if (injected.Body is not null)
+                metadata["clientBody"] = injected.Body;
+            if (injected.RetryAfterSeconds is { } seconds)
+                metadata["clientHeaders"] = new Dictionary<string, string> { ["Retry-After"] = seconds.ToString() };
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>The simulator: forward until armed</h4>
+        <p><code>Applies</code> decides the placement: Dependency failure always, and the four injector faults when their <code>path</code> is <code>dependency</code>. The route looks the environment up by token, and an unknown token or missing dependency URL gets 404. With no fault armed it simply forwards. With one armed, the fault either answers the call itself or lets it through to be changed on the way back. Each call is logged <em>on arrival</em>, because the target may answer the runner before the call ends.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/DependencySimulator.cs" data-start="47" data-hl="50-53,182-184,190-193,195,199">
+    // Whether the scenario's fault is applied here, in the target's outbound path, rather than in the runner's own
+    // request path. Dependency failure always is; the faults the injector can also apply are when their `path` says so,
+    // and parameters stored before `path` existed mean the runner's path.
+    public static bool Applies(ScenarioType type, JsonElement parameters) =>
+        type == ScenarioType.DnsFailure
+        || (type is ScenarioType.ServerErrorStorm or ScenarioType.Throttle429 or ScenarioType.MalformedJson or ScenarioType.EmptyResponse
+            && parameters.TryGetProperty("path", out var path) && path.GetString() == "dependency");
+@@ 177
+    public async Task HandleAsync(
+        HttpContext context, string token, string? path, ApplicationDbContext db, IHttpForwarder forwarder,
+        IHttpMessageHandlerFactory handlers)
+    {
+        path = "/" + path;
+        var environment = await db.ApiEnvironments.AsNoTracking().Where(environment => environment.SimulatorToken == token)
+            .Select(environment => new { environment.Id, environment.DependencyUrl, environment.VerifyTls })
+            .SingleOrDefaultAsync(context.RequestAborted);
+        if (environment?.DependencyUrl is not { } dependencyUrl)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+        faults.TryGetValue(environment.Id, out var fault);
+        var atMs = fault?.ElapsedMs ?? 0;
+        if (fault is not null && await fault.TakeAsync(context, path))
+            return;
+        // Logged on arrival: the target may answer the runner before this call ends, and the log is stored then.
+        var call = fault?.Log.Add(atMs, context.Request.Method, path, injected: false);
+        // The target's handlers: the same address guard and TLS setting as the runner's own requests. A dependency
+        // that cannot be reached is answered with 502 or 504 by the forwarder.
+        using var client = TargetClient.CreateInvoker(handlers, environment.VerifyTls);
+        await forwarder.SendAsync(context, dependencyUrl, client, ForwarderRequestConfig.Empty, new ToDependency(path, fault, call));
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Two kinds of "down"</h4>
+        <p>A fast failure and silence can be handled differently by a target, so the two settings behave differently. <code>unresolvable</code> closes the connection at once. <code>unreachable</code> stays silent until the caller gives up or the fault is disarmed. Neither is a real DNS failure or refused connection; the target sees a closed connection either way.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/DependencySimulator.cs" data-start="147" data-hl="151-155,160">
+        private async Task CutAsync(HttpContext context)
+        {
+            if (parameters.GetProperty("dependency").GetString() != Unresolvable)
+            {
+                // Unreachable: silence, like a host that is down, until the caller gives up or the fault is disarmed.
+                using var released = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, disarmed.Token);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, released.Token);
+                }
+                catch (OperationCanceledException) { }
+            }
+            // Unresolvable fails at once. Either way there is no HTTP answer: the caller sees the connection close.
+            context.Abort();
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Fenced off from browsers</h4>
+        <p>The route needs no sign-in and sits on ChaosLab's own origin. A signed-in user who follows a link to it would otherwise send their session cookie to whoever set the dependency URL, and the dependency's answer would run as ChaosLab. So the request drops <code>Cookie</code> (in <code>TransformRequestAsync</code>), and every answer drops <code>Set-Cookie</code> and gets <code>CSP: sandbox</code> and <code>nosniff</code>.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/DependencySimulator.cs" data-start="223" data-hl="227-230">
+        public override async ValueTask<bool> TransformResponseAsync(
+            HttpContext context, HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
+        {
+            var result = await base.TransformResponseAsync(context, proxyResponse, cancellationToken);
+            // The dependency's answer is served on ChaosLab's origin: it must not run script or set cookies there.
+            context.Response.Headers.Remove("Set-Cookie");
+            context.Response.Headers.ContentSecurityPolicy = "sandbox";
+            context.Response.Headers.XContentTypeOptions = "nosniff";
+            // Passed on unchanged, and so not injected: an answer that may carry no body (Kestrel throws on a body for 204,
+            // 205 and 304, and drops it for HEAD), and one compressed despite the identity request.
+            if (fault?.ChangesAnswer != true || proxyResponse is null || HttpMethods.IsHead(context.Request.Method)
+                || context.Response.StatusCode is StatusCodes.Status204NoContent or StatusCodes.Status205ResetContent
+                    or StatusCodes.Status304NotModified
+                || proxyResponse.Content.Headers.ContentEncoding.Count > 0)
+                return result;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Looking for a circuit breaker</h4>
+        <p>Decided on 27 November 2026. Dependency failure can send several requests (generated scenarios use 5) while the dependency is down, each with its own call log. A request after the first that is answered <em>without any dependency call</em> means the breaker opened. An open breaker also turns away the first request after the fault. So the runner repeats the recovery request every 5 seconds for up to 60 seconds until the target answers normally, and the next scenario doesn't meet a breaker that is still open. A target that never called its dependency never met the fault, so the scenario is skipped.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="407" data-hl="410,416,424-427,437-443">
+                var requests = execution.ScenarioType == ScenarioType.DnsFailure
+                    && parameters.TryGetProperty("requests", out var burst) ? burst.GetInt32() : 1;
+                var opened = false;
+                using (var armed = simulator.Arm(context.Environment.Id, execution.ScenarioType, parameters))
+                {
+                    var burstFaults = new List<HttpObservation>();
+                    for (var index = 0; index < requests; index++)
+                    {
+                        // The live call log ({total, calls}): it is written into the observation when the request ends.
+                        var log = armed.Next();
+                        var metadata = new Dictionary<string, object?> { ["phase"] = "fault", ["dependencyCalls"] = log };
+                        if (execution.ScenarioType == ScenarioType.DnsFailure)
+                            metadata["dependency"] = parameters.GetProperty("dependency").GetString();
+                        var fault = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                            metadata, cancellationToken));
+                        burstFaults.Add(fault);
+                        // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
+                        if (index == 0 && fault.OutcomeType != ObservationOutcomeType.ConnectionError && log.Total == 0)
+                            return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
+                        // Answered without calling after earlier requests did: the breaker opened.
+                        opened |= index > 0 && fault.UpstreamStatusCode is not null && log.Total == 0;
+                    }
+                    faults = [.. burstFaults];
+                }
+                var recovery = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                    new() { ["phase"] = "recovery" }, cancellationToken));
+                // An open breaker turns the next request away too, until it closes: ask again until the target answers
+                // normally, so a breaker is not taken for a target that never recovered, and the next scenario does not
+                // meet it still open. The evaluator judges the last of these requests. A baseline that did not succeed gets
+                // no breaker finding (Evaluator.Dependency), so there is nothing to wait for.
+                var giveUp = time.GetUtcNow() + BreakerWait;
+                opened &= baseline is null || (baseline.UpstreamStatusCode < 400 && baseline.ErrorType is null);
+                while (opened && !(recovery.UpstreamStatusCode < 400 && recovery.ErrorType is null) && time.GetUtcNow() < giveUp)
+                {
+                    await Task.Delay(BreakerPoll, time, cancellationToken);
+                    recovery = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                        new() { ["phase"] = "recovery" }, cancellationToken));
+                }
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>The armed fault lives in memory, so ChaosLab must run as one backend instance (<code>// shortcut:</code> in <code>DependencySimulator.cs</code>).</li>
+        <li>Every call through an environment's route meets the armed fault, whoever caused it, so dependency-path scenarios run alone (§7). The target's dependency traffic also passes through ChaosLab between runs.</li>
+        <li>One HTTP dependency per environment. Changing the dependency URL rotates the token, which breaks the target's configuration until someone copies the new URL. That's intended.</li>
+        <li>Slow Drip in the runner's path only holds the target's connection for bodies larger than the socket buffers, which is why the evaluator needs 64 KB (§10).</li>
+        <li>Faults in the runner's path show the fault is <em>reproduced</em>, not how the target behaves. Their findings can't Pass (§10).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 9 -->
+<section class="chapter" id="s9">
+  <div class="ch-head">
+    <div class="num">§9</div>
+    <h2>Cancelling a run</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.17</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>The user presses Cancel while the runner is mid-scenario on another thread. Neither side may overwrite the other. A run that finished a millisecond earlier must not flip to Cancelled, and a cancelled run must never be scored.</p>
+      <h3>Approach</h3>
+      <p>There are no locks and no read-then-write. Both sides use <strong>conditional updates</strong> with the expected state in the <code>WHERE</code> clause, and whoever writes first wins. The runner stops <em>starting</em> scenarios but lets in-flight requests finish or time out. Evidence gathered so far is kept, and executions that never started become Skipped.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Cancel only what is still Queued or Running</h4>
+        <p>One row updated means cancelled (204). Zero rows means either the run had already finished (409, "This run has already finished.") or it doesn't exist in this project (404). A second query tells the two apart.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/CancelRun.cs" data-start="17" data-hl="27,29-34,38-40">
+    public static async Task<Results<NoContent, NotFound, ForbidHttpResult, Conflict<string>>> Handle(
+        Guid id, Guid runId, ClaimsPrincipal principal, ApplicationDbContext db, TimeProvider time,
+        CancellationToken cancellationToken)
+    {
+        var role = await ProjectAccess.RoleAsync(db, id, principal, cancellationToken);
+        if (role is null)
+            return TypedResults.NotFound();
+        if (role == ProjectRole.Viewer)
+            return TypedResults.Forbid();
+
+        // Conditional update so a run the runner finishes at the same moment is never overwritten.
+        var now = time.GetUtcNow();
+        var cancelled = await db.TestRuns
+            .Where(run => run.Id == runId && run.ProjectId == id
+                && (run.Status == TestRunStatus.Queued || run.Status == TestRunStatus.Running))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(run => run.Status, TestRunStatus.Cancelled)
+                .SetProperty(run => run.CompletedAt, now), cancellationToken);
+        if (cancelled == 1)
+            return TypedResults.NoContent();
+
+        return await db.TestRuns.AnyAsync(run => run.Id == runId && run.ProjectId == id, cancellationToken)
+            ? TypedResults.Conflict(FinishedMessage)
+            : TypedResults.NotFound();
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>The runner re-checks before every scenario</h4>
+        <p>An execution is claimed only while its run is still <code>Running</code>. After a cancel, the claim matches nothing and the lane stops.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="299" data-hl="301-307">
+        // Re-checked before every scenario (2.17): a cancelled run starts nothing new; TickAsync skips the rest.
+        var startedAt = time.GetUtcNow();
+        if (await db.ScenarioExecutions
+                .Where(row => row.Id == execution.Id && row.Status == ScenarioExecutionStatus.Queued
+                    && row.TestRun.Status == TestRunStatus.Running)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(row => row.Status, ScenarioExecutionStatus.Running)
+                    .SetProperty(row => row.StartedAt, startedAt), cancellationToken) == 0)
+            return false;
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Leftovers become Skipped on the next tick</h4>
+        <p>The cancel handler doesn't touch executions. Each tick marks queued executions of finished runs as Skipped, with a reason. The final status and score update is also conditional on <code>Running</code> (§11), so a cancelled run stays Cancelled and unscored.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="113" data-hl="120-126">
+    public async Task<bool> TickAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var taken = await RunNextAsync(db, cancellationToken);
+        var now = time.GetUtcNow();
+        // shortcut: no index serves Status = Queued, so this reads every execution on each tick; add a partial index when history grows.
+        await db.ScenarioExecutions
+            .Where(execution => execution.Status == ScenarioExecutionStatus.Queued
+                && execution.TestRun.Status != TestRunStatus.Queued && execution.TestRun.Status != TestRunStatus.Running)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(execution => execution.Status, ScenarioExecutionStatus.Skipped)
+                .SetProperty(execution => execution.FailureReason, "The run ended before this scenario started.")
+                .SetProperty(execution => execution.CompletedAt, now), cancellationToken);
+        return taken;
+    }
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>In-flight requests are not aborted, so a cancel can take up to the request timeout to settle.</li>
+        <li>How a cancelled run is shown in history is still <strong>[Open]</strong> <span class="chip src">FeaturesFlow 2.17</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 10 -->
+<section class="chapter" id="s10">
+  <div class="ch-head">
+    <div class="num">§10</div>
+    <h2>Evaluation</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.18</span><span class="chip src">PROJECT.md §11.2, §12</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Raw observations have to become findings a developer can trust. Each finding needs an outcome (Pass, Degraded, Fail, Inconclusive, Not Applicable), a severity, one scoring category, evidence, and wording that never claims more than was observed.</p>
+      <h3>Approach</h3>
+      <ul>
+        <li><strong>Pure.</strong> <code>Evaluator</code> takes a scenario's type, parameters, invariants and observations, and returns findings. There's no database and no I/O, so every rule can be tested with plain objects.</li>
+        <li><strong>The observation philosophy</strong> <span class="chip src">PROJECT.md §11.2</span>. Every verdict carries <em>Expected</em>, <em>Observed</em>, <em>Suggests</em> and <em>Not proven</em>, for example "retry-like behavior observed", never "uses Polly". When evidence is thin, the result is Inconclusive rather than a guess.</li>
+        <li><strong>Thresholds.</strong> Those for the injector's and the simulator's faults were decided on 16 and 25 November, and the circuit breaker's on 27 November <span class="chip src">PROJECT.md §12.3</span>. The direct-request thresholds (Latency, Timeout / Drop, Duplicate Request) are still <em>[Proposed]</em>.</li>
+        <li><strong>The worst finding sets the scenario's outcome.</strong> A judged finding outranks an Inconclusive or Not Applicable one.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Named thresholds and a named problem</h4>
+        <p>Thresholds are constants with their source in a comment. Every Fail and Degraded finding also carries a <code>Problem</code>: what went wrong, which the scoring category alone doesn't say. A retry storm and a target that fails without any fault are both Retry findings but need different fixes (§12).</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Evaluator.cs" data-start="15" data-hl="16,18,20-21,25-33,42-43">
+    // [Proposed] threshold (PROJECT.md 12.3): slower than three times the baseline and by more than a second is Degraded.
+    private const long SlowMarginMs = 1000;
+    // Decided thresholds (PROJECT.md 12.3). A smaller body has left the target before the slow read's first pause.
+    private const long SlowReadMinBytes = 64 * 1024;
+    // More calls to one operation during one request are a retry storm; a shorter gap is a retry without backoff.
+    private const int MaxRetryCalls = 5;
+    private const long MinRetryGapMs = 100;
+@@ 25
+    public enum Problem
+    {
+        Unhandled, SlowUnderFault, CutShort, NotRecovered, NoReadDeadline,
+        RetryStorm, RetryWithoutPause,
+        DuplicatesBroke, SeparateRejected, DuplicateSideEffects,
+        AnsweredWithoutCredential, AuthUnhandled, AuthWrongStatus,
+        DependencyNotContained, NoFallback, IgnoredRetryAfter, DependencyResponseUnhandled, BreakerStuckOpen,
+        InvariantViolated, FailedWithoutFault
+    }
+@@ 42
+    private sealed record Verdict(
+        ResilienceFindingOutcome Outcome, string Summary, string Expected, string Observed, string Suggests, string NotProven,
+        // The responses alone can't decide; a record count read back from the target can.
+        bool NeedsReadBack = false,
+        // Null: the outcome's usual severity.
+        RecommendationSeverity? Severity = null,
+        Problem? Problem = null);
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Compare with a baseline, in a fixed order</h4>
+        <p>The direct-request rule compares the faulted (or recovery) request with a baseline request sent without the fault. The order of checks matters. A baseline that failed makes the result Inconclusive, because the spec's example doesn't even work without a fault. Then a 5xx or no response is Fail, a body cut short is Degraded, and "slower than 3× baseline <em>and</em> by more than a second" is Degraded. The second condition keeps a 20 ms → 70 ms change from counting.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Evaluator.cs" data-start="545" data-hl="553-554,557-558,566-567">
+    // The same request with and without the fault: `subject` is the request that shows the fault's effect.
+    private static Verdict Compare(HttpObservation? baseline, HttpObservation subject, string what, string notProven)
+    {
+        var expected = $"{what} is answered like a normal request.";
+        var seen = baseline is null
+            ? $"{what}: {Describe(subject)}. No baseline request was sent."
+            : $"Baseline request: {Describe(baseline)}. {what}: {Describe(subject)}.";
+        var status = subject.UpstreamStatusCode;
+        if (baseline is not null && !(baseline.UpstreamStatusCode < 400 && baseline.ErrorType is null))
+            return new(ResilienceFindingOutcome.Inconclusive, "The baseline request did not succeed, so the fault's effect could not be judged",
+                expected, seen, "The endpoint or the spec's example request does not work without a fault either.",
+                "How the endpoint behaves under this fault.");
+        if (status is null or >= 500 || (status >= 400 && baseline is not null))
+            return new(ResilienceFindingOutcome.Failed, $"{what} got {Describe(subject)}", expected, seen,
+                "The endpoint did not handle this condition.", "Where in the target the failure comes from.", Problem: Problem.Unhandled);
+        if (status >= 400)
+            return new(ResilienceFindingOutcome.Inconclusive, $"The target rejected the request with {status}, so the fault's effect could not be judged",
+                expected, seen, "The spec's example request is not valid for the target.", "How the endpoint behaves under this fault.");
+        if (subject.ErrorType is not null)
+            return new(ResilienceFindingOutcome.Degraded, $"{what} was answered, but the response body was cut short", expected, seen,
+                "The endpoint answers under this condition, but not completely.", notProven, Problem: Problem.CutShort);
+        if (baseline?.DurationMs is { } normal && subject.DurationMs is { } took && took > Math.Max(3 * normal, normal + SlowMarginMs))
+            return new(ResilienceFindingOutcome.Degraded, $"{what} was answered in {took} ms, against {normal} ms for the baseline", expected, seen,
+                "The endpoint answers under this condition, but much more slowly.", notProven, Problem: Problem.SlowUnderFault);
+        return new(ResilienceFindingOutcome.Passed, $"{what} was answered normally", expected, seen,
+            "The endpoint tolerates this condition.", notProven);
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Retries, read from the simulator's call log</h4>
+        <p>Calls are grouped per dependency operation. More than 5 is a retry storm (Fail). Two to five calls, each at least 100 ms apart, is Pass; a smaller gap is Degraded, meaning no backoff. A single call is <em>Inconclusive</em>, not Degraded, because not retrying isn't treated as a defect (decisions 2–3). The worst operation decides.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Evaluator.cs" data-start="426" data-hl="439-442,445">
+    // The target's calls through the simulator during the fault, per dependency operation: their number shows retries,
+    // their spacing shows backoff.
+    private static Verdict Retries(HttpObservation fault, string seen)
+    {
+        const string expected = "A failed dependency call is retried a few times, with a pause between attempts.";
+        const string notProven = "Whether the pauses grow or carry jitter, and what the target's retry limit is.";
+        // shortcut: only the first 100 calls are stored (DependencySimulator.CallLog), enough to tell a storm.
+        var (calls, total) = CallLog(fault);
+        var worst = calls
+            .GroupBy(call => call.Operation)
+            .Select(group =>
+            {
+                var times = group.Select(call => call.AtMs).ToList();
+                var gap = times.Zip(times.Skip(1), (earlier, later) => later - earlier).DefaultIfEmpty(long.MaxValue).Min();
+                var outcome = times.Count > MaxRetryCalls ? ResilienceFindingOutcome.Failed
+                    : times.Count == 1 ? ResilienceFindingOutcome.Inconclusive
+                    : gap < MinRetryGapMs ? ResilienceFindingOutcome.Degraded : ResilienceFindingOutcome.Passed;
+                return (Operation: group.Key, times.Count, Gap: gap, Outcome: outcome);
+            })
+            // Fail first, then Degraded, Pass, and a single call last: one operation retried well is still a retry.
+            .OrderBy(group => group.Outcome switch
+            {
+                ResilienceFindingOutcome.Failed => 0, ResilienceFindingOutcome.Degraded => 1, ResilienceFindingOutcome.Passed => 2, _ => 3
+            })
+            .ThenByDescending(group => group.Count).FirstOrDefault();
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Severity follows exposure</h4>
+        <p>Severity is High for Fail, Medium for Degraded, Info otherwise, with one exception. An endpoint that answers 2xx without a valid credential is the only Fail raised to <strong>Critical</strong>, because it's the only rule where the failure exposes data (decision 6). A 3xx falls through to Degraded, since redirects aren't followed and carry no data.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Evaluator.cs" data-start="181" data-hl="195-197,198-199">
+    // Authentication Expiry: the target itself has to turn the request away, then accept the valid credential again.
+    private static Verdict AuthFailure(HttpObservation? baseline, HttpObservation fault, HttpObservation probe)
+    {
+        var what = fault.Metadata.RootElement.TryGetProperty("sent", out var sent) && sent.GetString() == "missing"
+            ? "A request without its credential" : "A request with an invalid credential";
+        const string expected = "The request is rejected with 401 or 403, and the valid credential still works afterwards.";
+        const string notProven = "Whether an expired credential is treated the same way; one cannot be made from outside the target.";
+        var status = fault.UpstreamStatusCode;
+        var verdict = status switch
+        {
+            null or >= 500 => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", expected, "",
+                "The endpoint does not handle a failed authentication.", notProven, Problem: Problem.AuthUnhandled),
+            // The only failure that exposes data (PROJECT.md 12.3). A 3xx carries none: redirects aren't followed, so it
+            // falls through to Degraded with the other refusals.
+            >= 200 and < 300 => new Verdict(ResilienceFindingOutcome.Failed, $"{what} was answered with {status}", expected, "",
+                "The endpoint answers without the credential its spec requires.", "Whether the response held protected data.",
+                Severity: RecommendationSeverity.Critical, Problem: Problem.AnsweredWithoutCredential),
+            401 or 403 => new Verdict(ResilienceFindingOutcome.Passed, $"{what} was rejected with {status}", expected, "",
+                "The endpoint fails closed.", notProven),
+            _ => new Verdict(ResilienceFindingOutcome.Degraded, $"{what} was rejected with {status} rather than 401 or 403", expected, "",
+                "The request is turned away, but not as an authentication failure.", notProven, Problem: Problem.AuthWrongStatus)
+        };
+        return After(verdict, baseline, probe, Seen(baseline, what, fault, probe));
+    }
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li><strong>Faults only the runner sees are Fail or Inconclusive, never Pass</strong> (decision 1). From the runner's path, Retry, Rate-Limit and Response Validation can't score above 0. The dependency path exists to fix that.</li>
+        <li>A Dependency failure yields up to four findings (Dependency Failure, Retry, Graceful Degradation, Circuit Breaker), a dependency-path 5xx Storm up to two, every other fault one.</li>
+        <li>How retries and breakers inside a <em>separate consuming client</em> are observed is still open <span class="chip src">PROJECT.md §25 item 3</span>. So are the direct-request thresholds (item 8) and how baselines affect evaluation (item 10).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 11 -->
+<section class="chapter" id="s11">
+  <div class="ch-head">
+    <div class="num">§11</div>
+    <h2>Scoring v1.0</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.19</span><span class="chip src">PROJECT.md §14</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>The score should be one number from 0 to 100 that is deterministic, explainable, and comparable across runs. Lots of easy scenarios in one category shouldn't be able to inflate it, and a high score from thin evidence should be visible as such.</p>
+      <h3>Approach</h3>
+      <p>The rules are locked as scoring version <code>1.0</code> and stored on every run <span class="chip src">PROJECT.md §14.2–14.3</span>:</p>
+      <ul>
+        <li>Points: Pass 100, Degraded 50, Fail 0. Inconclusive and Not Applicable are excluded.</li>
+        <li>A category score is the <strong>mean</strong> of its findings, so category weights, not scenario counts, set each category's influence.</li>
+        <li>A category with no scored findings is left out, and its weight is shared proportionally among the rest.</li>
+        <li><strong>Evidence coverage</strong> = scored ÷ (scored + Inconclusive) is shown next to the score.</li>
+        <li>Only a <code>Completed</code> run is scored. Partial, failed and cancelled runs show "not scored" rather than a provisional number.</li>
+      </ul>
+      <p><code>Scorer</code> is pure and is "the only copy of the method". Pages show what it stored; the frontend never computes a score (<code>CLAUDE.md</code>).</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Weights as data, locked to a version</h4>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Scorer.cs" data-start="10" data-hl="10">
+    // Locked for scoring version 1.0, like the points below: changing either needs a new scoring version.
+    private static readonly (ScoringCategory Category, int Weight)[] Weights =
+    [
+        (ScoringCategory.Timeout, 20),
+        (ScoringCategory.Retry, 15),
+        (ScoringCategory.GracefulDegradation, 15),
+        (ScoringCategory.RateLimit, 10),
+        (ScoringCategory.Idempotency, 10),
+        (ScoringCategory.AuthenticationFailure, 10),
+        (ScoringCategory.ResponseValidation, 10),
+        (ScoringCategory.DependencyFailure, 10)
+    ];
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>The whole method in about twenty lines</h4>
+        <p>The same function scores a whole run or one endpoint; the caller chooses which findings to pass in. Dividing by the sum of the <em>remaining</em> weights is the proportional redistribution.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Scorer.cs" data-start="51" data-hl="66,71-72,75,78-79">
+    // Inconclusive and Not Applicable are not scored.
+    private static decimal? Points(ResilienceFindingOutcome outcome) => outcome switch
+    {
+        ResilienceFindingOutcome.Passed => 100,
+        ResilienceFindingOutcome.Degraded => 50,
+        ResilienceFindingOutcome.Failed => 0,
+        _ => null
+    };
+
+    public static Result Score(IReadOnlyCollection<(ScoringCategory? Category, ResilienceFindingOutcome Outcome)> findings)
+    {
+        var categories = Weights.Select(entry =>
+        {
+            var mine = findings.Where(finding => finding.Category == entry.Category).ToList();
+            var points = mine.Select(finding => Points(finding.Outcome)).OfType<decimal>().ToList();
+            return (entry.Category, entry.Weight, Mean: points.Count == 0 ? (decimal?)null : points.Average(),
+                Findings: mine.Count, Inconclusive: mine.Count(finding => finding.Outcome == ResilienceFindingOutcome.Inconclusive));
+        }).ToList();
+
+        // A category with no scored findings is left out, which shares its weight out proportionally among the rest.
+        var scoredCategories = categories.Where(category => category.Mean is not null).ToList();
+        var weight = scoredCategories.Sum(category => category.Weight);
+        var scored = findings.Count(finding => Points(finding.Outcome) is not null);
+        // Not Applicable counts toward neither the score nor coverage.
+        var counted = scored + findings.Count(finding => finding.Outcome == ResilienceFindingOutcome.Inconclusive);
+
+        return new Result(
+            weight == 0 ? null : Round(scoredCategories.Sum(category => category.Mean!.Value * category.Weight) / weight),
+            counted == 0 ? null : Round(100m * scored / counted),
+            categories.Select(category => new CategoryScore(category.Category, category.Weight,
+                category.Mean is { } mean ? Round(mean) : null, category.Findings, category.Inconclusive)).ToList());
+    }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Store the score atomically, and only if still Running</h4>
+        <p>A finding saved before categories were stored on findings falls back to its scenario's fault (<code>CategoryOf</code>). The run's status, score, coverage and category scores are written by one conditional update, and endpoint scores in the same transaction: "a run never has a score without its endpoint scores". If the user cancelled at the last moment, the update matches nothing and the run stays unscored.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="191" data-hl="194,204,206,223-232">
+        // Only a run whose every scenario ran is scored (FeaturesFlow 2.19): the dashboards read any run that has a score.
+        Scorer.Result? score = null;
+        List<EndpointResult> endpointResults = [];
+        if (result == TestRunStatus.Completed)
+        {
+            var findings = (await db.ResilienceFindings.Where(finding => finding.TestRunId == runId)
+                    .Select(finding => new
+                    {
+                        finding.EndpointId, finding.Pattern, finding.Category, finding.Outcome,
+                        Type = (ScenarioType?)finding.ScenarioExecution!.ScenarioType
+                    })
+                    .ToListAsync(cancellationToken))
+                .Select(finding => (finding.EndpointId,
+                    Scored: (finding.Category ?? Scorer.CategoryOf(finding.Type, finding.Pattern), finding.Outcome)))
+                .ToList();
+            score = Scorer.Score(findings.Select(finding => finding.Scored).ToList());
+@@ 223
+        // One transaction: a run never has a score without its endpoint scores.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // Conditional, so a cancelled run stays Cancelled and unscored.
+        var finished = await db.TestRuns.Where(run => run.Id == runId && run.Status == TestRunStatus.Running)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(run => run.Status, result)
+                .SetProperty(run => run.FailureMessage, failure)
+                .SetProperty(run => run.ResilienceScore, overall)
+                .SetProperty(run => run.EvidenceCoverage, coverage)
+                .SetProperty(run => run.CategoryScores, categoryScores)
+                .SetProperty(run => run.CompletedAt, completedAt), cancellationToken);
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>Circuit breaker and fallback are evidence signals that feed categories, not categories of their own (§14.2). The Circuit Breaker finding counts under Dependency Failure.</li>
+        <li>Runs that finished before scoring existed are not backfilled.</li>
+        <li>Still open: confirming the points (§25 item 9), whether severity caps the score (item 10), and a validation plan for score sensitivity and repeatability (item 12).</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 12 -->
+<section class="chapter" id="s12">
+  <div class="ch-head">
+    <div class="num">§12</div>
+    <h2>Recommendations</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.22</span><span class="chip src">PROJECT.md §15.2</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>A failing finding should say what to change. The scoring category isn't specific enough: a retry storm, retries with no pause, and an endpoint that fails without any fault are all "Retry" findings, and each needs a different fix.</p>
+      <h3>Approach</h3>
+      <p>The evaluator names the <code>Problem</code> when it decides the outcome (§10). <code>Recommender</code> maps each problem to fixed advice: a title naming the fix, why (what the finding showed), and the fix itself. Recommendations are deterministic and rule-based, with no AI, and ChaosLab never changes the target's code <span class="chip src">PROJECT.md §15.2</span>.</p>
+      <p>Also decided <span class="chip src">FeaturesFlow 2.22</span>: "weak" findings aren't a separate kind. Only Fail and Degraded findings get a recommendation, because an Inconclusive finding proves nothing about the API. Each such finding gets exactly one.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>A table, not a model</h4>
+        <p>Each <code>Problem</code> has exactly one entry. A <code>Problem</code> without a rule throws a <code>KeyNotFoundException</code> instead of returning empty advice.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/Recommender.cs" data-start="5" data-hl="10,30-32,45-47,77">
+// Maps the problem behind a Failed or Degraded finding to a fixed recommendation (FeaturesFlow 2.22, PROJECT.md 15.2).
+// Pure and deterministic: no AI, and ChaosLab never changes the target's code.
+public static class Recommender
+{
+    // Title names the fix, Why says what the finding showed, Fix says what to change in the API.
+    public sealed record Advice(string Title, string Why, string Fix);
+@@ 30
+        [Problem.RetryStorm] = new("Limit the number of retries",
+            "The endpoint called a failing dependency many times during one request.",
+            "Cap retries at a few attempts, and wait between them with exponential backoff and jitter."),
+@@ 45
+        [Problem.AnsweredWithoutCredential] = new("Fail closed on a missing or invalid credential",
+            "The endpoint answered successfully without a valid credential.",
+            "Check the credential before doing any work, reject the request with 401 or 403, and return no protected data."),
+@@ 77
+    public static Advice For(Problem problem) => Rules[problem];
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Saved with the finding, in one transaction</h4>
+        <p>The finding, its recommendation and the scenario's outcome are written together, so none of them can exist without the others. The recommendation links to the run, endpoint, execution and finding, and records which rule produced it.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/RunExecutor.cs" data-start="578" data-hl="581-582,593-603">
+        var findings = Evaluator.Evaluate(execution.ScenarioType, parameters, invariants, observations);
+        if (findings.Count > 0)
+        {
+            // One transaction: a finding never exists without its scenario's outcome, or without its recommendation.
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            foreach (var finding in findings)
+            {
+                var saved = new ResilienceFinding
+                {
+                    TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
+                    Pattern = finding.Pattern, Category = finding.Category, Outcome = finding.Outcome, Severity = finding.Severity,
+                    Summary = finding.Summary, Evidence = finding.Evidence, CreatedAt = time.GetUtcNow()
+                };
+                db.ResilienceFindings.Add(saved);
+                // A Failed or Degraded finding gets the fix its problem calls for (FeaturesFlow 2.22).
+                if (finding.Problem is { } problem)
+                {
+                    var advice = Recommender.For(problem);
+                    db.Recommendations.Add(new Recommendation
+                    {
+                        TestRunId = context.RunId, EndpointId = execution.EndpointId, ScenarioExecutionId = execution.Id,
+                        ResilienceFinding = saved, Category = finding.Category.ToString(), Severity = finding.Severity,
+                        Title = advice.Title, Description = advice.Why, Remediation = advice.Fix,
+                        Evidence = JsonSerializer.SerializeToDocument(new { rule = problem.ToString() }, JsonSerializerOptions.Web),
+                        CreatedAt = time.GetUtcNow()
+                    });
+                }
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>Runs executed before recommendations existed are not backfilled and show none.</li>
+        <li>Advice is generic per problem. It doesn't use the endpoint's details beyond what the finding already names.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 13 -->
+<section class="chapter" id="s13">
+  <div class="ch-head">
+    <div class="num">§13</div>
+    <h2>Results, failure timeline, history</h2>
+    <div class="tags"><span class="chip partial">Partial</span><span class="chip src">FeaturesFlow 2.20, 2.21, 2.23</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <div class="status-box">
+        <p><strong>2.20 Results.</strong> <em>Built:</em> the run results page and API, with score, evidence coverage, category and endpoint breakdowns, findings, recommendations, and timelines of failing scenarios. <em>Not built:</em> drilling down into a single endpoint or scenario.</p>
+        <p><strong>2.21 Failure timeline.</strong> <em>Built:</em> timelines of up to 20 Fail or Degraded scenarios, worst first, with each request's attempt and status or outcome, plus a completion event. <em>Not built:</em> inspecting a single event, labelling the fault-start and recovery requests, and the findings page's "View in timeline" (disabled).</p>
+        <p><strong>2.23 History.</strong> <em>Built:</em> paged history with filters, status, score and its change from the previous comparable run, coverage and scenario count. <em>Not built:</em> an endpoints-tested column, comparing two runs, and re-running failed or degraded scenarios (both buttons disabled).</p>
+      </div>
+      <h3>Problem</h3>
+      <p>Show what happened in a way that's honest about what's known. That means stored numbers rather than recomputed ones, the request-by-request story of the scenarios that went wrong, and a comparison with an earlier run only when the comparison is meaningful.</p>
+      <h3>Approach</h3>
+      <p><code>GetRun</code> returns exactly what was stored. "Nothing here is worked out from the findings" <span class="chip src">PROJECT.md §14.3 rule 9</span>. The previous run used for a score change must be on the same environment and scoring version. In the live feed, runner errors and skips are labelled as ChaosLab's problems, never the target's.</p>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>The worst 20 timelines, built in one query</h4>
+        <p>Only executions with a Fail or Degraded finding qualify. They're ordered by their highest severity, then run order, and each one's observations come back in request order. The 20-item cap keeps the page and the PDF bounded.</p>
+        <script type="text/x-code" data-file="Backend/Features/TestRuns/GetRun.cs" data-start="139" data-hl="140-142,144-149">
+        var timelines = await db.ScenarioExecutions.AsNoTracking()
+            .Where(execution => execution.TestRunId == runId && db.ResilienceFindings.Any(finding =>
+                finding.ScenarioExecutionId == execution.Id
+                && (finding.Outcome == ResilienceFindingOutcome.Failed || finding.Outcome == ResilienceFindingOutcome.Degraded)))
+            // Worst first: the highest severity among the failing findings, then run order.
+            .OrderByDescending(execution => db.ResilienceFindings
+                .Where(finding => finding.ScenarioExecutionId == execution.Id
+                    && (finding.Outcome == ResilienceFindingOutcome.Failed || finding.Outcome == ResilienceFindingOutcome.Degraded))
+                .Max(finding => finding.Severity))
+            .ThenBy(execution => execution.SequenceNo)
+            .Take(MaxTimelines)
+            .Select(execution => new Timeline(
+                execution.Id, execution.Endpoint.HttpMethod, execution.Endpoint.Path, execution.ScenarioType,
+                execution.Outcome, execution.FailureReason, execution.CompletedAt,
+                execution.Observations
+                    .OrderBy(observation => observation.RequestStartedAt).ThenBy(observation => observation.AttemptNo)
+                    .Select(observation => new Event(
+                        observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
+                        observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
+                        observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
+                    .ToList()))
+            .ToListAsync(cancellationToken);
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Frontend logic is pure and unit-tested</h4>
+        <p>Pure logic lives in <code>src/lib/*.ts</code>, with a <code>*.spec.ts</code> next to it. <code>compareProblem</code> already encodes when two runs can be compared, ready for the unbuilt compare view. <code>feedResult</code> keeps the three kinds of failure apart in the UI: <code>Failed</code> status reads "RunnerError", never as the target failing.</p>
+        <script type="text/x-code" data-lang="ts" data-file="Frontend/src/lib/runs.ts" data-start="29" data-hl="33-34,55-56">
+// Two runs compare meaningfully only on the same environment and scoring version.
+export function compareProblem(runs: Pick<RunHistoryRow, 'environmentName' | 'scoringVersion'>[]) {
+	if (runs.length !== 2) return 'Select exactly two runs to compare';
+	const [a, b] = runs;
+	if (a.environmentName !== b.environmentName) return 'Runs use different environments';
+	if (a.scoringVersion !== b.scoringVersion) return 'Runs use different scoring versions';
+	return null;
+}
+@@ 51
+// A row's result in the live feed: the worst finding once evaluated, else the execution's own outcome.
+// Runner errors and skips are ChaosLab's problems, never the target's.
+export function feedResult(row: Pick<FeedRow, 'status' | 'outcome' | 'findings'>): FeedResult {
+	if (row.status === 'Running' || row.status === 'Queued') return 'Running';
+	if (row.status === 'Skipped') return 'Skipped';
+	if (row.status === 'Failed') return 'RunnerError';
+	return row.findings[0]?.outcome ?? row.outcome ?? 'Evaluating';
+}
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li><code>// shortcut:</code> the live feed returns every started execution of the run. It needs paging if runs grow past a few hundred scenarios.</li>
+        <li>Runs executed before recommendations existed show none.</li>
+        <li>The chart library choice (ECharts or alternative) is still open <span class="chip src">PROJECT.md §25 item 14</span>.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 14 -->
+<section class="chapter" id="s14">
+  <div class="ch-head">
+    <div class="num">§14</div>
+    <h2>PDF report</h2>
+    <div class="tags"><span class="chip done">Done</span><span class="chip src">FeaturesFlow 2.24</span><span class="chip src">PROJECT.md §15.4</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <h3>Problem</h3>
+      <p>Results have to leave the app as a document someone can attach to a ticket. It has to match what the results page shows and never contain a secret.</p>
+      <h3>Approach</h3>
+      <ul>
+        <li><strong>Same queries as the page.</strong> The report "reuses the results page's queries so the report always matches what the page shows". Content comes from those queries and the run's configuration snapshot, never from request headers, bodies or credentials.</li>
+        <li><strong>QuestPDF</strong> under its Community license renders the PDF.</li>
+        <li><strong>Versioned files on a volume.</strong> Each generation is a new version. The PDF goes to <code>Reports:Path</code>, and the <code>Reports</code> row keeps only its file name and storage key.</li>
+        <li>Owners and editors generate reports for any <em>finished</em> run; every member can list and download them.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>File first, then row, with cleanup on every failure</h4>
+        <p>A row must never point to a missing file. So the PDF is written first, then the row is inserted. If the insert fails, the file is deleted. Two simultaneous generations race for the same version number, and the unique index turns the loser into a 409.</p>
+        <script type="text/x-code" data-file="Backend/Features/Reports/GenerateReport.cs" data-start="35" data-hl="35-36,49,52,56-58,60-63,67">
+        if (data.Run.Status is TestRunStatus.Queued or TestRunStatus.Running)
+            return TypedResults.Conflict(NotFinishedMessage);
+
+        var version = await db.Reports.Where(report => report.TestRunId == runId)
+            .MaxAsync(report => (int?)report.Version, cancellationToken) ?? 0;
+        var report = new Report
+        {
+            Id = Guid.NewGuid(),
+            TestRunId = runId,
+            Version = version + 1,
+            FileName = FileName(data.ProjectName, data.Run.Number, version + 1),
+            GeneratedById = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!),
+            GeneratedAt = data.GeneratedAt
+        };
+        report.StorageKey = $"{report.Id}.pdf";
+        var path = storage.PathFor(report.StorageKey);
+
+        // The file first, then the row: a row never points at a missing file, and a failed insert removes the file.
+        Directory.CreateDirectory(storage.Root);
+        try
+        {
+            await File.WriteAllBytesAsync(path, ReportDocument.Render(data), cancellationToken);
+            db.Reports.Add(report);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            storage.TryDelete(path);
+            return TypedResults.Conflict(BusyMessage);
+        }
+        catch
+        {
+            storage.TryDelete(path);
+            throw;
+        }
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Storage keys are never user input</h4>
+        <p>Keys are generated on the server as <code>{report id}.pdf</code>, so a request can't steer a path. Cleanup never throws, so the caller's own error is the one reported, and a file that can't be removed is logged.</p>
+        <script type="text/x-code" data-file="Backend/Features/Reports/ReportStorage.cs" data-start="3" data-hl="9-10,14,20-22">
+// Where report PDFs live: outside the database, which keeps only the storage key (PROJECT.md 20.1). Reports:Path is
+// resolved against the content root; the pod mounts a volume there so reports survive restarts.
+public sealed class ReportStorage(IConfiguration configuration, IHostEnvironment environment, ILogger<ReportStorage> logger)
+{
+    public string Root { get; } = Path.GetFullPath(configuration["Reports:Path"] ?? "reports", environment.ContentRootPath);
+
+    // Keys are generated here ("{report id}.pdf"), never taken from a request.
+    public string PathFor(string storageKey) => Path.Combine(Root, storageKey);
+
+    // Removes a file whose row was never saved. Never throws, so the caller's own error or answer is kept; a file that
+    // cannot be removed is logged so it can be cleaned up by hand.
+    public void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(exception, "Could not remove unsaved report file {Path}", path);
+        }
+    }
+}
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li><code>// shortcut:</code> the PDF renders inside the request. Move it to a background job if reports with thousands of findings get slow.</li>
+        <li>Deleting reports and retention rules are not built.</li>
+        <li>QuestPDF's Community license has eligibility limits. An organisation that deploys ChaosLab and doesn't qualify needs its own license <span class="chip src">FeaturesFlow 2.24</span>.</li>
+        <li>An unscored run's report explains why under limitations instead of showing a number.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+
+<!-- ============================================================ 15 -->
+<section class="chapter" id="s15">
+  <div class="ch-head">
+    <div class="num">§15</div>
+    <h2>Shipping it</h2>
+    <div class="tags"><span class="chip partial">Partial</span><span class="chip src">FeaturesFlow 2.0</span><span class="chip src">PROJECT.md §26 (21 Nov)</span></div>
+  </div>
+  <div class="grid">
+    <div class="prose">
+      <div class="status-box">
+        <p><em>Built:</em> the AGPL-3.0 <code>LICENSE</code>; the public site in <code>Website/</code> with five docs pages, deployed to GitHub Pages; migrations at startup; the image build, which serves the frontend on port 8080; the release workflow publishing to GHCR for amd64 and arm64 on a version tag; and <code>compose.yaml</code>. <code>v0.1.0</code> was released on 26 November 2026.</p>
+        <p><em>Not built:</em> the install script (<code>install.sh</code>).</p>
+      </div>
+      <h3>Problem</h3>
+      <p>A self-hosted tool has to install without the .NET SDK, without default secrets, and on one origin, because the session cookie is HttpOnly and SameSite.</p>
+      <h3>Approach</h3>
+      <p>Decisions of 21 November 2026 <span class="chip src">PROJECT.md §26</span>:</p>
+      <ul>
+        <li><strong>License: AGPL-3.0</strong>, so a hosted copy must publish its changes. MIT/Apache-2.0 were rejected because they allow reselling as a hosted service; BSL/FSL/ELv2 were rejected because they aren't OSI open source.</li>
+        <li><strong>Distribution</strong>: one release image (backend plus built frontend) and a root <code>compose.yaml</code> with PostgreSQL, or <code>make up</code> from source.</li>
+        <li><strong>Migrations at startup</strong> when <code>Database__MigrateOnStartup=true</code>, so an image install needs no SDK. This is off in development, where <code>make migrate</code> stays.</li>
+        <li><strong>One origin.</strong> The frontend is built with <code>adapter-static</code> and served by the backend with an <code>index.html</code> fallback, so the cookie works without a proxy.</li>
+        <li><strong>A separate public site</strong> (<code>Website/</code>) rather than a route in the app, so instances never serve marketing.</li>
+      </ul>
+      <h3>Code walkthrough</h3>
+
+      <div class="step">
+        <h4>Migrate before the runner starts, and fall back to the SPA</h4>
+        <p>Migrations run before the host starts, and with it the run executor, so the runner never polls an old schema. Every non-<code>/api</code> path gets <code>index.html</code>. Unknown <code>/api</code> paths get no page: 401 when signed out (the fallback policy applies) and 404 when signed in.</p>
+        <script type="text/x-code" data-file="Backend/Program.cs" data-start="61" data-hl="65-66,131">
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    // On for image installs (compose.yaml), which have no SDK for `make migrate`; off in development. Runs before the
+    // run executor starts with the host.
+    if (app.Configuration.GetValue<bool>("Database:MigrateOnStartup"))
+        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.MigrateAsync();
+@@ 129
+// Every page path outside /api gets the app's index.html, which routes in the browser. Unknown /api paths get no page:
+// 401 signed out (the fallback policy applies where no endpoint matches, so real routes don't show), 404 signed in.
+app.MapFallbackToFile("{*path:regex(^(?!api(/|$))):nonfile}", "index.html").AllowAnonymous();
+        </script>
+      </div>
+
+      <div class="step">
+        <h4>Compose: secrets from <code>.env</code>, data on volumes, loopback only</h4>
+        <p>Compose refuses to start without <code>CREDENTIALS_KEY</code> and <code>POSTGRES_PASSWORD</code> (<code>:?</code>), so there's no fallback default. Sign-in keys and reports live on volumes, because without the keys every recreation signs everyone out. The port binds to loopback only: Secure cookies work over plain HTTP on <code>localhost</code> in Chrome, Edge and Firefox, but never in Safari. Anything beyond that needs an HTTPS reverse proxy.</p>
+        <script type="text/x-code" data-lang="yaml" data-file="compose.yaml" data-start="35" data-hl="43-44,47,50,56">
+  chaoslab:
+    image: ghcr.io/neil-urk12/chaoslab:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=chaos_db;Username=postgres;Password=${POSTGRES_PASSWORD}
+      Credentials__Key: ${CREDENTIALS_KEY:?Set CREDENTIALS_KEY in .env (see the top of compose.yaml)}
+      Database__MigrateOnStartup: "true"
+      Reports__Path: /home/app/reports
+      # Change it when users reach ChaosLab at another address, so the setup link points there.
+      BootstrapSetup__PublicUrl: http://localhost:8080
+    volumes:
+      # Sign-in keys: without them every recreation signs everyone out.
+      - backend-keys:/home/app/.aspnet/DataProtection-Keys
+      # Generated PDF reports; the database stores only their file names.
+      - backend-reports:/home/app/reports
+    ports:
+      # Loopback only. Sign-in cookies are Secure: Chrome, Edge and Firefox accept them over plain HTTP on localhost,
+      # Safari never does (WebKit bug 232088). For Safari or other machines, put an HTTPS reverse proxy in front.
+      - 127.0.0.1:8080:8080
+        </script>
+      </div>
+
+      <h3>Trade-offs and limits</h3>
+      <ul class="trade">
+        <li>The planned install script writes <code>.env</code> only if none exists. A new key or password would orphan the database and every stored credential (§1).</li>
+        <li><code>docker compose pull</code> doesn't update <code>compose.yaml</code> itself. When a release changes it, download it from that release's tag.</li>
+        <li><code>CLAUDE.md</code> still says the frontend uses <code>adapter-auto</code>. The decision log and <code>package.json</code> say <code>adapter-static</code>, so that note looks stale.</li>
+      </ul>
+    </div>
+    <aside class="codecol" aria-label="Code for this chapter"></aside>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Snapshot of commit <code>df67bed</code> plus the working tree on 27 November 2026. Each snippet names its file and line range at that point. When the code moves, trust the code and update this page.</p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  document.documentElement.classList.add('js');
+
+  // Theme: auto -> dark -> light. Stored per viewer; works without storage.
+  const root = document.documentElement, btn = document.getElementById('theme');
+  const modes = ['auto', 'dark', 'light'];
+  let mode = 'auto';
+  try { mode = localStorage.getItem('walkthrough-theme') || 'auto'; } catch (e) {}
+  const applyTheme = () => {
+    if (mode === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', mode);
+    btn.textContent = 'Theme: ' + mode;
+  };
+  applyTheme();
+  btn.addEventListener('click', () => {
+    mode = modes[(modes.indexOf(mode) + 1) % modes.length];
+    try { localStorage.setItem('walkthrough-theme', mode); } catch (e) {}
+    applyTheme();
+  });
+
+  // Minimal highlighter: comments, strings, numbers, keywords, PascalCase types.
+  const KW = {
+    cs: 'abstract as async await base bool break byte case catch class const continue decimal default delegate do double else enum event explicit false finally fixed float for foreach get if implicit in init int interface internal is lock long namespace new not null object operator or and out override params private protected public readonly record ref required return sealed set short static string struct switch this throw true try typeof uint ulong using var virtual void volatile when where while with yield',
+    ts: 'as async await break case catch const continue default do else export extends false finally for from function if import in instanceof let new null of return switch throw true try type typeof undefined unknown var void while string number boolean',
+    yaml: 'true false null'
+  };
+  const sets = Object.fromEntries(Object.entries(KW).map(([k, v]) => [k, new Set(v.split(' '))]));
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const RX = {
+    cs: /(\/\/.*$)|(\$?@?"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)')|(\b\d[\d_]*(?:\.\d+)?\b)|(\b[A-Za-z_]\w*\b)/g,
+    ts: /(\/\/.*$)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\b\d[\d_]*(?:\.\d+)?\b)|(\b[A-Za-z_$][\w$]*\b)/g,
+    yaml: /(#.*$)|("(?:[^"\\]|\\.)*")|(\b\d+\b)|(^\s*-?\s*[A-Za-z_][\w.]*(?=:))/g
+  };
+  function paint(line, lang) {
+    const rx = RX[lang], kw = sets[lang];
+    let out = '', last = 0, m;
+    rx.lastIndex = 0;
+    while ((m = rx.exec(line))) {
+      out += esc(line.slice(last, m.index));
+      const t = m[0];
+      let cls = m[1] ? 'com' : m[2] ? 'str' : m[3] ? 'num'
+        : lang === 'yaml' ? 'key'
+        : kw.has(t) ? 'kw' : /^[A-Z][A-Za-z0-9]*$/.test(t) && /[a-z]/.test(t) ? 'type' : null;
+      out += cls ? `<span class="tk-${cls}">${esc(t)}</span>` : esc(t);
+      last = m.index + t.length;
+    }
+    return out + esc(line.slice(last));
+  }
+  const ranges = s => {
+    const set = new Set();
+    (s || '').split(',').filter(Boolean).forEach(part => {
+      const [a, b] = part.split('-').map(Number);
+      for (let i = a; i <= (b || a); i++) set.add(i);
+    });
+    return set;
+  };
+
+  let stepId = 0;
+  document.querySelectorAll('script[type="text/x-code"]').forEach(s => {
+    const lang = s.dataset.lang || 'cs', hl = ranges(s.dataset.hl);
+    const lines = s.textContent.replace(/\t/g, '    ').replace(/^\s*\n/, '').replace(/\s+$/, '').split('\n');
+    const code = lines.filter(l => l.trim() && !/^@@ \d+$/.test(l));
+    const indent = Math.min(...code.map(l => l.match(/^ */)[0].length));
+    let n = +s.dataset.start, first = n, last = n, html = '';
+    for (const l of lines) {
+      const jump = l.match(/^@@ (\d+)$/);
+      if (jump) { html += '<span class="gap">⋯</span>'; n = +jump[1]; continue; }
+      html += `<span class="row${hl.has(n) ? ' hl' : ''}"><span class="ln">${n}</span>${paint(l.slice(indent), lang)}</span>`;
+      last = n++;
+    }
+    const fig = document.createElement('figure');
+    fig.className = 'snip';
+    fig.innerHTML = `<figcaption class="snip-head"><span class="file mono">${esc(s.dataset.file)}</span><span class="range mono">L${first}–${last}</span></figcaption><pre><code>${html}</code></pre>`;
+    const step = s.closest('.step');
+    const id = 'st' + (++stepId);
+    step.dataset.step = id;
+    fig.dataset.for = id;
+    s.replaceWith(fig);
+  });
+
+  // Desktop: move each chapter's snippets into its sticky code column and show the active step's one.
+  const wide = matchMedia('(min-width: 1000px)');
+  const chapters = [...document.querySelectorAll('section.chapter')];
+  function activate(chapter, id) {
+    chapter.querySelectorAll('.step').forEach(st => st.classList.toggle('active', st.dataset.step === id));
+    chapter.querySelectorAll('.codecol figure.snip').forEach(f => f.classList.toggle('active', f.dataset.for === id));
+  }
+  function layout() {
+    for (const ch of chapters) {
+      const col = ch.querySelector('.codecol');
+      if (wide.matches) {
+        if (!col.querySelector('.hint')) col.insertAdjacentHTML('afterbegin', '<p class="hint">Code for the highlighted step · click a step to show its code</p>');
+        ch.querySelectorAll('.step figure.snip').forEach(f => col.appendChild(f));
+        const first = ch.querySelector('.step');
+        if (first && !ch.querySelector('.step.active')) activate(ch, first.dataset.step);
+      } else {
+        col.querySelectorAll('figure.snip').forEach(f => {
+          const st = ch.querySelector(`.step[data-step="${f.dataset.for}"]`);
+          if (st) st.appendChild(f);
+        });
+      }
+    }
+  }
+  layout();
+  wide.addEventListener('change', layout);
+
+  const io = new IntersectionObserver(entries => {
+    if (!wide.matches) return;
+    for (const e of entries) if (e.isIntersecting) activate(e.target.closest('section.chapter'), e.target.dataset.step);
+  }, { rootMargin: '-35% 0px -55% 0px' });
+  document.querySelectorAll('.step').forEach(st => {
+    io.observe(st);
+    st.addEventListener('click', () => { if (wide.matches) activate(st.closest('section.chapter'), st.dataset.step); });
+  });
+})();
+</script>
+</body>
+</html>
