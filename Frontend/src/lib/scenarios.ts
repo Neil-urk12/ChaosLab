@@ -85,7 +85,8 @@ export const parameterFields: Record<ScenarioType, Field[]> = {
 		{ key: 'credential', label: 'Credential', kind: 'choice', choices: [['expired', 'Expired token'], ['missing', 'Missing credentials'], ['invalid', 'Invalid token'], ['forbidden', 'Forbidden (403)']] }
 	],
 	DnsFailure: [
-		{ key: 'dependency', label: 'Dependency', kind: 'choice', choices: [['unreachable', 'Processor unreachable'], ['unresolvable', 'Host unresolvable']] }
+		{ key: 'dependency', label: 'Dependency', kind: 'choice', choices: [['unreachable', 'Processor unreachable'], ['unresolvable', 'Host unresolvable']] },
+		{ key: 'requests', label: 'Requests while down', kind: 'number', min: 1, max: 20, hint: 'More than one looks for a circuit breaker.' }
 	],
 	DuplicateRequest: [
 		{ key: 'copies', label: 'Copies sent', kind: 'number', min: 2, max: 10 },
@@ -117,6 +118,10 @@ function summarize(type: ScenarioType, p: Record<string, string | number>): stri
 			return 'Empty body';
 		case 'SlowDrip':
 			return `${p.bytes} B / ${p.intervalMs} ms`;
+		case 'DnsFailure': {
+			const requests = Number(p.requests ?? 1);
+			return requests > 1 ? `${choice(type, 'dependency', p.dependency)}, ${requests} requests` : choice(type, 'dependency', p.dependency);
+		}
 		case 'DuplicateRequest':
 			return `${p.copies} copies, ${{ same: 'same key', different: 'different keys', none: 'no key' }[p.key as string] ?? p.key}`;
 		case 'Baseline':

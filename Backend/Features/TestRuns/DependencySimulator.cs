@@ -93,7 +93,13 @@ public sealed class DependencySimulator(TimeProvider time)
         private readonly long armedAt = time.GetTimestamp();
         private int arrived;
 
-        public CallLog Log { get; } = new();
+        private volatile CallLog log = new();
+
+        // The calls since the runner's last Next: one log per faulted request, so a run of them shows when the target
+        // stopped calling (a circuit breaker opening). A late call from the request before lands in the next one's log.
+        public CallLog Log => log;
+
+        public CallLog Next() => log = new();
 
         // Malformed JSON and Empty Response: the call goes on to the dependency and its answer is changed on the way back.
         internal bool ChangesAnswer => type is ScenarioType.MalformedJson or ScenarioType.EmptyResponse;

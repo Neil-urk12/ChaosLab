@@ -9,6 +9,9 @@ describe('scenarios', () => {
 		expect(describeParameters('MalformedJson', { variant: 'truncated' })).toBe('Truncated body');
 		expect(describeParameters('AuthExpiry', { credential: 'expired' })).toBe('Expired token');
 		expect(describeParameters('EmptyResponse', {})).toBe('Empty body');
+		// Several requests while the dependency is down look for a circuit breaker; stored without `requests`, one.
+		expect(describeParameters('DnsFailure', { dependency: 'unreachable', requests: 10 })).toBe('Processor unreachable, 10 requests');
+		expect(describeParameters('DnsFailure', { dependency: 'unresolvable' })).toBe('Host unresolvable');
 	});
 
 	it('marks faults applied in the dependency path, and only those', () => {

@@ -44,7 +44,8 @@ public static class ScenarioRules
         [ScenarioType.EmptyResponse] = [Path],
         [ScenarioType.SlowDrip] = [new("bytes", 1, 65_536), new("intervalMs", 1, 10_000)],
         [ScenarioType.AuthExpiry] = [new("credential", Choices: ["expired", "missing", "invalid", "forbidden"])],
-        [ScenarioType.DnsFailure] = [new("dependency", Choices: ["unreachable", "unresolvable"])],
+        // requests: sent one after another while the dependency is down, to look for a circuit breaker; left out, one.
+        [ScenarioType.DnsFailure] = [new("dependency", Choices: ["unreachable", "unresolvable"]), new("requests", 1, 20, Optional: true)],
         [ScenarioType.DuplicateRequest] = [new("copies", 2, 10), new("key", Choices: ["same", "different", "none"]), new("delayMs", 0, 60_000)]
     };
 

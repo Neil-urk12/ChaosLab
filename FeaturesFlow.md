@@ -1,6 +1,6 @@
 # ChaosLab App Flow: Community / Self-Hosted Version
 
-**Status:** updated 21 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
+**Status:** updated 27 November 2026 to match PROJECT.md. Each process is tagged **[Done]** (implemented in the repository), **[Partial]**, or **[Planned]**. Items marked **[Open]** or **[Proposed]** are not decided yet; see PROJECT.md section 25.
 
 Conventions used below:
 
@@ -235,7 +235,9 @@ Built: invariants are saved on a scenario, snapshotted per execution, and checke
 3. Optionally define a read-back request used to verify resulting state.
 4. Save the invariant on the scenario. Each execution keeps a snapshot of it.
 
-### 2.15 Test run configuration [Partial]
+### 2.15 Test run configuration [Done]
+
+Built (`Backend/Features/TestRuns/GetPreflight.cs`, `CreateRun.cs`, the New Run page): the preflight checks reachability and the stored credential and lists what blocks a run; the page selects endpoints and scenarios (enabled defaults, per fault group, or per scenario), sets concurrency (1 to 5) and runner retries, and requires confirmation for state-changing and duplicate-request scenarios; the run stores its scoring version and configuration snapshot and is Queued.
 
 1. The user selects Create Test Run.
 2. Retrieve the project, API configuration, endpoints, and scenarios.
@@ -271,7 +273,7 @@ In the runner's path, 5xx Storm, 429 Throttle, Malformed JSON, and Empty Respons
 
 Every call is logged on arrival as for Dependency failure, each marked `injected` when the fault changed what the target got. A call still running when the faulted request ends counts toward the log but is not marked.
 
-**Dependency failure** uses the simulator instead. The target's dependency URL is pointed at `/api/simulator/{token}` on the ChaosLab backend, which forwards every call to the environment's dependency URL. The token is random, shown only to owners and editors, and replaced when the dependency URL changes or an owner or editor is removed or made a viewer. For the faulted request the runner arms the simulator, which then cuts the target's calls and logs them on the observation as `dependencyCalls`: `total`, and `calls` with the first 100 (time, method, path cut to 256 characters); a recovery request follows once it is disarmed. `unresolvable` closes the connection at once; `unreachable` stays silent until the target hangs up or the fault is disarmed. Neither is a real DNS failure or a refused connection: the target sees a closed connection. The scenario is skipped with a reason when the environment has no dependency URL, or when the target made no call through the simulator during the faulted request. Both apply to every scenario in the dependency path.
+**Dependency failure** uses the simulator instead. The target's dependency URL is pointed at `/api/simulator/{token}` on the ChaosLab backend, which forwards every call to the environment's dependency URL. The token is random, shown only to owners and editors, and replaced when the dependency URL changes or an owner or editor is removed or made a viewer. For the faulted request the runner arms the simulator, which then cuts the target's calls and logs them on the observation as `dependencyCalls`: `total`, and `calls` with the first 100 (time, method, path cut to 256 characters); a recovery request follows once it is disarmed. A Dependency failure with `requests` above 1 (1 to 20; generated scenarios have 5, stored ones without it have 1) sends that many faulted requests one after another, each with its own call log, to look for a circuit breaker; when one of them was answered without a dependency call and the baseline did not fail, the recovery request is repeated every 5 seconds, for up to 60 seconds, until the target answers normally, so the breaker has closed before the next scenario. `unresolvable` closes the connection at once; `unreachable` stays silent until the target hangs up or the fault is disarmed. Neither is a real DNS failure or a refused connection: the target sees a closed connection. The scenario is skipped with a reason when the environment has no dependency URL, or when the target made no call through the simulator during the faulted request. Both apply to every scenario in the dependency path.
 
 1. The user clicks Execute Tests. Set status to Running.
 2. For each endpoint and scenario combination: build the request, apply credentials, and send a baseline request when needed.
@@ -289,9 +291,9 @@ Every call is logged on arrival as for Dependency failure, each marked `injected
 3. Set the run status to Cancelled and keep the evidence collected so far.
 4. Partial runs are not scored as complete. **[Open]**: how a cancelled run is shown in history.
 
-### 2.18 Resilience pattern evaluation [Partial]
+### 2.18 Resilience pattern evaluation [Done]
 
-Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each completed scenario into its findings, linked to the run, endpoint, and scenario execution, with evidence (expected, observed, per-request facts, interpretation, invariant results). Each finding stores its own scoring category. A Dependency failure yields up to three findings, a 5xx Storm in the dependency path up to two; every other fault yields one. The scenario's outcome is its worst finding, and a judged finding outranks an Inconclusive or Not Applicable one. Skipped and runner-failed scenarios get no finding. The direct-request faults have rules with **[Proposed]** thresholds:
+Built (`Backend/Features/TestRuns/Evaluator.cs`): the runner evaluates each completed scenario into its findings, linked to the run, endpoint, and scenario execution, with evidence (expected, observed, per-request facts, interpretation, invariant results). Each finding stores its own scoring category. A Dependency failure yields up to four findings, a 5xx Storm in the dependency path up to two; every other fault yields one. The scenario's outcome is its worst finding, and a judged finding outranks an Inconclusive or Not Applicable one. Skipped and runner-failed scenarios get no finding. The direct-request faults have rules with **[Proposed]** thresholds:
 
 - **Latency** and **Timeout / Drop** (Timeout): the delayed request, or the recovery request after a dropped or held one, is compared with the baseline. Answered normally is Pass; a body cut short, or slower than three times the baseline and by more than one second, is Degraded; a 5xx, no response, or a 4xx after a successful baseline is Fail; a failed baseline, or a 4xx with no baseline, is Inconclusive.
 - **Duplicate Request** (Idempotency): any copy with a 5xx or no response is Fail; every copy rejected is Inconclusive. With the same key or no key, exactly one accepted copy is Pass, and several accepted copies are Inconclusive unless a held record-count invariant makes it Pass. With different keys, all accepted is Pass and some rejected is Degraded.
@@ -300,18 +302,17 @@ The injector's and the simulator's faults have rules with the thresholds decided
 
 - **Authentication Expiry** (Authentication Failure): 401 or 403 is Pass; a 3xx (redirects are not followed) or another 4xx is Degraded; a 5xx or no response is Fail; a 2xx is Fail with Critical severity.
 - **Slow Drip** (Timeout): the target closing the connection during the slow read is Pass; a body of 64 KB or more delivered in full, or still arriving at the request timeout, is Degraded; a smaller body is Inconclusive; a response with no body is Not Applicable.
-- **Dependency failure**, three findings:
+- **Dependency failure**, up to four findings, judged on the first faulted request and the last recovery request:
   - Dependency Failure: an answer with a 2xx, 3xx, 502, 503, or 504 is Pass; any other status is Degraded; no response is Fail.
   - Retry, from the simulator's call log, per dependency method and path: more than 5 calls is Fail; 2 to 5 calls at least 100 ms apart is Pass; a gap under 100 ms is Degraded; one call is Inconclusive. The worst operation decides.
   - Graceful Degradation (pattern Fallback): a 2xx or 3xx while the dependency is down is Pass; a 502, 503, or 504 is Degraded; anything else is Fail.
+  - Circuit Breaker (category Dependency Failure), only when several requests were sent: when one after the first was answered without a dependency call, the breaker opened, and a target answering normally once the dependency is back is Pass, while one still failing after 60 seconds is Degraded. Calling the dependency on every request is Inconclusive: the breaker may open after more failures.
   - When the baseline did not succeed, only the Dependency Failure finding is produced, as Inconclusive.
 - **5xx Storm** (Retry), **429 Throttle** (Rate-Limit), **Malformed JSON** and **Empty Response** (Response Validation) in the runner's path: only the runner sees these faults, so the finding is Fail when the target's own answer was a 5xx or missing on any request of the scenario, and Inconclusive otherwise. Empty Response on a body that is already empty, and Malformed JSON on a response that is not JSON, are Not Applicable.
 - **5xx Storm** in the dependency path, two findings: Retry, from the call log, with the Dependency failure rule above; and Graceful Degradation, with the Dependency failure rule above, on the target's answer. When the baseline did not succeed, only the Retry finding is produced, as Inconclusive.
 - **429 Throttle** in the dependency path (Rate-Limit): more than 5 calls to one operation is Fail; a 5xx other than 502, 503, or 504, or no response, is Fail; the throttled operation called again sooner than `Retry-After` is Degraded; anything else is Pass, including no second call.
 - **Malformed JSON** and **Empty Response** in the dependency path (Response Validation): a 2xx, 502, 503, or 504 is Pass; a 3xx or 4xx is Degraded; any other 5xx, or no response, is Fail. When the fault changed none of the dependency's answers (already empty, or nothing to corrupt), it is Not Applicable.
 - A violated invariant makes the finding Fail; for a Dependency failure that is the Dependency Failure finding, and for a 5xx Storm in the dependency path the Retry finding. Fail is High severity, Degraded is Medium, everything else is Info.
-
-Not built: circuit-breaker evidence, since no scenario sends the target several faulted requests in a row.
 
 1. Retrieve the observations for the run.
 2. Evaluate behavior under each injected failure and each duplicate-request scenario.
@@ -344,15 +345,17 @@ Built: the run results page and API, showing the score, evidence coverage, categ
 3. Display: overall score and evidence coverage, run status, category breakdown, counts of Pass / Degraded / Fail / Inconclusive / N/A, tested endpoints, executed scenarios, findings with severity, response and timing information, detected resilience behavior, failure timeline, and recommendations.
 4. The user may open an individual endpoint or scenario to see detailed observations, then return to the run.
 
-### 2.21 Failure timeline [Planned]
+### 2.21 Failure timeline [Partial]
+
+Built (`GetRun.cs`, the run results page and the PDF report): the request timelines of up to 20 scenarios with a Fail or Degraded finding, worst first, each request in order with its attempt, status or outcome, and a scenario-complete event. Not built: inspecting a single event, labelling the fault-injection start and recovery requests, and the findings page's "View in timeline" button (shown disabled).
 
 1. Retrieve the execution events of the run and order them chronologically.
 2. Identify failure-injection start, requests sent, errors and responses received, repeated attempts, timeout events, recovery events, and scenario completion.
 3. Build and display the timeline. The user can inspect individual events.
 
-### 2.22 Recommendation generation [Partial]
+### 2.22 Recommendation generation [Done]
 
-Built: every Fail and Degraded finding is saved with one recommendation, in the same step that saves the finding. The evaluator names the problem behind the finding, because one scoring category holds different problems (a retry storm, retries without a pause, and a target that fails without any fault are all Retry findings), and a fixed rule per problem gives the title and the fix. The results page, the findings page, and the findings export show it. Honoring `Retry-After` and validating a dependency's malformed or empty response have their rules, from the dependency-path findings (2.18). Not built: a rule for circuit breakers, because no finding can show that problem until circuit-breaker evidence is collected.
+Built: every Fail and Degraded finding is saved with one recommendation, in the same step that saves the finding. The evaluator names the problem behind the finding, because one scoring category holds different problems (a retry storm, retries without a pause, and a target that fails without any fault are all Retry findings), and a fixed rule per problem gives the title and the fix. The results page, the findings page, and the findings export show it. Honoring `Retry-After` and validating a dependency's malformed or empty response have their rules, from the dependency-path findings (2.18), and a circuit breaker that opens but does not close again has its rule from the Circuit Breaker finding.
 
 Decided: "weak" findings are not a separate kind; only Fail and Degraded findings get a recommendation, since an Inconclusive finding proves nothing about the API. A finding gets exactly one recommendation. Runs executed before this existed are not backfilled.
 

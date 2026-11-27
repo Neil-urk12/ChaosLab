@@ -253,17 +253,29 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         using var outbound = factory.CreateClient();
         string? simulatorUrl = null;
         var callsDependency = true;
+        // With a breaker: after two failed calls in a row, the target answers 503 without calling for one second.
+        var breaker = false;
+        var failures = 0;
+        var openUntil = DateTime.MinValue;
         using var listener = StartTarget(received, out var baseUrl, async () =>
         {
             if (!callsDependency)
                 return 200;
+            if (breaker && DateTime.UtcNow < openUntil)
+                return 503;
             using var patience = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
             try
             {
                 using var response = await outbound.GetAsync($"{simulatorUrl}/7?source=target", patience.Token);
+                failures = 0;
                 return (int)response.StatusCode;
             }
-            catch (Exception) { return 503; }
+            catch (Exception)
+            {
+                if (breaker && ++failures >= 2)
+                    (openUntil, failures) = (DateTime.UtcNow.AddSeconds(1), 0);
+                return 503;
+            }
         });
         using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
         var (projectId, scenarios) = await SetUpAsync(client, baseUrl);
@@ -289,9 +301,9 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
 
         var scenario = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.DnsFailure).Id;
         var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
-        async Task<Backend.Domain.Entities.ScenarioExecution> RunAsync(string dependency)
+        async Task<Backend.Domain.Entities.ScenarioExecution> RunAsync(string dependency, int? requests = null)
         {
-            await SetParametersAsync(client, projectId, scenario, new { dependency });
+            await SetParametersAsync(client, projectId, scenario, requests is null ? new { dependency } : new { dependency, requests });
             var runId = await CreateRunAsync(client, projectId, [scenario]);
             Assert.True(await executor.TickAsync(CancellationToken.None));
             await using var scope = factory.Services.CreateAsyncScope();
@@ -340,6 +352,26 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var missed = await RunAsync("unresolvable");
         Assert.Equal((ScenarioExecutionStatus.Skipped, RunExecutor.SimulatorNotInPath), (missed.Status, missed.FailureReason));
         Assert.Equal([("baseline", 200), ("fault", 200)], Seen(missed));
+
+        // A target with a circuit breaker: two cut calls open it, the next two requests make no call, and the first
+        // request after the fault still meets it open. The runner asks again until it has closed, and judges that one.
+        (callsDependency, breaker) = (true, true);
+        var tripped = await RunAsync("unresolvable", requests: 4);
+        Assert.Equal(
+            [("baseline", 200), ("fault", 503), ("fault", 503), ("fault", 503), ("fault", 503), ("recovery", 503), ("recovery", 200)],
+            Seen(tripped));
+        Assert.Equal([1, 1, 0, 0], tripped.Observations.OrderBy(o => o.AttemptNo).Skip(1).Take(4)
+            .Select(o => o.Metadata.RootElement.GetProperty("dependencyCalls").GetProperty("total").GetInt32()));
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var finding = await db.ResilienceFindings.AsNoTracking()
+                .SingleAsync(f => f.ScenarioExecutionId == tripped.Id && f.Pattern == ResiliencePattern.CircuitBreaker);
+            Assert.Equal((ScoringCategory.DependencyFailure, ResilienceFindingOutcome.Passed), (finding.Category, finding.Outcome));
+            // The isolation finding is judged on the last recovery request, so the open breaker is not taken for no recovery.
+            Assert.Equal(ResilienceFindingOutcome.Passed, (await db.ResilienceFindings.AsNoTracking()
+                .SingleAsync(f => f.ScenarioExecutionId == tripped.Id && f.Pattern == ResiliencePattern.DependencyFailure)).Outcome);
+        }
     }
 
     [Fact]

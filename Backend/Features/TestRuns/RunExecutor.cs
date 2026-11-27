@@ -33,6 +33,9 @@ public sealed class RunExecutor(
     private const int MaxStoredBodyBytes = 16 * 1024;
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(1);
+    // How long an opened circuit breaker gets to close again, asked every BreakerPoll (PROJECT.md 12.3, decision 10).
+    public static readonly TimeSpan BreakerWait = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan BreakerPoll = TimeSpan.FromSeconds(5);
 
     private sealed record RunConfig(int Concurrency, bool BaselineRequests, int RunnerRetries, TargetConfig Target);
 
@@ -379,11 +382,12 @@ public sealed class RunExecutor(
             return observation;
         }
 
+        HttpObservation? baseline = null;
         // Duplicate requests are the scenario's own requests; a baseline would add one more record for the invariant to count.
         if (execution.ScenarioType == ScenarioType.Baseline
             || (context.Config.BaselineRequests && execution.ScenarioType != ScenarioType.DuplicateRequest))
         {
-            var baseline = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+            baseline = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
                 new() { ["phase"] = "baseline" }, cancellationToken));
             // An unreachable target means the experiment never ran (PROJECT.md 10.3): skipped, not the target's failure.
             if (baseline.OutcomeType == ObservationOutcomeType.ConnectionError)
@@ -398,20 +402,46 @@ public sealed class RunExecutor(
             case var _ when simulated:
                 // The fault is in the target's outbound path (PROJECT.md 10.2): the runner's own request is sent as
                 // usual, and the simulator applies the fault to the calls the target makes to its dependency meanwhile.
+                // Dependency failure may send several requests while the dependency is down, to see whether the target
+                // stops calling it: a circuit breaker (PROJECT.md 12.3, decision 10). Stored before `requests` existed: one.
+                var requests = execution.ScenarioType == ScenarioType.DnsFailure
+                    && parameters.TryGetProperty("requests", out var burst) ? burst.GetInt32() : 1;
+                var opened = false;
                 using (var armed = simulator.Arm(context.Environment.Id, execution.ScenarioType, parameters))
                 {
-                    // The live call log ({total, calls}): it is written into the observation when the request ends.
-                    var metadata = new Dictionary<string, object?> { ["phase"] = "fault", ["dependencyCalls"] = armed.Log };
-                    if (execution.ScenarioType == ScenarioType.DnsFailure)
-                        metadata["dependency"] = parameters.GetProperty("dependency").GetString();
-                    faults = [await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
-                        metadata, cancellationToken))];
-                    // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
-                    if (faults[0].OutcomeType != ObservationOutcomeType.ConnectionError && armed.Log.Total == 0)
-                        return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
+                    var burstFaults = new List<HttpObservation>();
+                    for (var index = 0; index < requests; index++)
+                    {
+                        // The live call log ({total, calls}): it is written into the observation when the request ends.
+                        var log = armed.Next();
+                        var metadata = new Dictionary<string, object?> { ["phase"] = "fault", ["dependencyCalls"] = log };
+                        if (execution.ScenarioType == ScenarioType.DnsFailure)
+                            metadata["dependency"] = parameters.GetProperty("dependency").GetString();
+                        var fault = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                            metadata, cancellationToken));
+                        burstFaults.Add(fault);
+                        // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
+                        if (index == 0 && fault.OutcomeType != ObservationOutcomeType.ConnectionError && log.Total == 0)
+                            return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
+                        // Answered without calling after earlier requests did: the breaker opened.
+                        opened |= index > 0 && fault.UpstreamStatusCode is not null && log.Total == 0;
+                    }
+                    faults = [.. burstFaults];
                 }
-                await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                var recovery = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
                     new() { ["phase"] = "recovery" }, cancellationToken));
+                // An open breaker turns the next request away too, until it closes: ask again until the target answers
+                // normally, so a breaker is not taken for a target that never recovered, and the next scenario does not
+                // meet it still open. The evaluator judges the last of these requests. A baseline that did not succeed gets
+                // no breaker finding (Evaluator.Dependency), so there is nothing to wait for.
+                var giveUp = time.GetUtcNow() + BreakerWait;
+                opened &= baseline is null || (baseline.UpstreamStatusCode < 400 && baseline.ErrorType is null);
+                while (opened && !(recovery.UpstreamStatusCode < 400 && recovery.ErrorType is null) && time.GetUtcNow() < giveUp)
+                {
+                    await Task.Delay(BreakerPoll, time, cancellationToken);
+                    recovery = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
+                        new() { ["phase"] = "recovery" }, cancellationToken));
+                }
                 break;
             case ScenarioType.Latency:
                 // Runner-side delay (PROJECT.md 10.2): the request reaches the target late.

@@ -10,8 +10,6 @@ namespace Backend.Features.TestRuns;
 // Every finding says what was observed, what it suggests and what is not proven (PROJECT.md 11.2), and a violated
 // developer invariant makes it Fail (PROJECT.md 13).
 // The thresholds of the injector's and the simulator's faults are decided in PROJECT.md 12.3.
-// shortcut: no rule looks for circuit-breaker behavior, since no scenario sends the target several faulted requests in
-// a row; add one when the runner does.
 public static class Evaluator
 {
     // [Proposed] threshold (PROJECT.md 12.3): slower than three times the baseline and by more than a second is Degraded.
@@ -30,7 +28,7 @@ public static class Evaluator
         RetryStorm, RetryWithoutPause,
         DuplicatesBroke, SeparateRejected, DuplicateSideEffects,
         AnsweredWithoutCredential, AuthUnhandled, AuthWrongStatus,
-        DependencyNotContained, NoFallback, IgnoredRetryAfter, DependencyResponseUnhandled,
+        DependencyNotContained, NoFallback, IgnoredRetryAfter, DependencyResponseUnhandled, BreakerStuckOpen,
         InvariantViolated, FailedWithoutFault
     }
 
@@ -55,14 +53,15 @@ public static class Evaluator
     private sealed record Rated(ResiliencePattern Pattern, ScoringCategory Category, Verdict Verdict);
 
     // Empty when there is nothing to judge: Baseline is not a fault, and a scenario without fault requests never ran.
-    // A Dependency failure yields up to three findings, a 5xx Storm in the dependency path up to two, every other fault one.
+    // A Dependency failure yields up to four findings, a 5xx Storm in the dependency path up to two, every other fault one.
     public static IReadOnlyList<Finding> Evaluate(
         ScenarioType type, JsonElement parameters, IReadOnlyList<Invariant> invariants, IReadOnlyList<HttpObservation> observations)
     {
         List<HttpObservation> In(string phase) => observations.Where(o => Phase(o) == phase).OrderBy(o => o.AttemptNo).ToList();
         var baseline = In("baseline").FirstOrDefault();
         var faults = In("fault");
-        var probe = In("recovery").FirstOrDefault();
+        // Only Dependency failure may send several, while a circuit breaker closes: the last shows how the target came back.
+        var probe = In("recovery").LastOrDefault();
         if (faults.Count == 0)
             return [];
         // Faults the target met in its own dependency calls; the others only changed what the runner received.
@@ -95,7 +94,7 @@ public static class Evaluator
                 rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, SlowRead(baseline, faults[0], probe))];
                 break;
             case ScenarioType.DnsFailure when probe is not null:
-                rated = Dependency(baseline, faults[0], probe);
+                rated = Dependency(baseline, faults, probe);
                 break;
             case ScenarioType.ServerErrorStorm when simulated && probe is not null:
                 rated = Storm(baseline, faults[0], probe);
@@ -236,9 +235,11 @@ public static class Evaluator
         return After(verdict, baseline, probe, seen);
     }
 
-    // Dependency failure: how the endpoint contains it, how it retries the cut calls, and what its caller gets instead.
-    private static List<Rated> Dependency(HttpObservation? baseline, HttpObservation fault, HttpObservation probe)
+    // Dependency failure: how the endpoint contains it, how it retries the cut calls, and what its caller gets instead,
+    // all judged on the first request. Several requests also show whether a circuit breaker opens.
+    private static List<Rated> Dependency(HttpObservation? baseline, List<HttpObservation> faults, HttpObservation probe)
     {
+        var fault = faults[0];
         const string what = "A request sent while the target's dependency was down";
         var seen = Seen(baseline, what, fault, probe);
         var status = fault.UpstreamStatusCode;
@@ -261,7 +262,38 @@ public static class Evaluator
 
         rated.Add(new(ResiliencePattern.Retry, ScoringCategory.Retry, Retries(fault, seen)));
         rated.Add(new(ResiliencePattern.Fallback, ScoringCategory.GracefulDegradation, Fallback(what, "down", fault, seen)));
+        if (faults.Count > 1)
+            rated.Add(new(ResiliencePattern.CircuitBreaker, ScoringCategory.DependencyFailure, Breaker(baseline, faults, probe)));
         return rated;
+    }
+
+    // Requests sent one after another while the dependency is down (PROJECT.md 12.3, decision 10). One answered without a
+    // dependency call, after the first did call, is a breaker that opened; the target answering normally again, once the
+    // dependency is back and within RunExecutor.BreakerWait, is the breaker closing. Not opening is no defect: its
+    // threshold may be above the number of requests.
+    private static Verdict Breaker(HttpObservation? baseline, List<HttpObservation> faults, HttpObservation probe)
+    {
+        const string expected = "After repeated dependency failures the target stops calling the dependency for a while, and calls it again once it is back.";
+        const string notProven = "The breaker's failure threshold and how long it stays open.";
+        var totals = faults.Select(fault => CallLog(fault).Total).ToList();
+        var observed = $"Dependency calls for each of the {faults.Count} requests sent while it was down: {string.Join(", ", totals)}. "
+            + $"The last request after it was back: {Describe(probe)}.";
+        var opened = faults.FindIndex(1, fault => fault.UpstreamStatusCode is not null && CallLog(fault).Total == 0);
+        if (opened < 0)
+            return new(ResilienceFindingOutcome.Inconclusive, $"The target called its dependency on all {faults.Count} requests",
+                expected, observed, "No circuit breaker opened within this many failures.",
+                "Whether the target has a breaker that opens after more failures.");
+        var back = Compare(baseline, probe, "The request after the dependency was back", notProven).Outcome;
+        if (back == ResilienceFindingOutcome.Inconclusive)
+            return new(ResilienceFindingOutcome.Inconclusive, "The target stopped calling its dependency, but its normal answer is unknown",
+                expected, observed, "Behavior consistent with a circuit breaker opening.", "Whether the breaker closes again.");
+        if (back == ResilienceFindingOutcome.Failed)
+            return new(ResilienceFindingOutcome.Degraded,
+                $"The target stopped calling its dependency after {opened} failed requests, and was still not answering normally {RunExecutor.BreakerWait.TotalSeconds:0} s after it was back",
+                expected, observed, "A circuit breaker opened but did not close again.", notProven, Problem: Problem.BreakerStuckOpen);
+        return new(ResilienceFindingOutcome.Passed,
+            $"The target stopped calling its dependency after {opened} failed requests, and answered normally once it was back",
+            expected, observed, "Behavior consistent with a circuit breaker that opens and closes again.", notProven);
     }
 
     // 5xx Storm in the dependency path: the target's first dependency calls failed with a 5xx and later ones were

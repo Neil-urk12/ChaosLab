@@ -72,7 +72,7 @@ public static class ScenarioGenerator
 
         var upstream = new[] { "502", "503", "504" }.Where(declared.Contains).ToList();
         if (upstream.Count > 0)
-            plans.Add(new(ScenarioType.DnsFailure, new { dependency = "unreachable" },
+            plans.Add(new(ScenarioType.DnsFailure, new { dependency = "unreachable", requests = 5 },
                 $"Declares {string.Join("/", upstream)}, so it calls a dependency; needs the simulator in its outbound path.", false));
 
         if (method is "POST" or "PUT" or "PATCH")

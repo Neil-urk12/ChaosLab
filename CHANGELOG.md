@@ -7,6 +7,18 @@ by date.
 
 ## [Unreleased]
 
+### Added
+
+- Circuit-breaker evidence. A Dependency failure scenario has a new "Requests while down"
+  setting (1 to 20). With more than one, the runner sends that many requests while the
+  dependency is down and records the dependency calls of each. A request answered without
+  calling the dependency shows a breaker opening. The runner then waits up to 60 seconds for
+  the target to answer normally again, and a new Circuit Breaker finding in the Dependency
+  failure category is Pass when the breaker closes and Degraded, with a recommendation, when
+  it does not. A target that calls the dependency on every request gets Inconclusive. Newly
+  generated scenarios send 5 requests. Existing scenarios keep 1 and behave as before; set
+  the new field on the Scenarios tab to collect the evidence.
+
 ### Changed
 
 - The public site installs the release image. The landing page's install block and the

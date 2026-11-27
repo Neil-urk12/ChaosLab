@@ -4,8 +4,6 @@ namespace Backend.Features.TestRuns;
 
 // Maps the problem behind a Failed or Degraded finding to a fixed recommendation (FeaturesFlow 2.22, PROJECT.md 15.2).
 // Pure and deterministic: no AI, and ChaosLab never changes the target's code.
-// shortcut: no rule for circuit breakers, since no finding can show that problem yet; add it with the evaluator rule
-// that detects it.
 public static class Recommender
 {
     // Title names the fix, Why says what the finding showed, Fix says what to change in the API.
@@ -65,6 +63,9 @@ public static class Recommender
         [Problem.DependencyResponseUnhandled] = new("Validate a dependency's response before using it",
             "The endpoint did not answer in a controlled way when its dependency's response body was malformed or empty.",
             "Check the status, content type, and body of each dependency response, parse it inside error handling, and answer 502 when it is unusable instead of failing with a server error."),
+        [Problem.BreakerStuckOpen] = new("Let the circuit breaker close again",
+            "The endpoint stopped calling its failing dependency, but still did not answer normally once the dependency was back and the runner had waited for the breaker to close.",
+            "Give the breaker a bounded open period, then let a trial call through (half-open) and close the breaker when it succeeds."),
         [Problem.InvariantViolated] = new("Make the endpoint keep the invariant",
             "The endpoint broke a rule its developers set for this scenario.",
             "Change the endpoint so the invariant named in the finding holds under this fault, or correct the invariant if it no longer describes the intended behavior."),

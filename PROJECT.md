@@ -354,6 +354,10 @@ Exact thresholds that separate Pass, Degraded, and Fail per pattern (for example
 8. **429 Throttle checks that `Retry-After` is honoured.** The simulator answers the first call with 429 and `Retry-After`. More than 5 calls to one operation is Fail (retry storm); a 5xx other than 502, 503, or 504, or no response, is Fail; calling the throttled operation again sooner than `Retry-After` is Degraded; anything else is Pass, including not calling it again.
 9. **A broken dependency answer must be checked.** For Malformed JSON and Empty Response the simulator forwards each call and corrupts or empties the answer. A 2xx, 502, 503, or 504 is Pass; a 3xx or 4xx is Degraded; any other 5xx, or no response, is Fail. When the fault changed none of the answers, it is Not Applicable. Not proven: whether broken data reached the target's answer or its stored state.
 
+**Decided on 2026-11-27** for circuit-breaker evidence (section 25, item 3).
+
+10. **Circuit breaker, from several requests while the dependency is down.** Dependency failure gets an optional `requests` parameter (1 to 20; left out, as in every scenario stored before it, it means 1, so existing projects and past runs are unchanged; generated scenarios get 5). The runner sends that many requests one after another while the simulator cuts the dependency, each with its own call log. A request after the first that is answered without any dependency call is the breaker opening. An open breaker also turns away the first request after the fault, so the runner repeats the recovery request every 5 s for up to 60 s (not after a baseline that did not succeed, which gets no breaker finding) until the target answers normally, and the evaluator judges the last one; this also keeps a breaker from being still open in the next scenario. The Circuit Breaker finding counts in the Dependency Failure category (section 14.2 keeps circuit breaking an evidence signal, not a category): opened and closed again is Pass; opened and still failing after 60 s is Degraded; no request without a call is Inconclusive, like decision 3, because the breaker's threshold may be above the number of requests. Not proven: the threshold and the open period.
+
 ---
 
 # 13. Developer-Defined Invariants
@@ -680,7 +684,7 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 1. Confirm section 10.2 (what is under test and where the injector sits for each primitive) after a proof of concept.
 2. Prove feasibility of true timeout/drop, connection reset, slow-drip, and dependency-resolution simulation.
-3. Define how client retries, backoff, circuit breakers, and fallbacks are observed, and when they are reported Inconclusive.
+3. Define how client retries, backoff, circuit breakers, and fallbacks are observed, and when they are reported Inconclusive. Decided for the target's own calls to a dependency (section 12.3, decisions 2 to 4 and 10); still open for retries and breakers inside a separate consuming client.
 
 **Scenarios and data**
 
@@ -752,6 +756,12 @@ Decisions confirmed on 25 November 2026:
 | Topic | Decision |
 |---|---|
 | Fault placement setting (NEI-52) | 5xx Storm, 429 Throttle, Malformed JSON, and Empty Response get an optional `path` parameter, `runner` or `dependency`. Left out, as in every scenario stored before it, it means `runner`, so existing projects and past runs are unchanged. In the dependency path the simulator applies the fault, these scenarios run alone like Dependency failure, and they are judged by section 12.3, decisions 7 to 9. Rejected: separate scenario types for the dependency path (four new types, generator rules, and labels for the same faults). |
+
+Decisions confirmed on 27 November 2026:
+
+| Topic | Decision |
+|---|---|
+| Circuit-breaker evidence | Dependency failure gets an optional `requests` parameter (1 by default, 5 for generated scenarios) and sends that many requests while the dependency is down; a later request answered without a dependency call is a breaker opening. The Circuit Breaker finding counts in Dependency Failure; never opening is Inconclusive, not Degraded. Thresholds in section 12.3, decision 10. Rejected: a separate Circuit breaker scenario type (a new type, generator rule, labels and UI for the same fault). |
 
 ---
 

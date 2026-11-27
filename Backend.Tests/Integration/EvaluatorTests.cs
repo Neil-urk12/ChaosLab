@@ -100,6 +100,38 @@ public sealed class EvaluatorTests
     }
 
     [Fact]
+    public void Several_requests_while_the_dependency_is_down_show_whether_a_circuit_breaker_opens_and_closes()
+    {
+        // One call log per request sent while the dependency was down, an empty one meaning no call; then a recovery
+        // request the open breaker turned away, and the last one, which is judged.
+        (ResilienceFindingOutcome, Evaluator.Problem?)? Breaker(int recovery, params long[][] logs)
+        {
+            List<HttpObservation> observations = [Observation(1, "baseline", 200)];
+            observations.AddRange(logs.Select((calls, index) => Observation(index + 2, "fault", 503, calls: calls)));
+            observations.Add(Observation(logs.Length + 2, "recovery", 503));
+            observations.Add(Observation(logs.Length + 3, "recovery", recovery));
+            var findings = Evaluator.Evaluate(ScenarioType.DnsFailure, Parameters(new { dependency = "unreachable", requests = logs.Length }),
+                [], observations);
+            return findings.Where(f => f.Pattern == ResiliencePattern.CircuitBreaker)
+                .Select(f =>
+                {
+                    Assert.Equal(ScoringCategory.DependencyFailure, f.Category);
+                    return ((ResilienceFindingOutcome, Evaluator.Problem?)?)(f.Outcome, f.Problem);
+                })
+                .SingleOrDefault();
+        }
+
+        // Stopped calling after two failures, and answered normally once the dependency was back.
+        Assert.Equal((Passed, null), Breaker(200, [0], [0], [], []));
+        // Opened, but still turning requests away when the runner stopped waiting.
+        Assert.Equal((Degraded, Evaluator.Problem.BreakerStuckOpen), Breaker(503, [0], [0], [], []));
+        // Called on every request: a breaker may open after more failures, so this proves nothing.
+        Assert.Equal((Inconclusive, null), Breaker(200, [0], [0], [0]));
+        // One request, as stored before `requests` existed: no breaker finding at all.
+        Assert.Null(Breaker(200, [0]));
+    }
+
+    [Fact]
     public void A_fault_only_the_runner_sees_never_passes()
     {
         ResilienceFindingOutcome Seen(ScenarioType type, object parameters, int status = 200, long bytes = 2, string contentType = "application/json") =>
