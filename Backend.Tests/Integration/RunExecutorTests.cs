@@ -253,10 +253,13 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         using var outbound = factory.CreateClient();
         string? simulatorUrl = null;
         var callsDependency = true;
-        // With a breaker: after two failed calls in a row, the target answers 503 without calling for one second.
+        // With a breaker: after two failed calls in a row, the target answers 503 without calling for three seconds,
+        // long enough for the rest of the burst and the first recovery request, short of RunExecutor's 5 s poll.
         var breaker = false;
         var failures = 0;
         var openUntil = DateTime.MinValue;
+        // Set: the target's answer once its dependency call succeeds, in place of the dependency's own status.
+        int? answer = null;
         using var listener = StartTarget(received, out var baseUrl, async () =>
         {
             if (!callsDependency)
@@ -268,12 +271,12 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             {
                 using var response = await outbound.GetAsync($"{simulatorUrl}/7?source=target", patience.Token);
                 failures = 0;
-                return (int)response.StatusCode;
+                return answer ?? (int)response.StatusCode;
             }
             catch (Exception)
             {
                 if (breaker && ++failures >= 2)
-                    (openUntil, failures) = (DateTime.UtcNow.AddSeconds(1), 0);
+                    (openUntil, failures) = (DateTime.UtcNow.AddSeconds(3), 0);
                 return 503;
             }
         });
@@ -301,10 +304,10 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
 
         var scenario = scenarios.Single(s => s.HttpMethod == "POST" && s.Path == "/orders" && s.Type == ScenarioType.DnsFailure).Id;
         var executor = ActivatorUtilities.CreateInstance<RunExecutor>(factory.Services);
-        async Task<Backend.Domain.Entities.ScenarioExecution> RunAsync(string dependency, int? requests = null)
+        async Task<Backend.Domain.Entities.ScenarioExecution> RunAsync(string dependency, int? requests = null, bool baselineRequests = true)
         {
             await SetParametersAsync(client, projectId, scenario, requests is null ? new { dependency } : new { dependency, requests });
-            var runId = await CreateRunAsync(client, projectId, [scenario]);
+            var runId = await CreateRunAsync(client, projectId, [scenario], baselineRequests: baselineRequests);
             Assert.True(await executor.TickAsync(CancellationToken.None));
             await using var scope = factory.Services.CreateAsyncScope();
             return await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScenarioExecutions.AsNoTracking()
@@ -372,6 +375,16 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             Assert.Equal(ResilienceFindingOutcome.Passed, (await db.ResilienceFindings.AsNoTracking()
                 .SingleAsync(f => f.ScenarioExecutionId == tripped.Id && f.Pattern == ResiliencePattern.DependencyFailure)).Outcome);
         }
+
+        // Without a baseline a 4xx may be the endpoint's normal answer: once the breaker has closed and the target
+        // answers 422, the runner stops asking instead of polling out the whole wait, and the breaker's closing is unknown.
+        answer = 422;
+        var unknown = await RunAsync("unresolvable", requests: 4, baselineRequests: false);
+        Assert.Equal([("fault", 503), ("fault", 503), ("fault", 503), ("fault", 503), ("recovery", 503), ("recovery", 422)], Seen(unknown));
+        await using (var scope = factory.Services.CreateAsyncScope())
+            Assert.Equal(ResilienceFindingOutcome.Inconclusive, (await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+                .ResilienceFindings.AsNoTracking()
+                .SingleAsync(f => f.ScenarioExecutionId == unknown.Id && f.Pattern == ResiliencePattern.CircuitBreaker)).Outcome);
     }
 
     [Fact]
@@ -1281,10 +1294,11 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
     }
 
     internal static async Task<Guid> CreateRunAsync(
-        HttpClient client, Guid projectId, List<Guid> scenarioIds, int concurrency = 1, int runnerRetries = 0)
+        HttpClient client, Guid projectId, List<Guid> scenarioIds, int concurrency = 1, int runnerRetries = 0,
+        bool baselineRequests = true)
     {
         var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/runs",
-            new { scenarioIds, concurrency, runnerRetries, confirmStateChanging = true });
+            new { scenarioIds, concurrency, runnerRetries, baselineRequests, confirmStateChanging = true });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<CreateRun.Response>(Json))!.Id;
     }

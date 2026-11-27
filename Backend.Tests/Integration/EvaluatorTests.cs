@@ -129,6 +129,15 @@ public sealed class EvaluatorTests
         Assert.Equal((Inconclusive, null), Breaker(200, [0], [0], [0]));
         // One request, as stored before `requests` existed: no breaker finding at all.
         Assert.Null(Breaker(200, [0]));
+
+        // The isolation finding says which recovery request it judged: the last of several, or the only one.
+        string Isolation(params HttpObservation[] observations) => Evaluator.Evaluate(ScenarioType.DnsFailure,
+                Parameters(new { dependency = "unreachable" }), [], observations)
+            .Single(f => f.Pattern == ResiliencePattern.DependencyFailure).Evidence.RootElement.GetProperty("observed").GetString()!;
+        Assert.Contains("The last request after it: ", Isolation(Observation(1, "baseline", 200),
+            Observation(2, "fault", 503, calls: [0]), Observation(3, "recovery", 503), Observation(4, "recovery", 200)));
+        Assert.Contains("The request after it: ", Isolation(Observation(1, "baseline", 200),
+            Observation(2, "fault", 503, calls: [0]), Observation(3, "recovery", 200)));
     }
 
     [Fact]

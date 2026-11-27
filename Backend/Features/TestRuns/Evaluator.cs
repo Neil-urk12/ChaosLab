@@ -241,7 +241,9 @@ public static class Evaluator
     {
         var fault = faults[0];
         const string what = "A request sent while the target's dependency was down";
-        var seen = Seen(baseline, what, fault, probe);
+        // A gap in attempt numbers after the last fault: the recovery request was repeated while a breaker closed.
+        var seen = Seen(baseline, what, fault, probe,
+            probe.AttemptNo > faults[^1].AttemptNo + 1 ? "The last request after it" : "The request after it");
         var status = fault.UpstreamStatusCode;
         const string contained = "The target answers in a controlled way while its dependency is down, and normally once it is back.";
         const string howContained = "How the target isolates the dependency.";
@@ -410,7 +412,7 @@ public static class Evaluator
 
     // The simulator's log of the faulted request (DependencySimulator.CallLog): the stored calls in arrival order, and
     // how many there were in all.
-    private static (List<(string Operation, long AtMs, bool Injected)> Calls, int Total) CallLog(HttpObservation fault)
+    internal static (List<(string Operation, long AtMs, bool Injected)> Calls, int Total) CallLog(HttpObservation fault)
     {
         if (!fault.Metadata.RootElement.TryGetProperty("dependencyCalls", out var log) || log.ValueKind != JsonValueKind.Object)
             return ([], 0);
@@ -509,8 +511,9 @@ public static class Evaluator
         return (lowered ? Unrecovered(recovery) : fault) with { Expected = fault.Expected, Observed = seen };
     }
 
-    private static string Seen(HttpObservation? baseline, string what, HttpObservation fault, HttpObservation probe) =>
-        $"{(baseline is null ? "" : $"Baseline request: {Describe(baseline)}. ")}{what}: {Describe(fault)}. The request after it: {Describe(probe)}.";
+    private static string Seen(HttpObservation? baseline, string what, HttpObservation fault, HttpObservation probe,
+        string after = "The request after it") =>
+        $"{(baseline is null ? "" : $"Baseline request: {Describe(baseline)}. ")}{what}: {Describe(fault)}. {after}: {Describe(probe)}.";
 
     private static bool Succeeded(HttpObservation o) => o.UpstreamStatusCode < 400 && o.ErrorType is null;
 

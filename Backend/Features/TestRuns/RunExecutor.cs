@@ -420,11 +420,14 @@ public sealed class RunExecutor(
                         var fault = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
                             metadata, cancellationToken));
                         burstFaults.Add(fault);
+                        // The stored count, not the live log: a call arriving after the request ended must not make the
+                        // runner and the evaluator disagree on whether the breaker opened.
+                        var calls = Evaluator.CallLog(fault).Total;
                         // A target that answered without calling its dependency never met the fault (PROJECT.md 10.3).
-                        if (index == 0 && fault.OutcomeType != ObservationOutcomeType.ConnectionError && log.Total == 0)
+                        if (index == 0 && fault.OutcomeType != ObservationOutcomeType.ConnectionError && calls == 0)
                             return (ScenarioExecutionStatus.Skipped, SimulatorNotInPath);
                         // Answered without calling after earlier requests did: the breaker opened.
-                        opened |= index > 0 && fault.UpstreamStatusCode is not null && log.Total == 0;
+                        opened |= index > 0 && fault.UpstreamStatusCode is not null && calls == 0;
                     }
                     faults = [.. burstFaults];
                 }
@@ -433,10 +436,13 @@ public sealed class RunExecutor(
                 // An open breaker turns the next request away too, until it closes: ask again until the target answers
                 // normally, so a breaker is not taken for a target that never recovered, and the next scenario does not
                 // meet it still open. The evaluator judges the last of these requests. A baseline that did not succeed gets
-                // no breaker finding (Evaluator.Dependency), so there is nothing to wait for.
+                // no breaker finding (Evaluator.Dependency), so there is nothing to wait for. Without a baseline a 4xx may be
+                // the endpoint's normal answer (Evaluator.Compare), so only a 5xx or no answer means the breaker is open.
                 var giveUp = time.GetUtcNow() + BreakerWait;
                 opened &= baseline is null || (baseline.UpstreamStatusCode < 400 && baseline.ErrorType is null);
-                while (opened && !(recovery.UpstreamStatusCode < 400 && recovery.ErrorType is null) && time.GetUtcNow() < giveUp)
+                var normal = baseline is null ? 500 : 400;
+                while (opened && !(recovery.UpstreamStatusCode < normal && recovery.ErrorType is null)
+                    && time.GetUtcNow() + BreakerPoll <= giveUp)
                 {
                     await Task.Delay(BreakerPoll, time, cancellationToken);
                     recovery = await RecordAsync(SendAsync(context, execution, prepared, prepared.Create(), ++attempt, null,
