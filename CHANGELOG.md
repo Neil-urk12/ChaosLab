@@ -15,7 +15,9 @@ by date.
   calling the dependency shows a breaker opening. The runner then waits up to 60 seconds for
   the target to answer normally again, and a new Circuit Breaker finding in the Dependency
   failure category is Pass when the breaker closes and Degraded, with a recommendation, when
-  it does not. A target that calls the dependency on every request gets Inconclusive. Newly
+  it does not. That finding alone judges recovery once a breaker opened, so a breaker
+  stuck open does not also lower the Dependency failure finding to Fail. A target that calls
+  the dependency on every request gets Inconclusive. Newly
   generated scenarios send 5 requests. Existing scenarios keep 1 and behave as before; set
   the new field on the Scenarios tab to collect the evidence.
 

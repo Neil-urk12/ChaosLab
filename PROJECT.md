@@ -356,7 +356,7 @@ Exact thresholds that separate Pass, Degraded, and Fail per pattern (for example
 
 **Decided on 2026-11-27** for circuit-breaker evidence (section 25, item 3).
 
-10. **Circuit breaker, from several requests while the dependency is down.** Dependency failure gets an optional `requests` parameter (1 to 20; left out, as in every scenario stored before it, it means 1, so existing projects and past runs are unchanged; generated scenarios get 5). The runner sends that many requests one after another while the simulator cuts the dependency, each with its own call log. A request after the first that is answered without any dependency call is the breaker opening. An open breaker also turns away the first request after the fault, so the runner repeats the recovery request every 5 s for up to 60 s (not after a baseline that did not succeed, which gets no breaker finding) until the target answers normally (without a baseline, with any status below 500), and the evaluator judges the last one; this also keeps a breaker from being still open in the next scenario. The Circuit Breaker finding counts in the Dependency Failure category (section 14.2 keeps circuit breaking an evidence signal, not a category): opened and closed again is Pass; opened and still failing after 60 s is Degraded; no request without a call is Inconclusive, like decision 3, because the breaker's threshold may be above the number of requests. Not proven: the threshold and the open period.
+10. **Circuit breaker, from several requests while the dependency is down.** Dependency failure gets an optional `requests` parameter (1 to 20; left out, as in every scenario stored before it, it means 1, so existing projects and past runs are unchanged; generated scenarios get 5). The runner sends that many requests one after another while the simulator cuts the dependency, each with its own call log. A request after the first that is answered without any dependency call is the breaker opening. An open breaker also turns away the first request after the fault, so the runner repeats the recovery request every 5 s for up to 60 s (not after a baseline that did not succeed, which gets no breaker finding) until the target answers normally (without a baseline, with any status below 500), and the evaluator judges the last one; this also keeps a breaker from being still open in the next scenario. The Circuit Breaker finding counts in the Dependency Failure category (section 14.2 keeps circuit breaking an evidence signal, not a category): opened and closed again is Pass; opened and still failing after 60 s is Degraded; no request without a call is Inconclusive, like decision 3, because the breaker's threshold may be above the number of requests. Once a breaker opened, recovery is the Circuit Breaker finding's alone: the isolation finding keeps the faulted request's verdict instead of being lowered to Not Recovered, so a breaker stuck open gives one Degraded finding and one recommendation, not also a Fail. Not proven: the threshold and the open period.
 
 ---
 
@@ -680,10 +680,6 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 # 25. Open Decisions
 
-**Next up**
-
-19. Whether a circuit breaker stuck open should count twice. When a Dependency failure's breaker opens and the target is still not answering normally after the wait, two findings in the Dependency Failure category judge the same last recovery request: the isolation finding is lowered to Fail with Not Recovered (`Evaluator.After`), and the Circuit Breaker finding is Degraded with Breaker Stuck Open (section 12.3, decision 10). That scores 0 and 50 and gives two recommendations for one cause. Options: keep both (one judges recovery, the other the breaker), or, once a breaker opened, judge the isolation finding on the faulted request alone and leave recovery to the Circuit Breaker finding.
-
 **Architecture and testing semantics**
 
 1. Confirm section 10.2 (what is under test and where the injector sits for each primitive) after a proof of concept.
@@ -766,6 +762,12 @@ Decisions confirmed on 27 November 2026:
 | Topic | Decision |
 |---|---|
 | Circuit-breaker evidence | Dependency failure gets an optional `requests` parameter (1 by default, 5 for generated scenarios) and sends that many requests while the dependency is down; a later request answered without a dependency call is a breaker opening. The Circuit Breaker finding counts in Dependency Failure; never opening is Inconclusive, not Degraded. Thresholds in section 12.3, decision 10. Rejected: a separate Circuit breaker scenario type (a new type, generator rule, labels and UI for the same fault). |
+
+Decisions confirmed on 28 November 2026:
+
+| Topic | Decision |
+|---|---|
+| Breaker stuck open counts once (open decision 19) | Once a Dependency failure's breaker opened, the isolation finding is judged on the faulted request alone and recovery is left to the Circuit Breaker finding (section 12.3, decision 10). Rejected: keeping both findings, which scored one cause twice (Fail and Degraded) with two recommendations, and making Breaker Stuck Open a Fail. |
 
 ---
 

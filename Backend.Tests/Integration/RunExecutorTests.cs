@@ -371,7 +371,7 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
             var finding = await db.ResilienceFindings.AsNoTracking()
                 .SingleAsync(f => f.ScenarioExecutionId == tripped.Id && f.Pattern == ResiliencePattern.CircuitBreaker);
             Assert.Equal((ScoringCategory.DependencyFailure, ResilienceFindingOutcome.Passed), (finding.Category, finding.Outcome));
-            // The isolation finding is judged on the last recovery request, so the open breaker is not taken for no recovery.
+            // Once the breaker opened, the isolation finding is judged on the faulted request; recovery is the breaker finding's.
             Assert.Equal(ResilienceFindingOutcome.Passed, (await db.ResilienceFindings.AsNoTracking()
                 .SingleAsync(f => f.ScenarioExecutionId == tripped.Id && f.Pattern == ResiliencePattern.DependencyFailure)).Outcome);
         }
@@ -382,9 +382,14 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var unknown = await RunAsync("unresolvable", requests: 4, baselineRequests: false);
         Assert.Equal([("fault", 503), ("fault", 503), ("fault", 503), ("fault", 503), ("recovery", 503), ("recovery", 422)], Seen(unknown));
         await using (var scope = factory.Services.CreateAsyncScope())
-            Assert.Equal(ResilienceFindingOutcome.Inconclusive, (await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
-                .ResilienceFindings.AsNoTracking()
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(ResilienceFindingOutcome.Inconclusive, (await db.ResilienceFindings.AsNoTracking()
                 .SingleAsync(f => f.ScenarioExecutionId == unknown.Id && f.Pattern == ResiliencePattern.CircuitBreaker)).Outcome);
+            // The unknown closing is the breaker finding's; isolation is judged on the contained fault alone.
+            Assert.Equal(ResilienceFindingOutcome.Passed, (await db.ResilienceFindings.AsNoTracking()
+                .SingleAsync(f => f.ScenarioExecutionId == unknown.Id && f.Pattern == ResiliencePattern.DependencyFailure)).Outcome);
+        }
     }
 
     [Fact]

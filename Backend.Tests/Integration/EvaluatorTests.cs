@@ -104,15 +104,18 @@ public sealed class EvaluatorTests
     {
         // One call log per request sent while the dependency was down, an empty one meaning no call; then a recovery
         // request the open breaker turned away, and the last one, which is judged.
-        (ResilienceFindingOutcome, Evaluator.Problem?)? Breaker(int recovery, params long[][] logs)
+        IReadOnlyList<Evaluator.Finding> Findings(int recovery, params long[][] logs)
         {
             List<HttpObservation> observations = [Observation(1, "baseline", 200)];
             observations.AddRange(logs.Select((calls, index) => Observation(index + 2, "fault", 503, calls: calls)));
             observations.Add(Observation(logs.Length + 2, "recovery", 503));
             observations.Add(Observation(logs.Length + 3, "recovery", recovery));
-            var findings = Evaluator.Evaluate(ScenarioType.DnsFailure, Parameters(new { dependency = "unreachable", requests = logs.Length }),
+            return Evaluator.Evaluate(ScenarioType.DnsFailure, Parameters(new { dependency = "unreachable", requests = logs.Length }),
                 [], observations);
-            return findings.Where(f => f.Pattern == ResiliencePattern.CircuitBreaker)
+        }
+        (ResilienceFindingOutcome, Evaluator.Problem?)? Breaker(int recovery, params long[][] logs)
+        {
+            return Findings(recovery, logs).Where(f => f.Pattern == ResiliencePattern.CircuitBreaker)
                 .Select(f =>
                 {
                     Assert.Equal(ScoringCategory.DependencyFailure, f.Category);
@@ -125,6 +128,14 @@ public sealed class EvaluatorTests
         Assert.Equal((Passed, null), Breaker(200, [0], [0], [], []));
         // Opened, but still turning requests away when the runner stopped waiting.
         Assert.Equal((Degraded, Evaluator.Problem.BreakerStuckOpen), Breaker(503, [0], [0], [], []));
+        // That stuck breaker is the only finding for the unanswered recovery: isolation keeps the faulted request's verdict.
+        var isolation = Findings(503, [0], [0], [], []).Single(f => f.Pattern == ResiliencePattern.DependencyFailure);
+        Assert.Equal(Passed, isolation.Outcome);
+        // Its Expected no longer promises the recovery the Observed shows failing.
+        Assert.DoesNotContain("once it is back", isolation.Evidence.RootElement.GetProperty("expected").GetString());
+        // Without a breaker opening, the same recovery still lowers isolation to Not Recovered.
+        Assert.Equal(Evaluator.Problem.NotRecovered,
+            Findings(503, [0], [0], [0]).Single(f => f.Pattern == ResiliencePattern.DependencyFailure).Problem);
         // Called on every request: a breaker may open after more failures, so this proves nothing.
         Assert.Equal((Inconclusive, null), Breaker(200, [0], [0], [0]));
         // One request, as stored before `requests` existed: no breaker finding at all.

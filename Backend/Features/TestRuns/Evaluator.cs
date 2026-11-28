@@ -245,9 +245,10 @@ public static class Evaluator
         var seen = Seen(baseline, what, fault, probe,
             probe.AttemptNo > faults[^1].AttemptNo + 1 ? "The last request after it" : "The request after it");
         var status = fault.UpstreamStatusCode;
-        const string contained = "The target answers in a controlled way while its dependency is down, and normally once it is back.";
+        const string isolated = "The target answers in a controlled way while its dependency is down";
+        const string contained = isolated + ", and normally once it is back.";
         const string howContained = "How the target isolates the dependency.";
-        var isolation = After(status switch
+        var verdict = status switch
         {
             null => new Verdict(ResilienceFindingOutcome.Failed, $"{what} got {Describe(fault)}", contained, "",
                 "The dependency's failure became the endpoint's own.", howContained, Problem: Problem.DependencyNotContained),
@@ -256,10 +257,15 @@ public static class Evaluator
             _ => new Verdict(ResilienceFindingOutcome.Degraded, $"{what} was answered with {status}", contained, "",
                 "The endpoint answers, but not with a controlled error for a failed dependency.", howContained,
                 Problem: Problem.DependencyNotContained)
-        }, baseline, probe, seen);
+        };
+        // A baseline that never worked decides nothing about retries, fallbacks or breakers either.
+        var judged = baseline is null || Succeeded(baseline);
+        // Once a breaker opened, whether the target answers again is the Circuit Breaker finding's alone (PROJECT.md 26).
+        var isolation = judged && Opened(faults) >= 0
+            ? verdict with { Expected = isolated + ".", Observed = seen }
+            : After(verdict, baseline, probe, seen);
         List<Rated> rated = [new(ResiliencePattern.DependencyFailure, ScoringCategory.DependencyFailure, isolation)];
-        // A baseline that never worked decides nothing about retries or fallbacks either.
-        if (baseline is not null && !Succeeded(baseline))
+        if (!judged)
             return rated;
 
         rated.Add(new(ResiliencePattern.Retry, ScoringCategory.Retry, Retries(fault, seen)));
@@ -268,6 +274,10 @@ public static class Evaluator
             rated.Add(new(ResiliencePattern.CircuitBreaker, ScoringCategory.DependencyFailure, Breaker(baseline, faults, probe)));
         return rated;
     }
+
+    // The first request after the first answered without a dependency call, the breaker opening; -1 when none was.
+    private static int Opened(List<HttpObservation> faults) =>
+        faults.FindIndex(1, fault => fault.UpstreamStatusCode is not null && CallLog(fault).Total == 0);
 
     // Requests sent one after another while the dependency is down (PROJECT.md 12.3, decision 10). One answered without a
     // dependency call, after the first did call, is a breaker that opened; the target answering normally again, once the
@@ -280,7 +290,7 @@ public static class Evaluator
         var totals = faults.Select(fault => CallLog(fault).Total).ToList();
         var observed = $"Dependency calls for each of the {faults.Count} requests sent while it was down: {string.Join(", ", totals)}. "
             + $"The last request after it was back: {Describe(probe)}.";
-        var opened = faults.FindIndex(1, fault => fault.UpstreamStatusCode is not null && CallLog(fault).Total == 0);
+        var opened = Opened(faults);
         if (opened < 0)
             return new(ResilienceFindingOutcome.Inconclusive, $"The target called its dependency on all {faults.Count} requests",
                 expected, observed, "No circuit breaker opened within this many failures.",
