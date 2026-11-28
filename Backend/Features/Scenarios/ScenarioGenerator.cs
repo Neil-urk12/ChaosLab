@@ -36,7 +36,8 @@ public static class ScenarioGenerator
         var read = method is "GET" or "HEAD";
 
         plans.Add(new(ScenarioType.Latency, new { delayMs = 3000 },
-            read ? "Read endpoint; tests the timeout budget." : $"State-changing {method}; tests the timeout budget without a duplicate write.",
+            read ? "Read endpoint; checks a delayed request is answered normally."
+                : $"State-changing {method}; checks a delayed request is answered normally, without a duplicate write.",
             true));
 
         if (Idempotent.Contains(method))

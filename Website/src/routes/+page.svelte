@@ -14,7 +14,7 @@
 	];
 
 	const primitives = [
-		['Latency', 'Delays a response, to check timeouts and slow-dependency handling.'],
+		['Latency', "Delays the runner's request, to check the target answers it normally."],
 		['5xx Storm', 'Answers with repeated 500, 502 or 503 errors, to check retries and backoff.'],
 		['429 Throttle', 'Answers 429 Too Many Requests with Retry-After, to check rate-limit handling.'],
 		['Timeout / Drop', 'Holds or drops the connection, to check timeout enforcement and recovery.'],

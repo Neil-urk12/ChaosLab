@@ -337,9 +337,9 @@ Runner failures and unreachable targets (section 10.3) are **not** outcomes abou
 
 ## 12.3 Thresholds
 
-Exact thresholds that separate Pass, Degraded, and Fail per pattern (for example how long a response may take before Latency becomes Degraded) are **[Open]**. They must be fixed and documented before formal evaluation.
+The thresholds that separate Pass, Degraded, and Fail per pattern are fixed below for every fault (decisions 1 to 11), and must stay documented here before formal evaluation.
 
-**Decided on 2026-11-16** for the injector's and the simulator's faults (NEI-46). The thresholds of the direct-request faults (Latency, Timeout / Drop, Duplicate Request; `FeaturesFlow.md` 2.18) are still **[Proposed]**.
+**Decided on 2026-11-16** for the injector's and the simulator's faults (NEI-46). The direct-request faults (Latency, Timeout / Drop, Duplicate Request) were decided on 2026-11-28 (decision 11).
 
 1. **Faults only the runner sees are Fail or Inconclusive, never Pass.** 5xx Storm, 429 Throttle, Malformed JSON, and Empty Response in the runner's request path do not expose the target (section 10.2). The finding is Fail when the target's own answer broke (a 5xx or no response on a faulted or recovery request) and Inconclusive otherwise. Given up: Retry (from 5xx Storm), Rate-Limit, and Response Validation cannot score above 0 from these scenarios in the runner's path; in the dependency path they can (decisions 7 to 9).
 2. **Retry limits, read from the dependency call log.** More than 5 calls to the same method and path during one faulted request is a retry storm (Fail). 2 to 5 calls each at least 100 ms after the last is Pass; with a gap under 100 ms it is Degraded (no backoff).
@@ -357,6 +357,10 @@ Exact thresholds that separate Pass, Degraded, and Fail per pattern (for example
 **Decided on 2026-11-27** for circuit-breaker evidence (section 25, item 3).
 
 10. **Circuit breaker, from several requests while the dependency is down.** Dependency failure gets an optional `requests` parameter (1 to 20; left out, as in every scenario stored before it, it means 1, so existing projects and past runs are unchanged; generated scenarios get 5). The runner sends that many requests one after another while the simulator cuts the dependency, each with its own call log. A request after the first that is answered without any dependency call is the breaker opening. An open breaker also turns away the first request after the fault, so the runner repeats the recovery request every 5 s for up to 60 s (not after a baseline that did not succeed, which gets no breaker finding) until the target answers normally (without a baseline, with any status below 500), and the evaluator judges the last one; this also keeps a breaker from being still open in the next scenario. The Circuit Breaker finding counts in the Dependency Failure category (section 14.2 keeps circuit breaking an evidence signal, not a category): opened and closed again is Pass; opened and still failing after 60 s is Degraded; no request without a call is Inconclusive, like decision 3, because the breaker's threshold may be above the number of requests. Once a breaker opened, recovery is the Circuit Breaker finding's alone: the isolation finding keeps the faulted request's verdict instead of being lowered to Not Recovered, so a breaker stuck open gives one Degraded finding and one recommendation, not also a Fail. Not proven: the threshold and the open period.
+
+**Decided on 2026-11-28** for the direct-request faults (section 25, item 8).
+
+11. **Latency follows decision 1; Timeout / Drop and Duplicate Request keep their rules.** Latency only delays the runner's request before sending it, so the target never meets the fault: Fail when the target's own answer broke, Inconclusive otherwise, never Pass. Timeout / Drop compares the request after the held or dropped one with the baseline: answered normally is Pass; a body cut short, or slower than three times the baseline and by more than one second, is Degraded; a 5xx, no response, or a 4xx after a successful baseline is Fail; a failed baseline, or a 4xx with no baseline, is Inconclusive. The same comparison judges every fault's recovery request. The one-second margin keeps fast endpoints from turning Degraded on jitter. Duplicate Request keeps the rules in `FeaturesFlow.md` 2.18. Given up: Latency no longer scores in Timeout, where it used to give every healthy target a Pass; a Latency in the dependency path, with the simulator delaying the dependency's answer, would test the target's own timeouts and is not built.
 
 ---
 
@@ -695,7 +699,7 @@ Then add the remaining primitives to the same pipeline, starting with the straig
 
 **Evaluation and scoring**
 
-8. Thresholds separating Pass, Degraded, and Fail per pattern. Decided for the injector's and the simulator's faults (section 12.3); still open for the direct-request faults.
+8. ~~Thresholds separating Pass, Degraded, and Fail per pattern.~~ Decided: the injector's and the simulator's faults on 16 and 25 November 2026, the direct-request faults on 28 November 2026 (section 12.3).
 9. Confirm per-outcome points (Pass 100, Degraded 50, Fail 0).
 10. Whether severity caps the score; how baselines affect evaluation.
 11. Final list of invariant assertion types and the read-back mechanism.
@@ -768,6 +772,7 @@ Decisions confirmed on 28 November 2026:
 | Topic | Decision |
 |---|---|
 | Breaker stuck open counts once (open decision 19) | Once a Dependency failure's breaker opened, the isolation finding is judged on the faulted request alone and recovery is left to the Circuit Breaker finding (section 12.3, decision 10). Rejected: keeping both findings, which scored one cause twice (Fail and Degraded) with two recommendations, and making Breaker Stuck Open a Fail. |
+| Direct-request thresholds (open decision 8) | Latency, which only delays the runner's own request, is judged like the other faults only the runner sees: Fail or Inconclusive, never Pass. The slow rule (three times the baseline and more than one second) and the Timeout / Drop and Duplicate Request rules are confirmed as they were (section 12.3, decision 11). Rejected: keeping Latency's Pass, which every healthy target got without being tested, and a stricter slow rule (twice the baseline and 500 ms), which flags noisy test environments. |
 
 ---
 

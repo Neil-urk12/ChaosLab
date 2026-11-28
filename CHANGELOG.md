@@ -7,6 +7,16 @@ by date.
 
 ## [Unreleased]
 
+### Changed
+
+- Latency findings are no longer Pass. The runner only delays its own request before sending
+  it, so the target never meets the delay, and a healthy target used to get a Pass in Timeout
+  without being tested. Latency is now judged like the other faults only the runner sees: Fail
+  when the target's own answer is a 5xx or missing, Inconclusive otherwise. Inconclusive is not
+  scored, so Timeout scores can change in new runs; stored runs keep their findings and scores.
+  The other direct-request rules (Timeout / Drop, Duplicate Request) and the slow threshold
+  (three times the baseline and more than one second) are unchanged and now decided.
+
 ## [0.2.0] - 2026-11-28
 
 ### Added

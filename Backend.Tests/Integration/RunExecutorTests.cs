@@ -118,7 +118,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         // Each scenario that ran was evaluated into one finding; the skipped and the failed one were not.
         var findings = await db.ResilienceFindings.AsNoTracking().Where(f => f.TestRunId == runId).ToDictionaryAsync(f => f.ScenarioExecutionId!.Value);
         Assert.Equal(3, findings.Count);
-        Assert.Equal((ResiliencePattern.Timeout, ResilienceFindingOutcome.Passed, ScenarioOutcome.Passed),
+        // The target never meets a runner-side delay, so Latency cannot pass (PROJECT.md 12.3, decision 11).
+        Assert.Equal((ResiliencePattern.Timeout, ResilienceFindingOutcome.Inconclusive, ScenarioOutcome.Inconclusive),
             (findings[executions[latency].Id].Pattern, findings[executions[latency].Id].Outcome, executions[latency].Outcome));
         Assert.Equal(ResilienceFindingOutcome.Passed, findings[executions[drop].Id].Outcome);
         // Both copies were accepted and nothing read the records back, so the responses alone decide nothing.
@@ -726,12 +727,12 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var run = await db.TestRuns.AsNoTracking().SingleAsync(r => r.Id == runId);
-        // Two Timeout findings passed; the duplicate request was Inconclusive, so Idempotency is left out of the score
-        // and shows up as missing evidence instead.
-        Assert.Equal((TestRunStatus.Completed, 100m, 66.67m, "1.0"), (run.Status, run.ResilienceScore, run.EvidenceCoverage, run.ScoringVersion));
+        // The Timeout / Drop finding passed; Latency and the duplicate request were Inconclusive, so they are left out of
+        // the score and show up as missing evidence instead.
+        Assert.Equal((TestRunStatus.Completed, 100m, 33.33m, "1.0"), (run.Status, run.ResilienceScore, run.EvidenceCoverage, run.ScoringVersion));
         var categories = run.CategoryScores!.Deserialize<List<Scorer.CategoryScore>>(JsonSerializerOptions.Web)!;
         Assert.Equal(8, categories.Count);
-        Assert.Equal(new Scorer.CategoryScore(ScoringCategory.Timeout, 20, 100m, 2, 0), categories.Single(c => c.Category == ScoringCategory.Timeout));
+        Assert.Equal(new Scorer.CategoryScore(ScoringCategory.Timeout, 20, 100m, 2, 1), categories.Single(c => c.Category == ScoringCategory.Timeout));
         Assert.Equal(new Scorer.CategoryScore(ScoringCategory.Idempotency, 10, null, 1, 1), categories.Single(c => c.Category == ScoringCategory.Idempotency));
         // Categories are stored by name.
         Assert.Equal("Timeout", run.CategoryScores.RootElement[0].GetProperty("category").GetString());

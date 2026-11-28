@@ -242,20 +242,45 @@ public sealed class EvaluatorTests
         Evaluator.Evaluate(ScenarioType.Latency, Parameters(new { delayMs = 3000 }), invariants,
             baseline is null ? [fault] : [baseline, fault]).SingleOrDefault()?.Outcome;
 
+    // The runner only delays its own request, so the target never meets the fault: Fail or Inconclusive, never Pass.
     [Fact]
-    public void Compares_the_faulted_request_with_the_baseline()
+    public void Never_passes_latency_the_target_did_not_meet()
     {
         var baseline = Observation(1, "baseline", 200);
-        Assert.Equal(ResilienceFindingOutcome.Passed, Latency(baseline, Observation(2, "fault", 200)));
+        Assert.Equal(ResilienceFindingOutcome.Inconclusive, Latency(baseline, Observation(2, "fault", 200)));
+        Assert.Equal(ResilienceFindingOutcome.Inconclusive, Latency(baseline, Observation(2, "fault", 200, durationMs: 1500)));
         Assert.Equal(ResilienceFindingOutcome.Failed, Latency(baseline, Observation(2, "fault", 503)));
         Assert.Equal(ResilienceFindingOutcome.Failed,
             Latency(baseline, Observation(2, "fault", null, outcome: ObservationOutcomeType.Timeout)));
-        // Slower than three times the baseline and by more than a second.
-        Assert.Equal(ResilienceFindingOutcome.Degraded, Latency(baseline, Observation(2, "fault", 200, durationMs: 1500)));
-        Assert.Equal(ResilienceFindingOutcome.Degraded, Latency(baseline, Observation(2, "fault", 200, error: "cut")));
-        // A broken baseline, or a rejected request with no baseline, proves nothing about the fault.
+        // A broken baseline proves nothing about the fault.
         Assert.Equal(ResilienceFindingOutcome.Inconclusive, Latency(Observation(1, "baseline", 500), Observation(2, "fault", 500)));
-        Assert.Equal(ResilienceFindingOutcome.Inconclusive, Latency(null, Observation(1, "fault", 404)));
+        // Latency has no dependency-path setting, so its evidence must not point to one.
+        var notProven = Evaluator.Evaluate(ScenarioType.Latency, Parameters(new { delayMs = 3000 }), [], [baseline, Observation(2, "fault", 200)])
+            .Single().Evidence.RootElement.GetProperty("interpretation").GetProperty("notProven").GetString();
+        Assert.Contains("not built", notProven);
+    }
+
+    private static ResilienceFindingOutcome? Dropped(HttpObservation? baseline, HttpObservation probe)
+    {
+        HttpObservation[] rest = [Observation(2, "fault", null, outcome: ObservationOutcomeType.Dropped), probe];
+        return Evaluator.Evaluate(ScenarioType.TimeoutDrop, Parameters(new { mode = "drop" }), [],
+            baseline is null ? rest : [baseline, .. rest]).SingleOrDefault()?.Outcome;
+    }
+
+    [Fact]
+    public void Compares_the_request_after_a_drop_with_the_baseline()
+    {
+        var baseline = Observation(1, "baseline", 200);
+        Assert.Equal(ResilienceFindingOutcome.Passed, Dropped(baseline, Observation(3, "recovery", 200)));
+        Assert.Equal(ResilienceFindingOutcome.Failed, Dropped(baseline, Observation(3, "recovery", 503)));
+        Assert.Equal(ResilienceFindingOutcome.Failed,
+            Dropped(baseline, Observation(3, "recovery", null, outcome: ObservationOutcomeType.Timeout)));
+        // Slower than three times the baseline and by more than a second.
+        Assert.Equal(ResilienceFindingOutcome.Degraded, Dropped(baseline, Observation(3, "recovery", 200, durationMs: 1500)));
+        Assert.Equal(ResilienceFindingOutcome.Degraded, Dropped(baseline, Observation(3, "recovery", 200, error: "cut")));
+        // A broken baseline, or a rejected request with no baseline, proves nothing about the fault.
+        Assert.Equal(ResilienceFindingOutcome.Inconclusive, Dropped(Observation(1, "baseline", 500), Observation(3, "recovery", 500)));
+        Assert.Equal(ResilienceFindingOutcome.Inconclusive, Dropped(null, Observation(3, "recovery", 404)));
     }
 
     [Fact]
@@ -373,7 +398,8 @@ public sealed class EvaluatorTests
         };
         var fault = Observation(2, "fault", 200, body: "{\"order\":{\"status\":\"paid\",\"stock\":2}}");
 
-        Assert.Equal(holds ? ResilienceFindingOutcome.Passed : ResilienceFindingOutcome.Failed,
+        // Latency alone is Inconclusive (it cannot pass), so only a violated invariant changes its outcome.
+        Assert.Equal(holds ? ResilienceFindingOutcome.Inconclusive : ResilienceFindingOutcome.Failed,
             Latency(Observation(1, "baseline", 200), fault, new Invariant(type, parameters, null)));
     }
 

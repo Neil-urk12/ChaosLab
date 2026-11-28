@@ -16,11 +16,6 @@ public static class Recommender
     {
         [Problem.Unhandled] = new("Set timeout budgets and handle the failure",
             "The endpoint answered with an error, or not at all, under this fault.", TimeoutBudget),
-        [Problem.SlowUnderFault] = new("Bound how long the endpoint may take",
-            "The endpoint answered, but much more slowly than without the fault.", TimeoutBudget),
-        [Problem.CutShort] = new("Finish or fail the response cleanly",
-            "The endpoint answered, but its response body was cut short.",
-            "Send a complete response or a clear error within the timeout budget; do not let a response end part-way."),
         [Problem.NotRecovered] = new("Release what a failed request holds",
             "The request sent after the fault was not answered normally.",
             "Free connections, locks, and pooled resources when a request fails or its caller goes away, so one failure does not affect the next request."),

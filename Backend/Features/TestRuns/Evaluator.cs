@@ -12,7 +12,7 @@ namespace Backend.Features.TestRuns;
 // The thresholds of the injector's and the simulator's faults are decided in PROJECT.md 12.3.
 public static class Evaluator
 {
-    // [Proposed] threshold (PROJECT.md 12.3): slower than three times the baseline and by more than a second is Degraded.
+    // Decided threshold (PROJECT.md 12.3): slower than three times the baseline and by more than a second is Degraded.
     private const long SlowMarginMs = 1000;
     // Decided thresholds (PROJECT.md 12.3). A smaller body has left the target before the slow read's first pause.
     private const long SlowReadMinBytes = 64 * 1024;
@@ -24,7 +24,7 @@ public static class Evaluator
     // and a target that fails without any fault are both Retry findings. Recommender has one rule per value.
     public enum Problem
     {
-        Unhandled, SlowUnderFault, CutShort, NotRecovered, NoReadDeadline,
+        Unhandled, NotRecovered, NoReadDeadline,
         RetryStorm, RetryWithoutPause,
         DuplicatesBroke, SeparateRejected, DuplicateSideEffects,
         AnsweredWithoutCredential, AuthUnhandled, AuthWrongStatus,
@@ -47,9 +47,6 @@ public static class Evaluator
         RecommendationSeverity? Severity = null,
         Problem? Problem = null);
 
-    // A request after the fault that is not answered normally: whatever it got, the problem is the missing recovery.
-    private static Verdict Unrecovered(Verdict after) => after.Problem is null ? after : after with { Problem = Problem.NotRecovered };
-
     private sealed record Rated(ResiliencePattern Pattern, ScoringCategory Category, Verdict Verdict);
 
     // Empty when there is nothing to judge: Baseline is not a fault, and a scenario without fault requests never ran.
@@ -71,16 +68,14 @@ public static class Evaluator
         switch (type)
         {
             case ScenarioType.Latency:
-                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout,
-                    Compare(baseline, faults[0], $"A request delayed by {parameters.GetProperty("delayMs").GetInt32()} ms",
-                        "Whether the target enforces its own timeouts on slow callers or slow dependencies."))];
+                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, RunnerOnly(type, baseline, faults, probe))];
                 break;
             case ScenarioType.TimeoutDrop when probe is not null:
-                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, Unrecovered(Compare(baseline, probe,
+                rated = [new(ResiliencePattern.Timeout, ScoringCategory.Timeout, Compare(baseline, probe,
                     parameters.GetProperty("mode").GetString() == "hold"
                         ? "The request after one the runner held open until it timed out"
                         : "The request after one whose connection the runner dropped",
-                    "Whether the target stopped working on the abandoned request or released its resources.")))];
+                    "Whether the target stopped working on the abandoned request or released its resources."))];
                 break;
             case ScenarioType.DuplicateRequest:
                 rated = [new(ResiliencePattern.Idempotency, ScoringCategory.Idempotency,
@@ -477,11 +472,13 @@ public static class Evaluator
     }
 
     // 5xx Storm, 429 Throttle, Malformed JSON and Empty Response in the runner's path change only what the runner
-    // receives (PROJECT.md 10.2): the target never meets the fault, so nothing here can pass (PROJECT.md 12.3).
+    // receives (PROJECT.md 10.2), and Latency only delays the runner's own request: the target never meets the fault,
+    // so nothing here can pass (PROJECT.md 12.3).
     private static Verdict RunnerOnly(ScenarioType type, HttpObservation? baseline, List<HttpObservation> faults, HttpObservation? probe)
     {
         var name = type switch
         {
+            ScenarioType.Latency => "a slow answer",
             ScenarioType.ServerErrorStorm => "a run of 5xx answers",
             ScenarioType.Throttle429 => "a 429 with Retry-After",
             ScenarioType.MalformedJson => "a malformed response body",
@@ -491,7 +488,9 @@ public static class Evaluator
         var all = faults.Append(probe).OfType<HttpObservation>().ToList();
         var seen = string.Join(" ", all.Prepend(baseline).OfType<HttpObservation>()
             .Select(o => $"Attempt {o.AttemptNo} ({Phase(o)}), the target's own answer: {Describe(o)}."));
-        var notProven = $"How the target handles {name} from one of its own dependencies; the fault has to be in the dependency path for that.";
+        var notProven = type == ScenarioType.Latency
+            ? "How the target handles a slow answer from one of its own dependencies; a delay in the dependency path would show that, and it is not built."
+            : $"How the target handles {name} from one of its own dependencies; the fault has to be in the dependency path for that.";
         if (baseline is not null && !Succeeded(baseline))
             return new(ResilienceFindingOutcome.Inconclusive, "The baseline request did not succeed, so the fault's effect could not be judged",
                 expected, seen, "The endpoint or the spec's example request does not work without a fault either.", notProven);
@@ -506,7 +505,9 @@ public static class Evaluator
             && (faults[0].ResponseBytes is null or 0 || Header(faults[0], "Content-Type")?.Contains("json", StringComparison.OrdinalIgnoreCase) != true))
             return new(ResilienceFindingOutcome.NotApplicable, "The target's own response is not JSON, so there was nothing to corrupt",
                 expected, seen, "Malformed JSON does not apply to this endpoint.", notProven);
-        return new(ResilienceFindingOutcome.Inconclusive, $"Only the runner received {name}, so how the target handles it was not observed",
+        return new(ResilienceFindingOutcome.Inconclusive, type == ScenarioType.Latency
+                ? "The runner only delayed its own request, so how the target handles a slow answer was not observed"
+                : $"Only the runner received {name}, so how the target handles it was not observed",
             expected, seen, "The fault was reproduced, and the target answered normally throughout.", notProven);
     }
 
@@ -518,7 +519,7 @@ public static class Evaluator
         var lowered = recovery.Outcome == ResilienceFindingOutcome.Inconclusive
             || (recovery.Outcome == ResilienceFindingOutcome.Failed && fault.Outcome != ResilienceFindingOutcome.Failed)
             || (recovery.Outcome == ResilienceFindingOutcome.Degraded && fault.Outcome == ResilienceFindingOutcome.Passed);
-        return (lowered ? Unrecovered(recovery) : fault) with { Expected = fault.Expected, Observed = seen };
+        return (lowered ? recovery : fault) with { Expected = fault.Expected, Observed = seen };
     }
 
     private static string Seen(HttpObservation? baseline, string what, HttpObservation fault, HttpObservation probe,
@@ -555,7 +556,8 @@ public static class Evaluator
         return missing ? null : path;
     }
 
-    // The same request with and without the fault: `subject` is the request that shows the fault's effect.
+    // The request sent after the fault, compared with the baseline. Whatever it got, a request after the fault that is not
+    // answered normally is a missing recovery.
     private static Verdict Compare(HttpObservation? baseline, HttpObservation subject, string what, string notProven)
     {
         var expected = $"{what} is answered like a normal request.";
@@ -569,16 +571,16 @@ public static class Evaluator
                 "How the endpoint behaves under this fault.");
         if (status is null or >= 500 || (status >= 400 && baseline is not null))
             return new(ResilienceFindingOutcome.Failed, $"{what} got {Describe(subject)}", expected, seen,
-                "The endpoint did not handle this condition.", "Where in the target the failure comes from.", Problem: Problem.Unhandled);
+                "The endpoint did not handle this condition.", "Where in the target the failure comes from.", Problem: Problem.NotRecovered);
         if (status >= 400)
             return new(ResilienceFindingOutcome.Inconclusive, $"The target rejected the request with {status}, so the fault's effect could not be judged",
                 expected, seen, "The spec's example request is not valid for the target.", "How the endpoint behaves under this fault.");
         if (subject.ErrorType is not null)
             return new(ResilienceFindingOutcome.Degraded, $"{what} was answered, but the response body was cut short", expected, seen,
-                "The endpoint answers under this condition, but not completely.", notProven, Problem: Problem.CutShort);
+                "The endpoint answers under this condition, but not completely.", notProven, Problem: Problem.NotRecovered);
         if (baseline?.DurationMs is { } normal && subject.DurationMs is { } took && took > Math.Max(3 * normal, normal + SlowMarginMs))
             return new(ResilienceFindingOutcome.Degraded, $"{what} was answered in {took} ms, against {normal} ms for the baseline", expected, seen,
-                "The endpoint answers under this condition, but much more slowly.", notProven, Problem: Problem.SlowUnderFault);
+                "The endpoint answers under this condition, but much more slowly.", notProven, Problem: Problem.NotRecovered);
         return new(ResilienceFindingOutcome.Passed, $"{what} was answered normally", expected, seen,
             "The endpoint tolerates this condition.", notProven);
     }
