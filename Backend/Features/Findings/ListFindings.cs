@@ -32,6 +32,8 @@ public static class ListFindings
         string Path,
         // Scenario execution that produced the finding, which the run results page shows the timeline of.
         Guid? ExecutionId,
+        // Catalog scenario of that execution, which "Rerun failed" selects on the new run page.
+        Guid? ScenarioId,
         // Fault of the scenario execution that produced the finding; null when the finding has no execution.
         ScenarioType? ScenarioType,
         string Summary,
@@ -77,7 +79,7 @@ public static class ListFindings
             .Select(finding => new
             {
                 finding.Id, finding.Severity, finding.Outcome, finding.Pattern, finding.Category, finding.Endpoint.HttpMethod,
-                finding.Endpoint.Path, finding.ScenarioExecutionId, ScenarioType = (ScenarioType?)finding.ScenarioExecution!.ScenarioType,
+                finding.Endpoint.Path, finding.ScenarioExecutionId, ScenarioId = (Guid?)finding.ScenarioExecution!.ScenarioId, ScenarioType = (ScenarioType?)finding.ScenarioExecution!.ScenarioType,
                 finding.Summary, finding.Evidence,
                 Recommendation = db.Recommendations
                     .Where(recommendation => recommendation.ResilienceFindingId == finding.Id)
@@ -89,7 +91,7 @@ public static class ListFindings
             .ToListAsync(cancellationToken);
 
         return TypedResults.Ok(new Response(runs, selected, rows.Select(row => new Row(
-            row.Id, row.Severity, row.Outcome, row.Pattern, row.Category ?? Scorer.CategoryOf(row.ScenarioType, row.Pattern), row.HttpMethod, row.Path, row.ScenarioExecutionId, row.ScenarioType, row.Summary,
+            row.Id, row.Severity, row.Outcome, row.Pattern, row.Category ?? Scorer.CategoryOf(row.ScenarioType, row.Pattern), row.HttpMethod, row.Path, row.ScenarioExecutionId, row.ScenarioId, row.ScenarioType, row.Summary,
             row.Evidence.RootElement.Clone(), row.Recommendation)).ToList()));
     }
 }

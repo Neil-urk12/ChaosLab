@@ -39,11 +39,11 @@ public sealed class ReportDocumentTests
         List<ListFindings.Row> findings =
         [
             new(Guid.NewGuid(), RecommendationSeverity.High, ResilienceFindingOutcome.Failed, ResiliencePattern.Retry,
-                ScoringCategory.Retry, "GET", "/orders/{id}", null, ScenarioType.ServerErrorStorm, "The target failed during the storm",
+                ScoringCategory.Retry, "GET", "/orders/{id}", null, null, ScenarioType.ServerErrorStorm, "The target failed during the storm",
                 evidence, new ListFindings.RecommendationInfo("Limit retries", "Use bounded retries with backoff and jitter.")),
             // A finding saved before evidence had a fixed shape.
             new(Guid.NewGuid(), RecommendationSeverity.Info, ResilienceFindingOutcome.Passed, ResiliencePattern.Timeout,
-                null, "GET", "/orders/{id}", null, null, "Answered normally", JsonSerializer.SerializeToElement("legacy"), null)
+                null, "GET", "/orders/{id}", null, null, null, "Answered normally", JsonSerializer.SerializeToElement("legacy"), null)
         ];
         var data = new ReportData("Orders & Billing", "Orders", "1.0", "3.0.3", run,
             JsonSerializer.SerializeToElement(new { concurrency = 2, target = new { baseUrl = "https://staging.example.test" } }),

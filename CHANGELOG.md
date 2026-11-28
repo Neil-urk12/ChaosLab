@@ -9,6 +9,9 @@ by date.
 
 ### Added
 
+- Rerun failed: a finished run's results page opens a new run with only its failed or degraded
+  scenarios selected. The preflight checks and the state-changing confirmation still apply, and
+  scenarios no longer in the included endpoints are left out with a note.
 - View in timeline: a failed or degraded finding on the findings page opens the run results at
   its scenario's failure timeline, even when that scenario is not among the run's 20 worst.
 

@@ -6,7 +6,7 @@
 	import { findingCategory, outcomeLabels, scoringCategoryLabels } from '$lib/findings';
 	import { dateTime, duration, PLACEHOLDER, score, scoreLabel } from '$lib/format';
 	import { problemMessage, send } from '$lib/problem';
-	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, runLabel, statusStyles, type FeedResult } from '$lib/runs';
+	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, rerunScenarioIds, runLabel, statusStyles, type FeedResult } from '$lib/runs';
 	import { categories as faultCategories, describeInvariant, describeParameters, faultLabels } from '$lib/scenarios';
 
 	let { data } = $props();
@@ -60,6 +60,7 @@
 	});
 
 	const failing = $derived(findings.filter((f) => f.outcome === 'Failed' || f.outcome === 'Degraded'));
+	const rerunCount = $derived(rerunScenarioIds(findings).length);
 	// The findings query returns severity order, so the first rows are the worst.
 	const topFindings = $derived(failing.slice(0, 4));
 	const recommended = $derived(failing.filter((f) => f.recommendation));
@@ -290,7 +291,9 @@
 		{#if run.previous}
 			<button type="button" disabled title="Comparing runs is not available yet" class={disabledButton}>Compare with {runLabel(run.previous)}</button>
 		{/if}
-		<button type="button" disabled title="Rerunning scenarios is not available yet" class={disabledButton}>Rerun failed ({failing.length})</button>
+		{#if canEdit && rerunCount}
+			<a href="{runsHref}/new?rerun={runId}" class="flex h-10 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] text-slate-200 hover:bg-panel">Rerun failed ({rerunCount})</a>
+		{/if}
 		{#if canEdit}
 			<button type="button" onclick={generateReport} disabled={generating} class="h-10 rounded-md bg-accent px-4 text-[13px] font-semibold text-on-accent hover:bg-accent/90 disabled:opacity-50">
 				{generating ? 'Generating…' : 'Generate PDF report'}

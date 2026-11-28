@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canStartRuns, clockDuration, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
+import { canStartRuns, clockDuration, rerunScenarioIds, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
 
 const run = (environmentName = 'Staging', scoringVersion = '1.0') => ({ environmentName, scoringVersion });
 
@@ -63,5 +63,11 @@ describe('runs', () => {
 	it('lets owners and editors start runs, not viewers or non-members', () => {
 		const project = { members: [{ userId: 'o', role: 'Owner' as const }, { userId: 'e', role: 'Editor' as const }, { userId: 'v', role: 'Viewer' as const }] };
 		expect(['o', 'e', 'v', 'x'].map((id) => canStartRuns(project, { id }))).toEqual([true, true, false, false]);
+	});
+
+	it('reruns each failed or degraded scenario once', () => {
+		const f = (outcome: 'Failed' | 'Degraded' | 'Passed' | 'Inconclusive', scenarioId: string | null) => ({ outcome, scenarioId });
+		expect(rerunScenarioIds([f('Failed', 'a'), f('Degraded', 'a'), f('Degraded', 'b'), f('Passed', 'c'), f('Inconclusive', 'd'), f('Failed', null)])).toEqual(['a', 'b']);
+		expect(rerunScenarioIds([])).toEqual([]);
 	});
 });

@@ -1,4 +1,4 @@
-import type { FeedRow, ProjectRole, RunHistoryRow, Scenario, TestRunStatus } from './api';
+import type { FeedRow, ProjectRole, RunFinding, RunHistoryRow, Scenario, TestRunStatus } from './api';
 import { isStateChanging } from './scenarios';
 
 // Date range used when the URL names none.
@@ -97,6 +97,11 @@ export function confirmationRows(scenarios: Pick<Scenario, 'endpointId' | 'httpM
 	}
 	return [...rows.values()];
 }
+
+// Catalog scenarios behind a run's failed or degraded findings, once each: what "Rerun failed" selects.
+export const rerunScenarioIds = (findings: Pick<RunFinding, 'outcome' | 'scenarioId'>[]) => [
+	...new Set(findings.filter((f) => (f.outcome === 'Failed' || f.outcome === 'Degraded') && f.scenarioId).map((f) => f.scenarioId!))
+];
 
 // Owners and editors can start and cancel runs; viewers and non-members can't. The backend answers 403 regardless.
 export function canStartRuns(project: { members: { userId: string; role: ProjectRole }[] }, me: { id: string }) {

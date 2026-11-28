@@ -368,7 +368,7 @@ Decided: "weak" findings are not a separate kind; only Fail and Degraded finding
 
 ### 2.23 Test run history [Partial]
 
-Built: the paged history with filters, date, status, score and its change from the previous comparable run, evidence coverage, and scenarios executed; each run opens its results. Not built: an endpoints-tested column, comparing two runs, and rerunning failed or degraded scenarios (both buttons are shown disabled).
+Built: the paged history with filters, date, status, score and its change from the previous comparable run, evidence coverage, and scenarios executed; each run opens its results; owners and editors rerun a finished run's failed or degraded scenarios from its results page ("Rerun failed"), which opens the new run page with those scenarios selected, so the preflight and the state-changing confirmation still apply; scenarios no longer in the active spec's included endpoints are left out, and the page says how many. Not built: an endpoints-tested column and comparing two runs (its buttons are shown disabled).
 
 1. The user opens Test History for a project.
 2. Show previous runs with date, status, score, evidence coverage, endpoints tested, and scenarios executed.

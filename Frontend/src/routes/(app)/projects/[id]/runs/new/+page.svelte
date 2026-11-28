@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Toggle from '$lib/components/Toggle.svelte';
 	import type { RunPreflight, Scenario, ScenarioType } from '$lib/api';
 	import { relative } from '$lib/format';
 	import { problemMessage } from '$lib/problem';
-	import { canStartRuns, confirmationRows } from '$lib/runs';
+	import { canStartRuns, confirmationRows, runLabel } from '$lib/runs';
 	import { categories, faultLabels, isStateChanging, PRIMITIVES } from '$lib/scenarios';
 
 	let { data } = $props();
@@ -93,8 +93,12 @@
 
 	// ---- Scenarios ----
 	// Enabled defaults follows each scenario's toggle on the Scenarios tab; choosing individually starts from those defaults.
-	let mode = $state<'defaults' | 'individual'>('defaults');
-	const picked = new SvelteSet<string>();
+	// "Rerun failed" starts from the run's failed or degraded scenarios instead; ones no longer listed here are left out.
+	// Read once: the selection starts from it and is the user's to change.
+	const rerun = untrack(() => data.rerun);
+	let mode = $state<'defaults' | 'individual'>(rerun ? 'individual' : 'defaults');
+	const picked = new SvelteSet<string>(rerun?.ids);
+	const rerunMissing = $derived(rerun ? rerun.ids.filter((id) => !scenarios.some((s) => s.id === id)).length : 0);
 	const chosen = (s: Scenario) => (mode === 'defaults' ? s.enabled : picked.has(s.id));
 	const selected = $derived(scenarios.filter((s) => !excluded.has(s.endpointId) && chosen(s)));
 	const perEndpoint = $derived.by(() => {
@@ -225,6 +229,14 @@
 		</span>
 	</p>
 {:else}
+	{#if rerun}
+		<p class="mt-6 rounded-lg border border-line px-5 py-4 text-[13px] text-slate-300" role="status">
+			Rerunning the {rerun.ids.length} failed or degraded scenario{rerun.ids.length === 1 ? '' : 's'} of {runLabel(rerun.run)}.
+			{#if rerunMissing}
+				{rerunMissing} {rerunMissing === 1 ? 'is' : 'are'} no longer in the included endpoints of the active specification and {rerunMissing === 1 ? 'is' : 'are'} left out.
+			{/if}
+		</p>
+	{/if}
 	<section aria-label="Preflight" class="mt-6 rounded-lg border border-line p-5">
 		<div class="flex flex-wrap items-center gap-x-8 gap-y-4">
 			<p class="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">Preflight</p>

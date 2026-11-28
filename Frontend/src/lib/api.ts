@@ -392,6 +392,8 @@ export type RunFinding = {
 	path: string;
 	// Scenario execution that produced the finding; the run results page shows its timeline.
 	executionId: string | null;
+	// Catalog scenario of that execution; "Rerun failed" selects it on the new run page.
+	scenarioId: string | null;
 	scenarioType: ScenarioType | null;
 	summary: string;
 	evidence: FindingEvidence;

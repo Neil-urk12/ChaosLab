@@ -1155,6 +1155,8 @@ public sealed class RunExecutorTests(PostgreSqlFixture postgres)
         var listed = await client.GetFromJsonAsync<Backend.Features.Findings.ListFindings.Response>($"/api/projects/{projectId}/findings?run={runId}", Json);
         var row = Assert.Single(listed!.Findings);
         Assert.Equal(ResilienceFindingOutcome.Failed, row.Outcome);
+        // "Rerun failed" selects the catalog scenario behind the finding.
+        Assert.Equal(finding.ScenarioExecution!.ScenarioId, row.ScenarioId);
         // The failed finding was saved with the recommendation of its problem, and the page gets its title and fix.
         var advice = Recommender.For(Evaluator.Problem.DuplicateSideEffects);
         Assert.Equal(new Backend.Features.Findings.ListFindings.RecommendationInfo(advice.Title, advice.Fix), row.Recommendation);

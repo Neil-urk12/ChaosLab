@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const origin = 'http://localhost:4173';
+const rerunId = '00000000-0000-4000-8000-000000000007';
 
 const scenario = (id: string, endpointId: string, httpMethod: string, path: string, type: string, enabled = true) => ({
 	id, endpointId, httpMethod, path, operationId: null, type, parameters: {}, reason: '', enabled, invariants: []
@@ -44,6 +45,11 @@ async function mockApi(page: Page, blockers: string[] = []) {
 				}
 			});
 		if (path === '/api/projects/p/scenarios') return route.fulfill({ json: { endpointCount: 2, scenarios } });
+		if (path === '/api/projects/p/findings') {
+			const run = { id: rerunId, number: 7, status: 'Completed', completedAt: '2026-11-28T00:00:00Z' };
+			const finding = (outcome: string, scenarioId: string) => ({ id: scenarioId, outcome, scenarioId });
+			return route.fulfill({ json: { runs: [run], run, findings: [finding('Degraded', 's2'), finding('Failed', 'gone'), finding('Passed', 's1')] } });
+		}
 		if (path === '/api/projects/p/runs/preflight') return route.fulfill({ json: preflight(blockers) });
 		if (path === '/api/projects/p/runs' && route.request().method() === 'POST') {
 			posted.push(route.request().postDataJSON());
@@ -83,4 +89,17 @@ test('a preflight blocker keeps the run from starting', async ({ page }) => {
 	await expect(page.getByRole('alert')).toContainText('The target is unreachable');
 	await page.getByRole('checkbox', { name: /I understand/ }).check();
 	await expect(page.getByRole('button', { name: 'Start run' })).toBeDisabled();
+});
+
+test('rerun starts from the failed or degraded scenarios still in the catalog', async ({ page }) => {
+	const posted = await mockApi(page);
+	await page.goto(`${origin}/projects/p/runs/new?rerun=${rerunId}`);
+	await expect(page.getByRole('status').filter({ hasText: 'Rerunning' })).toHaveText(
+		/Rerunning the 2 failed or degraded scenarios of RUN-007\.\s+1 is no longer in the included endpoints/
+	);
+	await expect(page.getByText('Target reachable')).toBeVisible();
+	// Only the degraded GET scenario is selected, so no state-changing confirmation is needed.
+	await page.getByRole('button', { name: 'Start run' }).click();
+	await expect(page).toHaveURL(`${origin}/projects/p/runs/r1`);
+	expect(posted).toEqual([{ scenarioIds: ['s2'], baselineRequests: true, concurrency: 1, runnerRetries: 0, confirmStateChanging: false }]);
 });
