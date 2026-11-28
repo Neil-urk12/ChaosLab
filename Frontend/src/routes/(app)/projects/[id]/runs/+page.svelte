@@ -241,8 +241,10 @@
 			{problem ?? `${selected.map(runLabel).join(' vs ')} · same environment and scoring version`}
 		</p>
 		<button type="button" onclick={() => (selected = [])} class="text-accent-ink hover:text-accent-ink-strong">Clear</button>
-		<button type="button" disabled title={problem ?? 'Comparing runs is not available yet'} class="h-9 rounded-md bg-accent/50 px-4 font-semibold text-on-accent">
-			Compare runs
-		</button>
+		{#if problem}
+			<button type="button" disabled title={problem} class="h-9 rounded-md bg-accent/50 px-4 font-semibold text-on-accent">Compare runs</button>
+		{:else}
+			<a href="/projects/{project.id}/runs/compare?a={selected[0].id}&b={selected[1].id}" class="grid h-9 place-items-center rounded-md bg-accent px-4 font-semibold text-on-accent hover:bg-accent-hover">Compare runs</a>
+		{/if}
 	</div>
 {/if}

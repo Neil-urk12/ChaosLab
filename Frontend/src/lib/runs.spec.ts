@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { canStartRuns, clockDuration, rerunScenarioIds, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
+import type { TestRunStatus } from './api';
+import { canStartRuns, clockDuration, isGuid, rerunScenarioIds, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
 
-const run = (environmentName = 'Staging', scoringVersion = '1.0') => ({ environmentName, scoringVersion });
+const run = (environmentName = 'Staging', scoringVersion = '1.0', status: TestRunStatus = 'Completed') => ({ environmentName, scoringVersion, status });
 
 describe('runs', () => {
 	it('pads run numbers', () => {
@@ -29,6 +30,9 @@ describe('runs', () => {
 		expect(compareProblem([run()])).toMatch(/exactly two/);
 		expect(compareProblem([run(), run('Prod-like test')])).toMatch(/environments/);
 		expect(compareProblem([run(), run('Staging', '2.0')])).toMatch(/scoring versions/);
+		expect(compareProblem([run(), run('Staging', '1.0', 'Running')])).toMatch(/not finished/);
+		expect(compareProblem([run('Staging', '1.0', 'Queued'), run()])).toMatch(/not finished/);
+		expect(compareProblem([run(), run('Staging', '1.0', 'Cancelled')])).toBeNull();
 	});
 
 	it('ranks a feed row by its worst finding, then the execution outcome', () => {
@@ -69,5 +73,11 @@ describe('runs', () => {
 		const f = (outcome: 'Failed' | 'Degraded' | 'Passed' | 'Inconclusive', scenarioId: string | null) => ({ outcome, scenarioId });
 		expect(rerunScenarioIds([f('Failed', 'a'), f('Degraded', 'a'), f('Degraded', 'b'), f('Passed', 'c'), f('Inconclusive', 'd'), f('Failed', null)])).toEqual(['a', 'b']);
 		expect(rerunScenarioIds([])).toEqual([]);
+	});
+
+	it('accepts only GUIDs as run links', () => {
+		expect(isGuid('00000000-0000-4000-8000-000000000007')).toBe(true);
+		expect(isGuid('a-30')).toBe(false);
+		expect(isGuid(null)).toBe(false);
 	});
 });

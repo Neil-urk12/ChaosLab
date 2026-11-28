@@ -239,7 +239,6 @@
 	const card = 'rounded-lg border border-line';
 	const chip = 'inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] whitespace-nowrap';
 	const eyebrow = 'text-[10px] font-semibold tracking-wider text-slate-500 uppercase';
-	const disabledButton = 'flex h-10 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] text-slate-500';
 </script>
 
 {#snippet heading(title: string, subtitle: string, href?: string)}
@@ -289,7 +288,7 @@
 	{:else}
 	<div class="flex flex-wrap gap-2">
 		{#if run.previous}
-			<button type="button" disabled title="Comparing runs is not available yet" class={disabledButton}>Compare with {runLabel(run.previous)}</button>
+			<a href="{runsHref}/compare?a={run.previous.id}&b={runId}" class="flex h-10 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] text-slate-200 hover:bg-panel">Compare with {runLabel(run.previous)}</a>
 		{/if}
 		{#if canEdit && rerunCount}
 			<a href="{runsHref}/new?rerun={runId}" class="flex h-10 items-center gap-2 rounded-md border border-line-strong px-4 text-[13px] text-slate-200 hover:bg-panel">Rerun failed ({rerunCount})</a>

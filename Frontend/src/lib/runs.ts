@@ -24,12 +24,17 @@ export function pageWindow(current: number, count: number): (number | null)[] {
 	return items;
 }
 
+// Run links forward only a GUID: the API answers anything else with 400, which would show a run that exists as not found.
+export const isGuid = (value: string | null) => /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value ?? '');
+
 export const runLabel = (run: Pick<RunHistoryRow, 'number'>) => `RUN-${String(run.number).padStart(3, '0')}`;
 
-// Two runs compare meaningfully only on the same environment and scoring version.
-export function compareProblem(runs: Pick<RunHistoryRow, 'environmentName' | 'scoringVersion'>[]) {
+// Two runs compare meaningfully only on the same environment and scoring version, once both have finished:
+// an unfinished run's checks would show as not run, and the compare page does not refresh.
+export function compareProblem(runs: Pick<RunHistoryRow, 'environmentName' | 'scoringVersion' | 'status'>[]) {
 	if (runs.length !== 2) return 'Select exactly two runs to compare';
 	const [a, b] = runs;
+	if ([a, b].some((run) => run.status === 'Queued' || run.status === 'Running')) return 'A selected run has not finished';
 	if (a.environmentName !== b.environmentName) return 'Runs use different environments';
 	if (a.scoringVersion !== b.scoringVersion) return 'Runs use different scoring versions';
 	return null;
