@@ -13,6 +13,8 @@ by date.
   from the history selection or a run's "Compare with" button. The page shows both scores and the
   change, category and endpoint scores, and which findings got worse, got better, still fail, or
   failed before but were not judged again, so a check that was skipped never looks fixed.
+- Failure timelines on the run results page and in the PDF report label each request's step: baseline,
+  the fault phase's start, during the fault, recovery, or read-back.
 
 ## [0.3.0] - 2026-11-28
 

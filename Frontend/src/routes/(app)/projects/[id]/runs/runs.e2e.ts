@@ -118,7 +118,7 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 				executionId: 'e1', httpMethod: 'POST', path: '/payments', scenarioType: 'DuplicateRequest', outcome: 'Failed',
 				failureReason: 'record count ≤ 1 · actual 2', completedAt: '2026-11-01T00:00:06Z',
 				events: [{ attemptNo: 1, requestMethod: 'POST', requestPath: '/payments', startedAt: '2026-11-01T00:00:02Z', durationMs: 140,
-					clientStatusCode: 201, upstreamStatusCode: 201, outcomeType: 'Forwarded', errorType: null }]
+					clientStatusCode: 201, upstreamStatusCode: 201, outcomeType: 'Forwarded', errorType: null, phase: 'fault' }]
 			}, {
 				executionId: linkedId, httpMethod: 'GET', path: '/payments', scenarioType: 'Throttle429', outcome: 'Degraded',
 				failureReason: null, completedAt: null, events: []
@@ -147,6 +147,7 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 	await expect(page.getByText('No runner errors in this run. 2 scenarios were skipped.')).toBeVisible();
 	await expect(page.getByRole('listitem').filter({ hasText: '2 skipped: The dependency simulator is not set up.' })).toBeVisible();
 	await expect(page.getByText('record count ≤ 1 · actual 2')).toBeVisible();
+	await expect(page.locator('#timeline').getByText('Fault phase starts')).toBeVisible();
 
 	// A finding's "View in timeline" link opens its scenario and asks the API for it.
 	await page.goto(`${origin}/projects/a/runs/a-30?timeline=${linkedId}#timeline`);

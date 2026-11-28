@@ -94,7 +94,9 @@ public static class GetRun
         int? ClientStatusCode,
         int? UpstreamStatusCode,
         ObservationOutcomeType OutcomeType,
-        string? ErrorType);
+        string? ErrorType,
+        // The runner's step for this request: baseline, fault, recovery or readBack (RunExecutor); null if unrecorded.
+        string? Phase);
 
     private static readonly Expression<Func<ScenarioExecution, Timeline>> ToTimeline = execution => new Timeline(
         execution.Id, execution.Endpoint.HttpMethod, execution.Endpoint.Path, execution.ScenarioType,
@@ -104,7 +106,8 @@ public static class GetRun
             .Select(observation => new Event(
                 observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
                 observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
-                observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
+                observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType,
+                observation.Metadata.RootElement.GetProperty("phase").GetString()))
             .ToList());
 
     public static async Task<Results<Ok<Response>, NotFound>> Handle(
@@ -225,7 +228,8 @@ public static class GetRun
                     .Select(observation => new Event(
                         observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
                         observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
-                        observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
+                        observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType,
+                        observation.Metadata.RootElement.GetProperty("phase").GetString()))
                     .ToList()
             })
             .FirstOrDefaultAsync(cancellationToken);

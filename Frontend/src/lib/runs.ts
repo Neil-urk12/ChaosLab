@@ -1,4 +1,4 @@
-import type { FeedRow, ProjectRole, RunFinding, RunHistoryRow, Scenario, TestRunStatus } from './api';
+import type { FeedRow, ProjectRole, RunFinding, RunHistoryRow, Scenario, TestRunStatus, TimelineEvent } from './api';
 import { isStateChanging } from './scenarios';
 
 // Date range used when the URL names none.
@@ -112,4 +112,20 @@ export const rerunScenarioIds = (findings: Pick<RunFinding, 'outcome' | 'scenari
 export function canStartRuns(project: { members: { userId: string; role: ProjectRole }[] }, me: { id: string }) {
 	const role = project.members.find((m) => m.userId === me.id)?.role;
 	return role === 'Owner' || role === 'Editor';
+}
+
+// Where a timeline request sits in the experiment. The first fault-phase request starts the phase, whether or not
+// its own answer was faulted (a storm below probability 1 lets some through).
+// Same words as the PDF report (Backend/Features/Reports/ReportDocument.cs PhaseLabel).
+export function phaseLabel(events: Pick<TimelineEvent, 'phase'>[], index: number): string | null {
+	switch (events[index].phase) {
+		case 'baseline':
+			return 'Baseline';
+		case 'fault':
+			return events.findIndex((e) => e.phase === 'fault') === index ? 'Fault phase starts' : 'During fault';
+		case 'recovery':
+			return 'Recovery';
+		default:
+			return null;
+	}
 }

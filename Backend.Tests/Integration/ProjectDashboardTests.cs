@@ -194,11 +194,12 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
             var start = DateTimeOffset.UtcNow.AddDays(-1);
             db.Add(execution);
             // Inserted out of order: the timeline sorts by request start.
-            foreach (var (attempt, at) in new[] { (2, start.AddSeconds(3)), (1, start) })
+            // The second has no phase, like a row recorded before phases were stored.
+            foreach (var (attempt, at, metadata) in new[] { (2, start.AddSeconds(3), "{}"), (1, start, "{\"phase\":\"fault\"}") })
                 db.Add(new HttpObservation
                 {
                     Id = Guid.NewGuid(), ScenarioExecutionId = execution.Id, AttemptNo = attempt, RequestMethod = "POST",
-                    RequestPath = "/payments", RequestStartedAt = at, ClientStatusCode = 201, Metadata = JsonDocument.Parse("{}")
+                    RequestPath = "/payments", RequestStartedAt = at, ClientStatusCode = 201, Metadata = JsonDocument.Parse(metadata)
                 });
             // A skipped execution with only a passing finding: counted as skipped, no timeline.
             db.Add(new ScenarioExecution
@@ -219,6 +220,7 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         var timeline = Assert.Single(run.Timelines);
         Assert.Equal((ScenarioType.DuplicateRequest, "/payments"), (timeline.ScenarioType, timeline.Path));
         Assert.Equal([1, 2], timeline.Events.Select(e => e.AttemptNo));
+        Assert.Equal(["fault", null], timeline.Events.Select(e => e.Phase));
 
         // A requested execution without a failing finding has no failure timeline; one already listed is not repeated.
         var linked = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{seeded.LatestRunId}?timeline={skippedId}", Json))!;

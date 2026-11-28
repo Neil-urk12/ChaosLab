@@ -301,6 +301,8 @@ export type TimelineEvent = {
 	upstreamStatusCode: number | null;
 	outcomeType: ObservationOutcome;
 	errorType: string | null;
+	// The runner's step for this request; null when it was not recorded.
+	phase: 'baseline' | 'fault' | 'recovery' | 'readBack' | null;
 };
 
 export type RunTimeline = {

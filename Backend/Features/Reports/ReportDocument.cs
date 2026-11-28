@@ -229,15 +229,18 @@ public static class ReportDocument
                     table.ColumnsDefinition(columns =>
                     {
                         columns.ConstantColumn(44);
-                        columns.ConstantColumn(76);
+                        columns.ConstantColumn(64);
+                        columns.ConstantColumn(84);
                         columns.RelativeColumn(3);
                         columns.RelativeColumn(1.5f);
                         columns.RelativeColumn(2);
                     });
-                    HeaderRow(table, "Attempt", "Time", "Request", "Status", "Outcome");
-                    foreach (var e in timeline.Events)
+                    HeaderRow(table, "Attempt", "Time", "Phase", "Request", "Status", "Outcome");
+                    var faultStart = timeline.Events.FindIndex(e => e.Phase == "fault");
+                    foreach (var (e, index) in timeline.Events.Select((e, index) => (e, index)))
                         Cells(table, e.AttemptNo.ToString(CultureInfo.InvariantCulture),
                             e.StartedAt.UtcDateTime.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture),
+                            PhaseLabel(e.Phase, index == faultStart),
                             $"{e.RequestMethod} {e.RequestPath}",
                             Status(e), $"{Words(e.OutcomeType.ToString())}{(e.DurationMs is { } ms ? $" · {ms} ms" : "")}");
                 });
@@ -351,6 +354,16 @@ public static class ReportDocument
                 _ => null
             }
             : null;
+
+    // Same words as the run results page (Frontend/src/lib/runs.ts phaseLabel).
+    private static string PhaseLabel(string? phase, bool faultStart) => phase switch
+    {
+        "baseline" => "Baseline",
+        "fault" => faultStart ? "Fault phase starts" : "During fault",
+        "recovery" => "Recovery",
+        "readBack" => "Read-back",
+        _ => ""
+    };
 
     private static string Status(GetRun.Event e) => e switch
     {

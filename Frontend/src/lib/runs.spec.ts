@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TestRunStatus } from './api';
-import { canStartRuns, clockDuration, isGuid, rerunScenarioIds, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
+import { canStartRuns, clockDuration, isGuid, phaseLabel, rerunScenarioIds, confirmationRows, needsConfirmation, compareProblem, dayRange, DEFAULT_DAYS, feedResult, pageWindow, remainingMs, runLabel } from './runs';
 
 const run = (environmentName = 'Staging', scoringVersion = '1.0', status: TestRunStatus = 'Completed') => ({ environmentName, scoringVersion, status });
 
@@ -79,5 +79,10 @@ describe('runs', () => {
 		expect(isGuid('00000000-0000-4000-8000-000000000007')).toBe(true);
 		expect(isGuid('a-30')).toBe(false);
 		expect(isGuid(null)).toBe(false);
+	});
+
+	it('labels the fault start and recovery requests of a timeline', () => {
+		const events = (['baseline', 'fault', 'fault', 'recovery', 'recovery', 'readBack', null] as const).map((phase) => ({ phase }));
+		expect(events.map((_, i) => phaseLabel(events, i))).toEqual(['Baseline', 'Fault phase starts', 'During fault', 'Recovery', 'Recovery', null, null]);
 	});
 });

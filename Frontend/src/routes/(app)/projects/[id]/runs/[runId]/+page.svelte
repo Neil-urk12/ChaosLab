@@ -6,7 +6,7 @@
 	import { findingCategory, outcomeLabels, scoringCategoryLabels } from '$lib/findings';
 	import { dateTime, duration, PLACEHOLDER, score, scoreLabel } from '$lib/format';
 	import { problemMessage, send } from '$lib/problem';
-	import { canStartRuns, clockDuration, feedResult, feedResultStyles, remainingMs, rerunScenarioIds, runLabel, statusStyles, type FeedResult } from '$lib/runs';
+	import { canStartRuns, clockDuration, feedResult, feedResultStyles, phaseLabel, remainingMs, rerunScenarioIds, runLabel, statusStyles, type FeedResult } from '$lib/runs';
 	import { categories as faultCategories, describeInvariant, describeParameters, faultLabels } from '$lib/scenarios';
 
 	let { data } = $props();
@@ -578,9 +578,13 @@
 			<ol class="flex gap-6 overflow-x-auto px-5 py-5">
 				{#each timeline.events as e, i (i)}
 					{@const shown = event(e, timeline.httpMethod, timeline.path)}
+					{@const phase = phaseLabel(timeline.events, i)}
 					<li class="min-w-40 flex-1">
 						<span class="block size-3 rounded-full {shown.tone}" aria-hidden="true"></span>
 						<p class="mt-3 font-mono text-[11px] text-slate-500">{clock(e.startedAt)}</p>
+						{#if phase}
+							<p class="mt-1 text-[11px] font-semibold uppercase tracking-wide {e.phase === 'fault' ? 'text-amber-300' : e.phase === 'recovery' ? 'text-emerald-300' : 'text-slate-400'}">{phase}</p>
+						{/if}
 						<p class="mt-1 text-[13px] font-semibold">{shown.title}</p>
 						<p class="mt-1 text-[11px] text-slate-400">{shown.detail}</p>
 					</li>

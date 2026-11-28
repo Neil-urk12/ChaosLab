@@ -16,7 +16,7 @@ public sealed class ReportDocumentTests
         var at = new DateTimeOffset(2026, 11, 21, 8, 0, 0, TimeSpan.Zero);
         var events = Enumerable.Range(1, 3).Select(attempt => new GetRun.Event(
             attempt, "GET", "/orders/1", at.AddSeconds(attempt), 120, 503, attempt == 3 ? null : 200,
-            ObservationOutcomeType.ModifiedResponse, null)).ToList();
+            ObservationOutcomeType.ModifiedResponse, null, attempt == 3 ? "recovery" : "fault")).ToList();
         var run = new GetRun.Response(
             Guid.NewGuid(), 12, TestRunStatus.Completed, "Staging", "Test User", at, at, at.AddMinutes(2), 2, 2, 0,
             62.5m, 80m,
