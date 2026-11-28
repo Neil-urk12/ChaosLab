@@ -1,5 +1,7 @@
+using System.Linq.Expressions;
 using System.Security.Claims;
 using System.Text.Json;
+using Backend.Domain.Entities;
 using Backend.Domain.Enums;
 using Backend.Features.Projects;
 using Backend.Infrastructure.Data;
@@ -12,8 +14,11 @@ namespace Backend.Features.TestRuns;
 // findings query (GET /projects/{id}/findings?run=), which the results page also loads.
 public static class GetRun
 {
-    // Failing scenario executions offered in the timeline picker.
+    // Worst failing scenario executions served by default; one requested with ?timeline= is added on top.
     public const int MaxTimelines = 20;
+
+    // A scenario has a failure timeline when one of its findings has one of these outcomes.
+    private static readonly ResilienceFindingOutcome[] FailingOutcomes = [ResilienceFindingOutcome.Failed, ResilienceFindingOutcome.Degraded];
 
     public sealed record Response(
         Guid Id,
@@ -91,8 +96,20 @@ public static class GetRun
         ObservationOutcomeType OutcomeType,
         string? ErrorType);
 
+    private static readonly Expression<Func<ScenarioExecution, Timeline>> ToTimeline = execution => new Timeline(
+        execution.Id, execution.Endpoint.HttpMethod, execution.Endpoint.Path, execution.ScenarioType,
+        execution.Outcome, execution.FailureReason, execution.CompletedAt,
+        execution.Observations
+            .OrderBy(observation => observation.RequestStartedAt).ThenBy(observation => observation.AttemptNo)
+            .Select(observation => new Event(
+                observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
+                observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
+                observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
+            .ToList());
+
     public static async Task<Results<Ok<Response>, NotFound>> Handle(
-        Guid id, Guid runId, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
+        Guid id, Guid runId, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken,
+        Guid? timeline = null)
     {
         if (await ProjectAccess.RoleAsync(db, id, principal, cancellationToken) is null)
             return TypedResults.NotFound();
@@ -138,26 +155,25 @@ public static class GetRun
 
         var timelines = await db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId && db.ResilienceFindings.Any(finding =>
-                finding.ScenarioExecutionId == execution.Id
-                && (finding.Outcome == ResilienceFindingOutcome.Failed || finding.Outcome == ResilienceFindingOutcome.Degraded)))
+                finding.ScenarioExecutionId == execution.Id && FailingOutcomes.Contains(finding.Outcome)))
             // Worst first: the highest severity among the failing findings, then run order.
             .OrderByDescending(execution => db.ResilienceFindings
-                .Where(finding => finding.ScenarioExecutionId == execution.Id
-                    && (finding.Outcome == ResilienceFindingOutcome.Failed || finding.Outcome == ResilienceFindingOutcome.Degraded))
+                .Where(finding => finding.ScenarioExecutionId == execution.Id && FailingOutcomes.Contains(finding.Outcome))
                 .Max(finding => finding.Severity))
             .ThenBy(execution => execution.SequenceNo)
             .Take(MaxTimelines)
-            .Select(execution => new Timeline(
-                execution.Id, execution.Endpoint.HttpMethod, execution.Endpoint.Path, execution.ScenarioType,
-                execution.Outcome, execution.FailureReason, execution.CompletedAt,
-                execution.Observations
-                    .OrderBy(observation => observation.RequestStartedAt).ThenBy(observation => observation.AttemptNo)
-                    .Select(observation => new Event(
-                        observation.AttemptNo, observation.RequestMethod, observation.RequestPath,
-                        observation.RequestStartedAt, observation.DurationMs, observation.ClientStatusCode,
-                        observation.UpstreamStatusCode, observation.OutcomeType, observation.ErrorType))
-                    .ToList()))
+            .Select(ToTimeline)
             .ToListAsync(cancellationToken);
+
+        // A finding links to its scenario's timeline, which can fall outside the worst MaxTimelines; serve it too,
+        // under the same rule: only a scenario with a failing finding has a failure timeline.
+        if (timeline is { } wanted && timelines.All(t => t.ExecutionId != wanted))
+            timelines.AddRange(await db.ScenarioExecutions.AsNoTracking()
+                .Where(execution => execution.Id == wanted && execution.TestRunId == runId
+                    && db.ResilienceFindings.Any(finding =>
+                        finding.ScenarioExecutionId == execution.Id && FailingOutcomes.Contains(finding.Outcome)))
+                .Select(ToTimeline)
+                .ToListAsync(cancellationToken));
 
         var problems = await db.ScenarioExecutions.AsNoTracking()
             .Where(execution => execution.TestRunId == runId

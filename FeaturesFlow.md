@@ -348,7 +348,7 @@ Built: the run results page and API, showing the score, evidence coverage, categ
 
 ### 2.21 Failure timeline [Partial]
 
-Built (`GetRun.cs`, the run results page and the PDF report): the request timelines of up to 20 scenarios with a Fail or Degraded finding, worst first, each request in order with its attempt, status or outcome, and a scenario-complete event. Not built: inspecting a single event, labelling the fault-injection start and recovery requests, and the findings page's "View in timeline" button (shown disabled).
+Built (`GetRun.cs`, the run results page and the PDF report): the request timelines of up to 20 scenarios with a Fail or Degraded finding, worst first, each request in order with its attempt, status or outcome, and a scenario-complete event. A Fail or Degraded finding's "View in timeline" button opens the run results at its scenario's timeline, which the run query also serves when it falls outside the worst 20. Not built: inspecting a single event, and labelling the fault-injection start and recovery requests.
 
 1. Retrieve the execution events of the run and order them chronologically.
 2. Identify failure-injection start, requests sent, errors and responses received, repeated attempts, timeout events, recovery events, and scenario completion.

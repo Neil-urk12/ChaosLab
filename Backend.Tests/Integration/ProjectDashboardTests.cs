@@ -180,6 +180,7 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
         var seeded = await SeedAsync(factory, client);
         var failed = seeded.FindingRuns.First(pair => pair.Value == seeded.LatestRunId).Key;
+        var skippedId = Guid.NewGuid();
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -202,7 +203,7 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
             // A skipped execution with only a passing finding: counted as skipped, no timeline.
             db.Add(new ScenarioExecution
             {
-                Id = Guid.NewGuid(), TestRunId = finding.TestRunId, EndpointId = finding.EndpointId, ScenarioId = scenario.Id,
+                Id = skippedId, TestRunId = finding.TestRunId, EndpointId = finding.EndpointId, ScenarioId = scenario.Id,
                 SequenceNo = 2, ScenarioType = ScenarioType.Latency, Parameters = JsonDocument.Parse("{}"),
                 Status = ScenarioExecutionStatus.Skipped
             });
@@ -219,6 +220,12 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Equal((ScenarioType.DuplicateRequest, "/payments"), (timeline.ScenarioType, timeline.Path));
         Assert.Equal([1, 2], timeline.Events.Select(e => e.AttemptNo));
 
+        // A requested execution without a failing finding has no failure timeline; one already listed is not repeated.
+        var linked = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{seeded.LatestRunId}?timeline={skippedId}", Json))!;
+        Assert.Equal([timeline.ExecutionId], linked.Timelines.Select(t => t.ExecutionId));
+        var again = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{seeded.LatestRunId}?timeline={timeline.ExecutionId}", Json))!;
+        Assert.Single(again.Timelines);
+
         // The stored scores, endpoints worst first.
         Assert.Equal(66.67m, run.EvidenceCoverage);
         Assert.Equal(8, run.Categories!.Count);
@@ -231,11 +238,52 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         Assert.Empty(first.Endpoints);
         Assert.Null(first.Previous);
         Assert.Empty(first.Timelines);
+        var foreign = (await client.GetFromJsonAsync<GetRun.Response>($"{url}/{run.Previous.Id}?timeline={timeline.ExecutionId}", Json))!;
+        Assert.Empty(foreign.Timelines);
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{url}/{Guid.NewGuid()}")).StatusCode);
         // Another project's run is not served through this project.
         var otherRun = seeded.FindingRuns.Values.Except([seeded.LatestRunId, run.Previous.Id]).Single();
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{url}/{otherRun}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Run_detail_serves_a_requested_failing_timeline_beyond_the_worst()
+    {
+        await using var database = await postgres.CreateDatabaseAsync();
+        await using var factory = new BackendFactory(database);
+        using var client = await TestAuth.SignedInAdminAsync(factory, TestAuth.ValidAdmin());
+        var seeded = await SeedAsync(factory, client);
+        var ids = new List<Guid>();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var endpointId = (await db.ResilienceFindings.FirstAsync(row => row.TestRunId == seeded.LatestRunId)).EndpointId;
+            var scenario = await db.ChaosScenarios.FirstAsync(row => row.EndpointId == endpointId);
+            // Equal severity, so run order decides and the last one falls outside the worst MaxTimelines.
+            for (var sequence = 1; sequence <= GetRun.MaxTimelines + 1; sequence++)
+            {
+                var execution = new ScenarioExecution
+                {
+                    Id = Guid.NewGuid(), TestRunId = seeded.LatestRunId, EndpointId = endpointId, ScenarioId = scenario.Id,
+                    SequenceNo = sequence, ScenarioType = ScenarioType.Latency, Parameters = JsonDocument.Parse("{}")
+                };
+                db.AddRange(execution, new ResilienceFinding
+                {
+                    Id = Guid.NewGuid(), TestRunId = seeded.LatestRunId, EndpointId = endpointId, ScenarioExecutionId = execution.Id,
+                    Outcome = ResilienceFindingOutcome.Failed, Summary = "Failed", Evidence = JsonDocument.Parse("{}")
+                });
+                ids.Add(execution.Id);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var url = $"/api/projects/{seeded.ProjectId}/runs/{seeded.LatestRunId}";
+        var run = (await client.GetFromJsonAsync<GetRun.Response>(url, Json))!;
+        Assert.Equal(ids[..^1], run.Timelines.Select(t => t.ExecutionId));
+
+        var linked = (await client.GetFromJsonAsync<GetRun.Response>($"{url}?timeline={ids[^1]}", Json))!;
+        Assert.Equal(ids, linked.Timelines.Select(t => t.ExecutionId));
     }
 
     [Fact]
@@ -284,6 +332,8 @@ public sealed class ProjectDashboardTests(PostgreSqlFixture postgres)
         // ScenarioType comes from the linked execution; a finding without one gets null.
         Assert.Equal(ScenarioType.TimeoutDrop, top.ScenarioType);
         Assert.Null(latest.Findings[1].ScenarioType);
+        Assert.NotNull(top.ExecutionId);
+        Assert.Null(latest.Findings[1].ExecutionId);
 
         var older = (await client.GetFromJsonAsync<ListFindings.Response>($"{url}?run={latest.Runs[1].Id}", Json))!;
         Assert.Equal(1, older.Run!.Number);

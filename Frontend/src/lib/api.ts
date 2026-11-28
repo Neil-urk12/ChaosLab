@@ -390,6 +390,8 @@ export type RunFinding = {
 	category: ScoringCategory | null;
 	httpMethod: string;
 	path: string;
+	// Scenario execution that produced the finding; the run results page shows its timeline.
+	executionId: string | null;
 	scenarioType: ScenarioType | null;
 	summary: string;
 	evidence: FindingEvidence;

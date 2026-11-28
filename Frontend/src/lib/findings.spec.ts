@@ -3,7 +3,7 @@ import type { RunFinding } from './api';
 import { findingCategory, findingDetail, findingsCsv } from './findings';
 
 const finding: RunFinding = {
-	id: '1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', category: null, httpMethod: 'POST', path: '/payments',
+	id: '1', severity: 'Critical', outcome: 'Failed', pattern: 'Idempotency', category: null, httpMethod: 'POST', path: '/payments', executionId: 'e1',
 	scenarioType: 'DuplicateRequest', summary: 'Duplicate charge, "twice"', evidence: {},
 	recommendation: { title: 'Keys', text: '=HYPERLINK("x")' }
 };

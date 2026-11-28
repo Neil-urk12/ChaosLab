@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { FeedRow, FindingOutcome, ReportRow, RunDetail, Severity, TimelineEvent } from '$lib/api';
 	import ScoreRing from '$lib/components/ScoreRing.svelte';
 	import { findingCategory, outcomeLabels, scoringCategoryLabels } from '$lib/findings';
@@ -63,8 +64,8 @@
 	const topFindings = $derived(failing.slice(0, 4));
 	const recommended = $derived(failing.filter((f) => f.recommendation));
 
-	// Unset or stale (after moving to another run) falls back to the first, worst timeline.
-	let timelineId = $state<string>();
+	// Starts at the scenario a finding linked to. Unset or stale (after moving to another run) falls back to the first, worst timeline.
+	let timelineId = $state(page.url.searchParams.get('timeline') ?? undefined);
 	const timeline = $derived(run.timelines.find((t) => t.executionId === timelineId) ?? run.timelines[0]);
 
 	const severityStyles: Record<Severity, string> = {
@@ -551,7 +552,7 @@
 		</section>
 	</div>
 
-	<section class="{card} mt-5">
+	<section id="timeline" class="{card} mt-5 scroll-mt-6">
 		<div class="flex flex-wrap items-start justify-between gap-4 border-b border-line-faint px-5 py-4">
 			<div>
 				<h3 class="font-semibold">Failure timeline</h3>
@@ -560,7 +561,8 @@
 			{#if run.timelines.length > 1}
 				<label>
 					<span class="sr-only">Scenario</span>
-					<select bind:value={timelineId} class="h-10 rounded-md border border-line bg-panel pr-9 text-[13px] text-slate-200 focus:border-accent focus:ring-1 focus:ring-accent">
+					<!-- Shows the timeline in view, so an id that matches none (junk link, another run's) doesn't blank the picker. -->
+					<select value={timeline?.executionId} onchange={(e) => (timelineId = e.currentTarget.value)} class="h-10 rounded-md border border-line bg-panel pr-9 text-[13px] text-slate-200 focus:border-accent focus:ring-1 focus:ring-accent">
 						{#each run.timelines as t (t.executionId)}
 							<option value={t.executionId}>{t.httpMethod} {t.path} · {faultLabels[t.scenarioType]}</option>
 						{/each}

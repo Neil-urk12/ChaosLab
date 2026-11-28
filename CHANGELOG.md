@@ -7,6 +7,11 @@ by date.
 
 ## [Unreleased]
 
+### Added
+
+- View in timeline: a failed or degraded finding on the findings page opens the run results at
+  its scenario's failure timeline, even when that scenario is not among the run's 20 worst.
+
 ### Changed
 
 - Latency findings are no longer Pass. The runner only delays its own request before sending

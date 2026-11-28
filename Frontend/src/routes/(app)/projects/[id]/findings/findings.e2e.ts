@@ -16,6 +16,7 @@ const findings = [
 			facts: [{ label: 'Status codes', value: '504 → 201' }, { label: 'Correlation ID', value: 'corr-91c2' }],
 			interpretation: { observed: 'Two records exist for one logical operation.', suggests: 'The endpoint does not persist or check the Idempotency-Key.', notProven: 'Which layer retried.' }
 		}),
+		executionId: 'e1',
 		recommendation: { title: 'Persist keys', text: 'Persist the Idempotency-Key server-side.' }
 	},
 	finding('f2', 'High', 'Degraded', 'GET', '/payments', 'Throttle429', 'Retry-After ignored on 1 of 3 throttles'),
@@ -58,6 +59,7 @@ test('findings default to Fail and Degraded and show the first one in detail', a
 	await expect(details.getByText('Invariant violated')).toBeVisible();
 	await expect(details.getByText('504 → 201')).toBeVisible();
 	await expect(details.getByText('Persist the Idempotency-Key server-side.')).toBeVisible();
+	await expect(details.getByRole('link', { name: 'View in timeline' })).toHaveAttribute('href', '/projects/a/runs/r26?timeline=e1#timeline');
 
 	await page.getByRole('button', { name: 'GET /payments' }).click();
 	await expect(details.getByRole('heading', { name: 'Retry-After ignored on 1 of 3 throttles' })).toBeVisible();

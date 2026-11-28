@@ -106,7 +106,9 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 		scenarioType: 'DuplicateRequest', summary: 'Duplicate charge after a timeout retry', evidence: {},
 		recommendation: { title: 'Persist idempotency keys', text: 'Store the key server-side.' }
 	};
-	await page.route(/\/api\/projects\/a\/runs\/a-30$/, (route) => route.fulfill({
+	const runUrls: string[] = [];
+	const linkedId = '0b5f9c4e-2d7a-4e1b-9c3f-6a8d2e4f1b7c';
+	await page.route(/\/api\/projects\/a\/runs\/a-30(\?|$)/, (route) => (runUrls.push(route.request().url()), route.fulfill({
 		json: {
 			...run('a', 30), skippedScenarios: 2, score: 78, previous: { id: 'a-29', number: 29, score: 70 }, evidenceCoverage: 66.67,
 			categories: [{ category: 'Idempotency', weight: 10, score: 50, findings: 2, inconclusive: 0 }],
@@ -117,9 +119,12 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 				failureReason: 'record count ≤ 1 · actual 2', completedAt: '2026-11-01T00:00:06Z',
 				events: [{ attemptNo: 1, requestMethod: 'POST', requestPath: '/payments', startedAt: '2026-11-01T00:00:02Z', durationMs: 140,
 					clientStatusCode: 201, upstreamStatusCode: 201, outcomeType: 'Forwarded', errorType: null }]
+			}, {
+				executionId: linkedId, httpMethod: 'GET', path: '/payments', scenarioType: 'Throttle429', outcome: 'Degraded',
+				failureReason: null, completedAt: null, events: []
 			}]
 		}
-	}));
+	})));
 	await page.route(/\/api\/projects\/a\/findings\?run=a-30$/, (route) => route.fulfill({
 		json: {
 			runs: [], run: null, findings: [
@@ -142,6 +147,20 @@ test('a run opens its results with the stored scores', async ({ page }) => {
 	await expect(page.getByText('No runner errors in this run. 2 scenarios were skipped.')).toBeVisible();
 	await expect(page.getByRole('listitem').filter({ hasText: '2 skipped: The dependency simulator is not set up.' })).toBeVisible();
 	await expect(page.getByText('record count ≤ 1 · actual 2')).toBeVisible();
+
+	// A finding's "View in timeline" link opens its scenario and asks the API for it.
+	await page.goto(`${origin}/projects/a/runs/a-30?timeline=${linkedId}#timeline`);
+	await expect(page.getByRole('combobox', { name: 'Scenario' })).toHaveValue(linkedId);
+	await expect(page.getByText('No requests were recorded for this scenario.')).toBeVisible();
+	expect(runUrls.at(-1)).toMatch(new RegExp(`\\?timeline=${linkedId}$`));
+
+	// A malformed id is not sent, so the API can't refuse it and the run still opens on its worst timeline.
+	await page.goto(`${origin}/projects/a/runs/a-30?timeline=junk`);
+	await expect(page.getByRole('heading', { name: 'RUN-030 results' })).toBeVisible();
+	await expect(page.getByRole('combobox', { name: 'Scenario' })).toHaveValue('e1');
+	expect(runUrls.at(-1)).toMatch(/\/runs\/a-30$/);
+	await page.getByRole('combobox', { name: 'Scenario' }).selectOption(linkedId);
+	await expect(page.getByText('No requests were recorded for this scenario.')).toBeVisible();
 });
 
 test('a run whose scenarios failed before sending a request lists why', async ({ page }) => {

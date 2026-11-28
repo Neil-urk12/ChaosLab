@@ -314,7 +314,11 @@
 			{/if}
 
 			<div class="flex flex-wrap justify-end gap-3">
-				<button type="button" disabled title="The failure timeline is not available yet" class="h-9 rounded-md border border-line-strong px-4 text-[13px] text-slate-500">View in timeline</button>
+				{#if run && f.executionId && (f.outcome === 'Failed' || f.outcome === 'Degraded')}
+					<a href="/projects/{project.id}/runs/{run.id}?timeline={f.executionId}#timeline" class="flex h-9 items-center rounded-md border border-line-strong px-4 text-[13px] text-slate-200 hover:bg-field">View in timeline</a>
+				{:else}
+					<button type="button" disabled title="Only failed and degraded findings have a failure timeline" class="h-9 rounded-md border border-line-strong px-4 text-[13px] text-slate-500">View in timeline</button>
+				{/if}
 				<button type="button" disabled title="Rerunning scenarios is not available yet" class="h-9 rounded-md bg-accent/50 px-4 text-[13px] font-semibold text-on-accent">Rerun scenario</button>
 			</div>
 		</div>
