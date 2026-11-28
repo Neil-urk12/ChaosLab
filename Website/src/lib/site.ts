@@ -10,7 +10,7 @@ export const docsPages = [
 ] as const;
 
 // The release whose compose.yaml the install commands download. Bump it with each release tag.
-export const release = 'v0.1.0';
+export const release = 'v0.2.0';
 const composeUrl = `https://raw.githubusercontent.com/Neil-urk12/ChaosLab/${release}/compose.yaml`;
 
 // The image install, in the hero and on the Installation page (FeaturesFlow 2.0). One && chain: mkdir

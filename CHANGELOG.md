@@ -7,6 +7,8 @@ by date.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-28
+
 ### Added
 
 - Circuit-breaker evidence. A Dependency failure scenario has a new "Requests while down"
@@ -675,5 +677,6 @@ by date.
 - Makefile target to run the frontend dev server.
 - EF Core dependency.
 
-[Unreleased]: https://github.com/Neil-urk12/ChaosLab/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Neil-urk12/ChaosLab/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Neil-urk12/ChaosLab/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Neil-urk12/ChaosLab/tree/v0.1.0
